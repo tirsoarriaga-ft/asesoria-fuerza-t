@@ -527,7 +527,13 @@ function App(){
   }
   function newWeek(){
     if(!saved)save();
-    const nw=getWk(1);setWk(nw);
+    // Avanzar relativo a la semana actual, no a hoy
+    const curMon=new Date(wk.id+'T00:00:00');
+    const nextMon=new Date(curMon);nextMon.setDate(curMon.getDate()+7);
+    const nextSun=new Date(nextMon);nextSun.setDate(nextMon.getDate()+6);
+    const fmt=d=>d.toLocaleDateString('es-AR',{day:'numeric',month:'short'});
+    const nw={id:nextMon.toISOString().split('T')[0],label:`${fmt(nextMon)} — ${fmt(nextSun)}`};
+    setWk(nw);
     setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
   }
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
