@@ -509,16 +509,23 @@ function App(){
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
       if(!list.includes(wk.id)){list.push(wk.id);localStorage.setItem(HK(user),JSON.stringify(list));}
       setSaved(true);loadH();
-      // Calcular e1RM snapshot para enviar al sheet
+      // Leer desde localStorage (garantizado tener los datos correctos)
       const e1rmSnap={};
-      Object.entries(curSR).forEach(([sessId,sessData])=>{
-        Object.entries(sessData).forEach(([exId,reps])=>{
-          const ex=exes.find(e=>e.id===parseInt(exId));if(!ex)return;
-          const curKg=(newSK[sessId]?.[exId])||ex.kg;
-          const bestReps=Math.max(parseInt(reps.r1)||0,parseInt(reps.r2)||0);
-          if(bestReps>0)e1rmSnap[ex.n+'_'+sessId]=calcE1RM(curKg,bestReps);
+      try{
+        const savedD=JSON.parse(localStorage.getItem(SK(wk.id,user))||'{}');
+        const sr=savedD.sr||{};
+        const sk=savedD.sk||{};
+        const exArr=savedD.e||exes;
+        Object.entries(sr).forEach(([sessId,sessData])=>{
+          Object.entries(sessData).forEach(([exId,reps])=>{
+            const ex=exArr.find(e=>String(e.id)===String(exId)||e.id===parseInt(exId));
+            if(!ex)return;
+            const curKg=(sk[sessId]?.[exId])||(sk[sessId]?.[parseInt(exId)])||ex.kg;
+            const bestReps=Math.max(parseInt(reps.r1)||0,parseInt(reps.r2)||0);
+            if(bestReps>0)e1rmSnap[ex.n+'_'+sessId]=calcE1RM(curKg,bestReps);
+          });
         });
-      });
+      }catch(err){}
       fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         user,wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
         neat:hab.neat,toxics:toxC,
