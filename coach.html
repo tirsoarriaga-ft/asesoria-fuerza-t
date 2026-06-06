@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Panel del Coach</title>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F5F5F5}
+button,input,select{font-family:inherit;outline:none}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect,useMemo,createElement:h}=React;
+
+// ── CONFIGURACIÓN ─────────────────────────────────────────────────────
+const SCRIPT_URL='https://script.google.com/macros/s/AKfycbyl6jd9yfpugoHEGyu_j4SEq10e0WZlJd1qIokWUDFQWIRgVOixPZY7oZ3vpYw5I4Z8/exec';
+const COACH_PIN='1234'; // ← cambiá por tu PIN
+
+const G='#1D9E75',B='#378ADD',O='#D97706',R='#EF4444';
+const card={background:'#fff',border:'1px solid rgba(0,0,0,0.09)',borderRadius:'12px',padding:'14px',marginBottom:'10px'};
+const lbl={fontSize:'10px',color:'#999',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'6px'};
+
+// ── CHARTS ────────────────────────────────────────────────────────────
+function LineChart({data,color,h:ht=110,labels}){
+  if(!data||data.length<2)return null;
+  const W=300,H=ht,pad={t:8,b:22,l:32,r:8};
+  const iW=W-pad.l-pad.r,iH=H-pad.t-pad.b;
+  const mn=Math.min(...data)*0.97,mx=Math.max(...data)*1.03;
+  const x=i=>pad.l+i/(data.length-1)*iW;
+  const y=v=>pad.t+(1-(v-mn)/(mx-mn))*iH;
+  const pts=data.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
+  const poly=pts+` ${x(data.length-1)},${H-pad.b} ${x(0)},${H-pad.b}`;
+  const step=Math.ceil(data.length/5);
+  return h('svg',{width:'100%',viewBox:`0 0 ${W} ${H}`,style:{display:'block'}},
+    h('polygon',{points:poly,fill:color,opacity:'0.08'}),
+    h('polyline',{points:pts,fill:'none',stroke:color,strokeWidth:'2',strokeLinejoin:'round'}),
+    data.map((v,i)=>(i%step===0||i===data.length-1)?h('circle',{key:i,cx:x(i),cy:y(v),r:'3',fill:color}):null),
+    labels&&labels.map((l,i)=>(i%step===0||i===labels.length-1)?h('text',{key:i,x:x(i),y:H-5,textAnchor:'middle',fontSize:'8',fill:'#aaa'},l):null),
+    h('text',{x:pad.l-2,y:y(mn)+4,textAnchor:'end',fontSize:'8',fill:'#bbb'},mn.toFixed(1)),
+    h('text',{x:pad.l-2,y:y(mx)+4,textAnchor:'end',fontSize:'8',fill:'#bbb'},mx.toFixed(1))
+  );
+}
+function DualBarChart({data}){
+  if(!data||data.length<1)return null;
+  const W=300,H=90,pad={t:6,b:20,l:16,r:6};
+  const iW=W-pad.l-pad.r,iH=H-pad.t-pad.b;
+  const bW=Math.min(10,iW/data.length/2-2);
+  const gap=iW/data.length;
+  return h('svg',{width:'100%',viewBox:`0 0 ${W} ${H}`,style:{display:'block'}},
+    h('line',{x1:pad.l,y1:pad.t+iH,x2:W-pad.r,y2:pad.t+iH,stroke:'rgba(0,0,0,0.06)',strokeWidth:'1'}),
+    data.map((d,i)=>{
+      const cx=pad.l+i*gap+gap/2;
+      const sH=(d.sleep/7)*iH,tH=(d.toxics/7)*iH;
+      return h('g',{key:i},
+        h('rect',{x:cx-bW-1,y:pad.t+iH-sH,width:bW,height:Math.max(sH,1),fill:G,rx:'2'}),
+        h('rect',{x:cx+1,y:pad.t+iH-tH,width:bW,height:Math.max(tH,1),fill:R,rx:'2'}),
+        h('text',{x:cx,y:H-4,textAnchor:'middle',fontSize:'7',fill:'#aaa'},d.label)
+      );
+    })
+  );
+}
+
+// ── ALERTAS (framework del coach) ─────────────────────────────────────
+function getAlerts(weeks){
+  const A=[];
+  if(!weeks.length)return A;
+  const lat=weeks[weeks.length-1];
+  const comp=parseInt(String(lat['%Comidas']||'0').replace('%',''))||0;
+  const estres=String(lat.Estres||'');
+  const energia=String(lat.Energia||'');
+  const tox=parseInt(lat.Toxicos||0)||0;
+
+  if(comp<60)A.push({lvl:'red',txt:'Compliance '+comp+'% — no ajustar plan hasta mejorar adherencia'});
+  else if(comp<80)A.push({lvl:'yellow',txt:'Compliance '+comp+'% — revisar barreras antes de ajustar'});
+
+  if(estres==='Estrés alto'&&energia==='Baja toda la semana')
+    A.push({lvl:'red',txt:'Estrés alto + energía baja — no agregar carga esta semana'});
+  else{
+    if(estres==='Estrés alto')A.push({lvl:'yellow',txt:'Estrés alto esta semana'});
+    if(energia==='Baja toda la semana')A.push({lvl:'yellow',txt:'Energía baja toda la semana'});
+  }
+  if(tox>=4)A.push({lvl:'yellow',txt:'Tóxicos: '+tox+' días esta semana'});
+
+  if(weeks.length>=3){
+    const ps=weeks.slice(-3).map(w=>parseFloat(w.Peso)).filter(v=>!isNaN(v)&&v>0);
+    if(ps.length===3){const d=ps[2]-ps[0];if(Math.abs(d)>=0.5)A.push({lvl:'info',txt:'Tendencia peso: '+(d>0?'+':'')+d.toFixed(1)+' kg en últimas 3 semanas'});}
+    const cs=weeks.slice(-3).map(w=>parseFloat(w.Cintura)).filter(v=>!isNaN(v)&&v>0);
+    if(cs.length===3){const d=cs[2]-cs[0];if(Math.abs(d)>=0.5)A.push({lvl:'info',txt:'Tendencia cintura: '+(d>0?'+':'')+d.toFixed(1)+' cm en últimas 3 semanas'});}
+  }
+  return A;
+}
+function getStatus(weeks){
+  const A=getAlerts(weeks);
+  if(A.some(a=>a.lvl==='red'))return'red';
+  if(A.some(a=>a.lvl==='yellow'))return'yellow';
+  return weeks.length>0?'green':'grey';
+}
+const ALERT_COLOR={red:R,yellow:O,info:B};
+const ALERT_BG={red:'#FEF2F2',yellow:'#FEF3C7',info:'#EBF4FF'};
+
+// ── SENSACIONES COLORES ───────────────────────────────────────────────
+const SENS_CLR={
+  'Alta toda la semana':G,'Variable':O,'Baja toda la semana':R,
+  'No sentí':G,'Sentí a veces':O,'Bastante presente':R,
+  'Buena':G,'A veces alterada':O,'Mala':R,
+  'Sin estrés':G,'Estrés moderado':O,'Estrés alto':R,
+};
+function SensBadge({val}){
+  if(!val)return h('span',{style:{color:'#ddd',fontSize:'11px'}},'—');
+  const c=SENS_CLR[val]||'#999';
+  return h('span',{style:{fontSize:'10px',fontWeight:'700',color:c}},val);
+}
+
+// ── PIN SCREEN ────────────────────────────────────────────────────────
+function PinScreen({onUnlock}){
+  const [pin,setPin]=useState('');
+  const [shake,setShake]=useState(false);
+  const tryPin=p=>{
+    if(p===COACH_PIN){onUnlock();}
+    else{setShake(true);setPin('');setTimeout(()=>setShake(false),600);}
+  };
+  const press=d=>{
+    const next=pin+d;
+    if(next.length<=6)setPin(next);
+    if(next.length>=4)tryPin(next);
+  };
+  const KEYS=['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  return h('div',{style:{maxWidth:'380px',margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 24px',background:'#fff'}},
+    h('div',{style:{fontSize:'36px',marginBottom:'12px'}},'🏆'),
+    h('div',{style:{fontSize:'20px',fontWeight:'800',marginBottom:'4px'}},'Panel del Coach'),
+    h('div',{style:{fontSize:'13px',color:'#999',marginBottom:'32px'}},'Ingresá tu PIN'),
+    h('div',{style:{display:'flex',gap:'12px',marginBottom:'24px',transform:shake?'translateX(-8px)':'none',transition:'transform 0.1s'}},
+      [0,1,2,3].map(i=>h('div',{key:i,style:{width:'14px',height:'14px',borderRadius:'50%',background:i<pin.length?'#111':'#E0E0E0',transition:'background 0.15s'}}))
+    ),
+    h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',width:'220px'}},
+      KEYS.map((k,i)=>k===''?h('div',{key:i}):h('button',{key:i,onClick:()=>k==='⌫'?setPin(p=>p.slice(0,-1)):press(k),
+        style:{height:'56px',fontSize:k==='⌫'?'20px':'18px',fontWeight:'700',background:k==='⌫'?'#F5F5F5':'#F8F8F8',border:'1px solid rgba(0,0,0,0.08)',borderRadius:'10px',cursor:'pointer',color:'#111'}},k))
+    )
+  );
+}
+
+// ── CLIENT LIST ───────────────────────────────────────────────────────
+function ClientList({data,rutinas,onSelect,onRefresh}){
+  const statusOrder={red:0,yellow:1,green:2,grey:3};
+  const clients=Object.keys(data).sort((a,b)=>{
+    const sa=getStatus(data[a]),sb=getStatus(data[b]);
+    if(statusOrder[sa]!==statusOrder[sb])return statusOrder[sa]-statusOrder[sb];
+    const la=data[a],lb=data[b];
+    return String(lb[lb.length-1]?.SemanID||'').localeCompare(String(la[la.length-1]?.SemanID||''));
+  });
+  const statusBg={red:'#FEF2F2',yellow:'#FFFBEB',green:'#F0FDF4',grey:'#F9F9F9'};
+  const counts={red:0,yellow:0,green:0};
+  clients.forEach(c=>{const s=getStatus(data[c]);if(counts[s]!==undefined)counts[s]++;});
+
+  return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
+    h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'16px 18px',position:'sticky',top:0,zIndex:10}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('div',null,
+          h('div',{style:{fontSize:'10px',color:'#999',fontWeight:'600',letterSpacing:'0.08em',textTransform:'uppercase'}},'Panel del Coach'),
+          h('div',{style:{fontSize:'18px',fontWeight:'800'}},clients.length+' asesorados')
+        ),
+        h('button',{onClick:onRefresh,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'↻ Actualizar')
+      ),
+      h('div',{style:{display:'flex',gap:'8px',marginTop:'10px'}},
+        [{c:'red',l:'Atención',color:R},{c:'yellow',l:'Revisar',color:O},{c:'green',l:'OK',color:G}].map(s=>
+          h('div',{key:s.c,style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'#666'}},
+            h('div',{style:{width:'8px',height:'8px',borderRadius:'50%',background:s.color}}),
+            counts[s.c]+' '+s.l
+          )
+        )
+      )
+    ),
+    h('div',{style:{padding:'12px'}},
+      clients.length===0&&h('div',{style:{textAlign:'center',padding:'60px 20px',color:'#999'}},
+        h('div',{style:{fontSize:'40px',marginBottom:'12px'}},'📊'),
+        h('div',{style:{fontSize:'14px',fontWeight:'600'}},'No hay datos todavía'),
+        h('div',{style:{fontSize:'12px',marginTop:'4px'}},'Los asesorados deben guardar al menos una semana')
+      ),
+      clients.map(name=>{
+        const weeks=data[name];const lat=weeks[weeks.length-1];
+        const status=getStatus(weeks);const alerts=getAlerts(weeks);
+        const rutina=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===name.toLowerCase());
+        const tmpl=rutina?.Template?String(rutina.Template)+'kcal':'—';
+        const redAlerts=alerts.filter(a=>a.lvl==='red').length;
+        const yelAlerts=alerts.filter(a=>a.lvl==='yellow').length;
+        return h('div',{key:name,onClick:()=>onSelect(name),
+          style:{...card,cursor:'pointer',background:statusBg[status]||'#fff',borderLeft:'3px solid '+(status==='red'?R:status==='yellow'?O:status==='green'?G:'#E0E0E0')}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}},
+            h('div',null,
+              h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#111'}},name),
+              h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},lat?.Semana||'Sin datos',' · ',tmpl)
+            ),
+            h('div',{style:{textAlign:'right',display:'flex',gap:'4px',alignItems:'center'}},
+              redAlerts>0&&h('span',{style:{background:R,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 6px',borderRadius:'20px'}},redAlerts+'🔴'),
+              yelAlerts>0&&h('span',{style:{background:O,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 6px',borderRadius:'20px'}},yelAlerts+'🟡'),
+              h('span',{style:{fontSize:'14px',color:'#999'}},'>>')
+            )
+          ),
+          h('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'6px'}},
+            [
+              {l:'Peso',v:lat?.Peso?lat.Peso+' kg':'—'},
+              {l:'Cintura',v:lat?.Cintura?lat.Cintura+' cm':'—'},
+              {l:'Comidas',v:lat?.['%Comidas']||'—'},
+              {l:'Sueño',v:lat?.DiasSueno!=null?lat.DiasSueno+'/7':'—'},
+            ].map((m,i)=>h('div',{key:i,style:{background:'rgba(255,255,255,0.7)',borderRadius:'6px',padding:'6px 4px',textAlign:'center'}},
+              h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#111'}},m.v),
+              h('div',{style:{fontSize:'9px',color:'#999',marginTop:'1px'}},m.l)
+            ))
+          )
+        );
+      })
+    )
+  );
+}
+
+// ── CLIENT DETAIL ─────────────────────────────────────────────────────
+function ClientDetail({name,weeks,rutina,onBack}){
+  const [tab,setTab]=useState('med');
+  const [selEx,setSelEx]=useState(0);
+  const alerts=getAlerts(weeks);
+  const lat=weeks[weeks.length-1]||{};
+
+  const labels=weeks.map(w=>String(w.SemanID||'').slice(5)||'');
+  const pesos=weeks.map(w=>parseFloat(w.Peso)).filter((v,i)=>weeks[i].Peso&&!isNaN(v)&&v>0);
+  const pesoLabels=weeks.filter(w=>w.Peso&&!isNaN(parseFloat(w.Peso))&&parseFloat(w.Peso)>0).map(w=>String(w.SemanID||'').slice(5));
+  const cinturas=weeks.map(w=>parseFloat(w.Cintura)).filter((v,i)=>weeks[i].Cintura&&!isNaN(v)&&v>0);
+  const cinLabels=weeks.filter(w=>w.Cintura&&!isNaN(parseFloat(w.Cintura))&&parseFloat(w.Cintura)>0).map(w=>String(w.SemanID||'').slice(5));
+  const comps=weeks.map(w=>parseInt(String(w['%Comidas']||'0').replace('%',''))||0);
+
+  const exNames=useMemo(()=>{
+    const names=new Set();
+    weeks.forEach(w=>{if(w.E1RM){try{Object.keys(JSON.parse(w.E1RM)).forEach(k=>names.add(k));}catch(e){}}});
+    return Array.from(names).sort();
+  },[weeks]);
+
+  const e1rmHistory=useMemo(()=>{
+    const key=exNames[selEx];if(!key)return{data:[],labels:[]};
+    const d=[],l=[];
+    weeks.forEach(w=>{
+      if(!w.E1RM)return;
+      try{const parsed=JSON.parse(w.E1RM);if(parsed[key]){d.push(parsed[key]);l.push(String(w.SemanID||'').slice(5));}}catch(e){}
+    });
+    return{data:d,labels:l};
+  },[weeks,exNames,selEx]);
+
+  const svtData=weeks.map(w=>({
+    label:String(w.SemanID||'').slice(5),
+    sleep:parseInt(w.DiasSueno||0)||0,
+    toxics:parseInt(w.Toxicos||0)||0
+  }));
+
+  const tmpl=rutina?.Template?String(rutina.Template)+' kcal':'—';
+  const numSes=rutina?.NumSesiones||'—';
+
+  const DTABS=[{id:'med',l:'📈 Tendencias'},{id:'ent',l:'🏋️ Entreno'},{id:'hab',l:'💭 Sensaciones'}];
+
+  return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
+    // Header
+    h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'14px 18px',position:'sticky',top:0,zIndex:10}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'4px'}},
+        h('button',{onClick:onBack,style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',color:'#111',padding:0}},'←'),
+        h('div',{style:{fontSize:'18px',fontWeight:'800'}},name)
+      ),
+      h('div',{style:{fontSize:'11px',color:'#999',marginLeft:'30px'}},tmpl,' · ',numSes,' sesiones · Última: ',lat?.Semana||'—')
+    ),
+    h('div',{style:{padding:'12px',paddingBottom:'20px'}},
+      // Alertas
+      alerts.length>0&&h('div',{style:{marginBottom:'10px'}},
+        alerts.map((a,i)=>h('div',{key:i,style:{background:ALERT_BG[a.lvl]||'#F8F8F8',border:'1px solid '+(ALERT_COLOR[a.lvl]||'#ddd'),borderRadius:'8px',padding:'10px 12px',marginBottom:'6px',display:'flex',gap:'8px',alignItems:'flex-start'}},
+          h('span',{style:{fontSize:'14px'}},a.lvl==='red'?'🔴':a.lvl==='yellow'?'🟡':'ℹ️'),
+          h('span',{style:{fontSize:'12px',color:'#111',fontWeight:'500',lineHeight:'1.4'}},a.txt)
+        ))
+      ),
+      // Métricas rápidas última semana
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'5px',marginBottom:'10px'}},
+        [
+          {l:'Peso',v:lat.Peso?lat.Peso+' kg':'—',c:'#111'},
+          {l:'Cintura',v:lat.Cintura?lat.Cintura+' cm':'—',c:'#111'},
+          {l:'Comidas',v:lat['%Comidas']||'—',c:parseInt(String(lat['%Comidas']||'0'))<60?R:parseInt(String(lat['%Comidas']||'0'))<80?O:G},
+          {l:'Sueño',v:lat.DiasSueno!=null?lat.DiasSueno+'/7':'—',c:G},
+          {l:'Tóxicos',v:lat.Toxicos!=null?lat.Toxicos+'d':'—',c:parseInt(lat.Toxicos||0)>=4?O:'#111'},
+        ].map((m,i)=>h('div',{key:i,style:{background:'#fff',borderRadius:'8px',padding:'8px 4px',textAlign:'center',border:'1px solid rgba(0,0,0,0.08)'}},
+          h('div',{style:{fontSize:'13px',fontWeight:'800',color:m.c}},m.v),
+          h('div',{style:{fontSize:'9px',color:'#999',marginTop:'1px'}},m.l)
+        ))
+      ),
+      // Tabs
+      h('div',{style:{display:'flex',background:'#fff',borderRadius:'10px',padding:'3px',marginBottom:'10px',border:'1px solid rgba(0,0,0,0.08)'}},
+        DTABS.map(t=>h('button',{key:t.id,onClick:()=>setTab(t.id),style:{flex:1,padding:'8px 4px',fontSize:'11px',fontWeight:tab===t.id?'700':'400',cursor:'pointer',borderRadius:'8px',border:'none',background:tab===t.id?'#111':'transparent',color:tab===t.id?'#fff':'#999',transition:'all 0.15s'}},t.l))
+      ),
+
+      // TAB: TENDENCIAS
+      tab==='med'&&h('div',null,
+        h('div',{style:card},
+          h('div',{style:{...lbl,marginBottom:'8px'}},'Peso — evolución'),
+          pesos.length>=2?h(LineChart,{data:pesos,color:G,h:110,labels:pesoLabels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Faltan más semanas'),
+          pesos.length>=2&&h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},
+            h('span',{style:{color:'#666'}},'Inicio: '+pesos[0]+' kg'),
+            h('span',{style:{color:G,fontWeight:'700'}},'Actual: '+pesos[pesos.length-1]+' kg')
+          )
+        ),
+        h('div',{style:card},
+          h('div',{style:{...lbl,marginBottom:'8px'}},'Cintura — evolución'),
+          cinturas.length>=2?h(LineChart,{data:cinturas,color:B,h:110,labels:cinLabels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Faltan más semanas'),
+          cinturas.length>=2&&h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},
+            h('span',{style:{color:'#666'}},'Inicio: '+cinturas[0]+' cm'),
+            h('span',{style:{color:B,fontWeight:'700'}},'Actual: '+cinturas[cinturas.length-1]+' cm')
+          )
+        ),
+        h('div',{style:card},
+          h('div',{style:{...lbl,marginBottom:'8px'}},'Compliance — comidas semana a semana'),
+          comps.length>=2?h(LineChart,{data:comps,color:O,h:90,labels:labels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'16px'}},'Faltan más semanas')
+        )
+      ),
+
+      // TAB: ENTRENAMIENTO
+      tab==='ent'&&h('div',null,
+        exNames.length===0
+          ?h('div',{style:{...card,textAlign:'center',padding:'30px',color:'#999'}},
+              h('div',{style:{fontSize:'30px',marginBottom:'8px'}},'🏋️'),
+              h('div',null,'Sin datos de entrenamiento todavía'),
+              h('div',{style:{fontSize:'12px',marginTop:'4px'}},'El asesorado debe guardar semanas con reps cargadas')
+            )
+          :h('div',null,
+              h('div',{style:card},
+                h('div',{style:lbl},'e1RM estimado — seleccioná ejercicio'),
+                h('select',{value:selEx,onChange:e=>setSelEx(parseInt(e.target.value)),style:{width:'100%',padding:'10px',border:'1px solid rgba(0,0,0,0.1)',borderRadius:'8px',fontSize:'13px',marginBottom:'10px',background:'#fff'}},
+                  exNames.map((n,i)=>h('option',{key:i,value:i},n))
+                ),
+                e1rmHistory.data.length>=2
+                  ?h('div',null,
+                      h(LineChart,{data:e1rmHistory.data,color:G,h:110,labels:e1rmHistory.labels}),
+                      h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},
+                        h('span',{style:{color:'#666'}},'Inicio: '+e1rmHistory.data[0]+' kg'),
+                        h('span',{style:{color:G,fontWeight:'700'}},'Actual: '+e1rmHistory.data[e1rmHistory.data.length-1]+' kg')
+                      )
+                    )
+                  :h('div',{style:{textAlign:'center',color:'#bbb',padding:'20px',fontSize:'12px'}},'Guardá al menos 2 semanas con reps cargadas')
+              )
+            )
+      ),
+
+      // TAB: SENSACIONES
+      tab==='hab'&&h('div',null,
+        h('div',{style:card},
+          h('div',{style:{...lbl,marginBottom:'8px'}},'Sueño vs Tóxicos'),
+          h('div',{style:{display:'flex',gap:'12px',marginBottom:'6px'}},
+            h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'8px',height:'8px',background:G,borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Noches ≥7hs')),
+            h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'8px',height:'8px',background:R,borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Días con tóxicos'))
+          ),
+          svtData.length>=2?h(DualBarChart,{data:svtData}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'16px'}},'Faltan más semanas')
+        ),
+        h('div',{style:card},
+          h('div',{style:{...lbl,marginBottom:'10px'}},'Sensaciones semana a semana'),
+          h('div',{style:{overflowX:'auto'}},
+            h('table',{style:{width:'100%',borderCollapse:'collapse',fontSize:'11px'}},
+              h('thead',null,
+                h('tr',null,
+                  ['Semana','Energía','Hambre','Digestión','Estrés'].map((col,i)=>
+                    h('th',{key:i,style:{textAlign:'left',padding:'4px 8px',color:'#999',fontWeight:'600',borderBottom:'1px solid rgba(0,0,0,0.08)',whiteSpace:'nowrap'}},col)
+                  )
+                )
+              ),
+              h('tbody',null,
+                weeks.slice().reverse().map((w,i)=>
+                  h('tr',{key:i,style:{borderBottom:'1px solid rgba(0,0,0,0.04)'}},
+                    h('td',{style:{padding:'6px 8px',color:'#666',whiteSpace:'nowrap'}},String(w.SemanID||'').slice(5)||w.Semana||'—'),
+                    ['Energia','Hambre','Digestion','Estres'].map((k,j)=>
+                      h('td',{key:j,style:{padding:'6px 8px'}},h(SensBadge,{val:w[k]}))
+                    )
+                  )
+                )
+              )
+            )
+          )
+        ),
+        weeks.some(w=>w.Nota)&&h('div',{style:card},
+          h('div',{style:{...lbl,marginBottom:'8px'}},'Notas del asesorado'),
+          weeks.filter(w=>w.Nota).slice().reverse().map((w,i)=>
+            h('div',{key:i,style:{padding:'10px',background:'#F8F8F8',borderRadius:'8px',marginBottom:'6px'}},
+              h('div',{style:{fontSize:'10px',color:'#999',marginBottom:'4px'}},String(w.SemanID||'').slice(5)||w.Semana||''),
+              h('div',{style:{fontSize:'13px',color:'#111',lineHeight:'1.5'}},w.Nota)
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
+// ── APP ───────────────────────────────────────────────────────────────
+function App(){
+  const [unlocked,setUnlocked]=useState(()=>sessionStorage.getItem('coach_ok')==='1');
+  const [loading,setLoading]=useState(false);
+  const [data,setData]=useState({});
+  const [rutinas,setRutinas]=useState([]);
+  const [selected,setSelected]=useState(null);
+  const [error,setError]=useState(null);
+
+  const unlock=()=>{sessionStorage.setItem('coach_ok','1');setUnlocked(true);};
+
+  const loadData=()=>{
+    setLoading(true);setError(null);
+    Promise.all([
+      fetch(SCRIPT_URL+'?action=reportes').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=rutinas').then(r=>r.json()).catch(()=>[])
+    ]).then(([reportes,ruts])=>{
+      const grouped={};
+      (reportes||[]).forEach(row=>{
+        const name=String(row.Asesorado||'').trim();if(!name)return;
+        if(!grouped[name])grouped[name]=[];
+        grouped[name].push(row);
+      });
+      Object.values(grouped).forEach(w=>w.sort((a,b)=>String(a.SemanID||'').localeCompare(String(b.SemanID||''))));
+      setData(grouped);setRutinas(ruts||[]);
+    }).catch(()=>setError('Error al cargar datos. Verificá tu conexión.'))
+    .finally(()=>setLoading(false));
+  };
+
+  useEffect(()=>{if(unlocked)loadData();},[unlocked]);
+
+  if(!unlocked)return h(PinScreen,{onUnlock:unlock});
+  if(loading)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff'}},
+    h('div',{style:{fontSize:'36px',marginBottom:'12px'}},'⏳'),
+    h('div',{style:{fontSize:'14px',color:'#999'}}),'Cargando datos...'
+  );
+  if(error)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff',padding:'40px'}},
+    h('div',{style:{fontSize:'36px',marginBottom:'12px'}},'⚠️'),
+    h('div',{style:{fontSize:'14px',color:'#666',marginBottom:'20px',textAlign:'center'}},error),
+    h('button',{onClick:loadData,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'12px 24px',fontSize:'14px',cursor:'pointer'}},'Reintentar')
+  );
+  if(selected)return h(ClientDetail,{
+    name:selected,
+    weeks:data[selected]||[],
+    rutina:rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()),
+    onBack:()=>setSelected(null)
+  });
+  return h(ClientList,{data,rutinas,onSelect:setSelected,onRefresh:loadData});
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(h(App,null));
+</script>
+</body>
+</html>
