@@ -525,7 +525,11 @@ function App(){
             if(bestReps>0)e1rmSnap[ex.n+'_'+sessId]=calcE1RM(curKg,bestReps);
           });
         });
-      }catch(err){}
+      }catch(err){console.error('e1rm error:',err);}
+      // DIAGNÓSTICO TEMPORAL: mostrar qué hay en e1rmSnap
+      console.log('e1rmSnap:',JSON.stringify(e1rmSnap));
+      console.log('sessionRepsRef:',JSON.stringify(sessionRepsRef.current));
+      console.log('curSR:',JSON.stringify(curSR));
       fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         user,wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
         neat:hab.neat,toxics:toxC,
