@@ -385,6 +385,8 @@ function App(){
   const [hab,setHab]=useState(iH());
   const [sessionReps,setSessionReps]=useState({});
   const [sessionKg,setSessionKg]=useState({});
+  const sessionRepsRef=useRef({});
+  useEffect(()=>{sessionRepsRef.current=sessionReps;},[sessionReps]);
   const [loadingExes,setLoadingExes]=useState(false);
   const [menusVer,setMenusVer]=useState(0);
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
@@ -487,8 +489,9 @@ function App(){
     setSaving(true);
     try{
       // Auto-actualizar kg cuando se alcanzó el techo de reps
+      const curSR=sessionRepsRef.current;
       const newSK={...sessionKg};
-      Object.entries(sessionReps).forEach(([sessId,sessData])=>{
+      Object.entries(curSR).forEach(([sessId,sessData])=>{
         Object.entries(sessData).forEach(([exId,reps])=>{
           const ex=exes.find(e=>e.id===parseInt(exId));if(!ex)return;
           const curKg=(sessionKg[sessId]?.[exId])||ex.kg;
@@ -501,14 +504,14 @@ function App(){
       });
       setSessionKg(newSK);
       localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(newSK));
-      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:sessionReps,sk:newSK,e:exes,pp,pc,pC,pS,neat:hab.neat,toxics:toxC,sens:hab.sens||{}};
+      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,sk:newSK,e:exes,pp,pc,pC,pS,neat:hab.neat,toxics:toxC,sens:hab.sens||{}};
       localStorage.setItem(SK(wk.id,user),JSON.stringify(d));
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
       if(!list.includes(wk.id)){list.push(wk.id);localStorage.setItem(HK(user),JSON.stringify(list));}
       setSaved(true);loadH();
       // Calcular e1RM snapshot para enviar al sheet
       const e1rmSnap={};
-      Object.entries(sessionReps).forEach(([sessId,sessData])=>{
+      Object.entries(curSR).forEach(([sessId,sessData])=>{
         Object.entries(sessData).forEach(([exId,reps])=>{
           const ex=exes.find(e=>e.id===parseInt(exId));if(!ex)return;
           const curKg=(newSK[sessId]?.[exId])||ex.kg;
