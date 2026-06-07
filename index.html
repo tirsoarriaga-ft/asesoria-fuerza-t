@@ -89,6 +89,16 @@ function getWk(off=0){
 }
 function calcE1RM(kg,reps){if(!reps||reps<=0)return kg;return Math.round(kg*(1+reps/30)*10)/10;}
 
+// Semana secuencial basada en contador localStorage — sin cálculos de fechas
+function getWkForNum(user,num){
+  const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
+  const startMon=new Date(startId+'T12:00:00');
+  const wkMon=new Date(startMon);wkMon.setDate(startMon.getDate()+(num-1)*7);
+  const wkSun=new Date(wkMon);wkSun.setDate(wkMon.getDate()+6);
+  const fmt=d=>d.toLocaleDateString('es-AR',{day:'numeric',month:'short'});
+  return{id:`sem_${num}`,num,label:`${fmt(wkMon)} — ${fmt(wkSun)}`};
+}
+
 // ── CHARTS ────────────────────────────────────────────────────────────
 function LineChart({data,color,h:ht=140,labels}){
   if(!data||data.length<2)return null;
@@ -376,7 +386,7 @@ function App(){
   const [user,setUser]=useState(null);
   const [tab,setTab]=useState('d');
   const [selExOpt,setSelExOpt]=useState(0);
-  const [wk,setWk]=useState(getWk());
+  const [wk,setWk]=useState({id:'sem_1',num:1,label:'...'});
   const [saving,setSaving]=useState(false);
   const [saved,setSaved]=useState(false);
   const [hist,setHist]=useState([]);
@@ -386,15 +396,7 @@ function App(){
   const [sessionReps,setSessionReps]=useState({});
   const [sessionKg,setSessionKg]=useState({});
   const sessionRepsRef=useRef({});
-
-  // Wrapper que actualiza ref y state al mismo tiempo (sin depender de useEffect)
-  const updateSessionReps=useCallback((updater)=>{
-    setSessionReps(prev=>{
-      const next=typeof updater==='function'?updater(prev):updater;
-      sessionRepsRef.current=next;
-      return next;
-    });
-  },[]);
+  sessionRepsRef.current=sessionReps; // actualización sincrónica en cada render — sin useEffect
   const [loadingExes,setLoadingExes]=useState(false);
   const [menusVer,setMenusVer]=useState(0);
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
@@ -416,6 +418,12 @@ function App(){
   // Efecto 1: cargar ejercicios
   useEffect(()=>{
     if(!user)return;
+    // Inicializar semana secuencial
+    if(!localStorage.getItem(`ase_${user}_startdate`)){
+      localStorage.setItem(`ase_${user}_startdate`,new Date().toISOString().split('T')[0]);
+    }
+    const wkNum=parseInt(localStorage.getItem(`ase_${user}_wknum`))||1;
+    setWk(getWkForNum(user,wkNum));
     setCfg(()=>{try{return JSON.parse(localStorage.getItem(CFG_KEY(user)))||defCfg;}catch(e){return defCfg;}});
     try{const sk=localStorage.getItem(`ase_${user}_sessKg`);if(sk)setSessionKg(JSON.parse(sk)||{});}catch(e){}
     setExesReady(false);setLoadingExes(true);
@@ -533,11 +541,7 @@ function App(){
             if(bestReps>0)e1rmSnap[ex.n+'_'+sessId]=calcE1RM(curKg,bestReps);
           });
         });
-      }catch(err){console.error('e1rm error:',err);}
-      // DIAGNÓSTICO TEMPORAL: mostrar qué hay en e1rmSnap
-      console.log('e1rmSnap:',JSON.stringify(e1rmSnap));
-      console.log('sessionRepsRef:',JSON.stringify(sessionRepsRef.current));
-      console.log('curSR:',JSON.stringify(curSR));
+      }catch(err){}
       fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         user,wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
         neat:hab.neat,toxics:toxC,
@@ -549,13 +553,9 @@ function App(){
   }
   function newWeek(){
     if(!saved)save();
-    // Avanzar relativo a la semana actual, no a hoy
-    const curMon=new Date(wk.id+'T00:00:00');
-    const nextMon=new Date(curMon);nextMon.setDate(curMon.getDate()+7);
-    const nextSun=new Date(nextMon);nextSun.setDate(nextMon.getDate()+6);
-    const fmt=d=>d.toLocaleDateString('es-AR',{day:'numeric',month:'short'});
-    const nw={id:nextMon.toISOString().split('T')[0],label:`${fmt(nextMon)} — ${fmt(nextSun)}`};
-    setWk(nw);
+    const nextNum=(parseInt(localStorage.getItem(`ase_${user}_wknum`))||1)+1;
+    localStorage.setItem(`ase_${user}_wknum`,String(nextNum));
+    setWk(getWkForNum(user,nextNum));
     setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
   }
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
@@ -685,7 +685,7 @@ function App(){
     ),
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       tab==='d'&&h(Dashboard,null),
-      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps:updateSessionReps,sessionKg,setSessionKg}),
+      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer}),
       tab==='n'&&h(Registro,{key:'registro',nut,upN,tC,tA,pC,pA}),
       tab==='hb'&&h(Habitos,{key:'habitos',hab,setHab,setSaved,pp,pc,sC})
