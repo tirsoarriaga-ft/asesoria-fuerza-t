@@ -15,7 +15,7 @@ button,input,select,textarea{font-family:inherit;outline:none}
 <body>
 <div id="root"></div>
 <script>
-const {useState,useEffect,useRef,useMemo,createElement:h}=React;
+const {useState,useEffect,useRef,useMemo,useCallback,createElement:h}=React;
 const SCRIPT_URL='https://script.google.com/macros/s/AKfycbyl6jd9yfpugoHEGyu_j4SEq10e0WZlJd1qIokWUDFQWIRgVOixPZY7oZ3vpYw5I4Z8/exec';
 const G='#1D9E75',B='#378ADD',O='#D97706',R='#EF4444';
 const card={background:'#fff',border:'1px solid rgba(0,0,0,0.09)',borderRadius:'12px',padding:'14px',marginBottom:'10px'};
@@ -386,7 +386,15 @@ function App(){
   const [sessionReps,setSessionReps]=useState({});
   const [sessionKg,setSessionKg]=useState({});
   const sessionRepsRef=useRef({});
-  useEffect(()=>{sessionRepsRef.current=sessionReps;},[sessionReps]);
+
+  // Wrapper que actualiza ref y state al mismo tiempo (sin depender de useEffect)
+  const updateSessionReps=useCallback((updater)=>{
+    setSessionReps(prev=>{
+      const next=typeof updater==='function'?updater(prev):updater;
+      sessionRepsRef.current=next;
+      return next;
+    });
+  },[]);
   const [loadingExes,setLoadingExes]=useState(false);
   const [menusVer,setMenusVer]=useState(0);
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
@@ -677,7 +685,7 @@ function App(){
     ),
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       tab==='d'&&h(Dashboard,null),
-      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg}),
+      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps:updateSessionReps,sessionKg,setSessionKg}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer}),
       tab==='n'&&h(Registro,{key:'registro',nut,upN,tC,tA,pC,pA}),
       tab==='hb'&&h(Habitos,{key:'habitos',hab,setHab,setSaved,pp,pc,sC})
