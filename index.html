@@ -70,7 +70,7 @@ const DEFAULT_EXES=[
 ];
 const DIAS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 const DS=['L','M','X','J','V','S','D'];
-const rKg=kg=>Math.round(kg/2.5)*2.5;
+const rKg=kg=>Math.ceil(kg/2.5)*2.5;
 const SK=(id,u)=>`ase_${u}_${id}`;
 const HK=u=>`ase_${u}_hist`;
 const KG_KEY=(u,n)=>`ase_${u}_kg_${n}`;
@@ -155,7 +155,7 @@ function Login({onLogin}){
 }
 
 // ── TRAINING ──────────────────────────────────────────────────────────
-function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg}){
+function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist}){
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
   if(!cfg)cfg=defCfg;
   const [configuring,setConfiguring]=useState(false);
@@ -172,6 +172,21 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
 
   const getKg=ex=>(sessionKg?.[activeSess]?.[ex.id])||ex.kg;
   const getRep=(sess,exId,k)=>sessionReps?.[sess]?.[exId]?.[k]||'';
+
+  // e1RM de la sesión anterior para este ejercicio+sesión
+  const prevE1RM=(ex)=>{
+    if(!hist||hist.length===0)return null;
+    for(let i=hist.length-1;i>=0;i--){
+      const w=hist[i];
+      const reps=w.sr?.[activeSess]?.[ex.id];
+      if(!reps)continue;
+      const bestReps=Math.max(parseInt(reps.r1)||0,parseInt(reps.r2)||0);
+      if(bestReps===0)continue;
+      const kg=(w.sk?.[activeSess]?.[ex.id])||w.e?.find(e=>e.id===ex.id)?.kg||ex.kg;
+      return calcE1RM(kg,bestReps);
+    }
+    return null;
+  };
   const setRep=(sess,exId,k,v)=>{
     setSessionReps(prev=>{const next={...prev};if(!next[sess])next[sess]={};if(!next[sess][exId])next[sess][exId]={};next[sess][exId][k]=v;return next;});
     setSaved(false);
@@ -224,6 +239,9 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                 h('div',{style:{display:'flex',gap:'6px',marginTop:'6px',alignItems:'center'}},
                   h('span',{style:{fontSize:'11px',background:'#EBF4FF',color:B,padding:'2px 8px',borderRadius:'20px',fontWeight:'600'}},ex.m),
                   ex.url&&h('button',{onClick:()=>setTut(to?null:ex.id),style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'#999',textDecoration:'underline'}},to?'Cerrar':'Tutorial')
+                ),
+                prevE1RM(ex)&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'600'}},
+                  'Sem. ant.: '+prevE1RM(ex)+' kg e1RM'
                 )
               ),
               h('div',{style:{textAlign:'right'}},
@@ -685,7 +703,7 @@ function App(){
     ),
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       tab==='d'&&h(Dashboard,null),
-      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg}),
+      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer}),
       tab==='n'&&h(Registro,{key:'registro',nut,upN,tC,tA,pC,pA}),
       tab==='hb'&&h(Habitos,{key:'habitos',hab,setHab,setSaved,pp,pc,sC})
