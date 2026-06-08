@@ -212,7 +212,9 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     setSessionKg(newSK);localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(newSK));
     setEditKg(null);setSaved(false);
   };
-  const sessExes=(cfg.assign[activeSess]||[]).map(id=>exes.find(e=>e.id===id)).filter(Boolean);
+  const calExes=exes.filter(e=>String(e.m||'').toLowerCase()==='calentamiento'&&e.url);
+  const sessExes=(cfg.assign[activeSess]||[]).map(id=>exes.find(e=>e.id===id)).filter(e=>e&&String(e.m||'').toLowerCase()!=='calentamiento');
+  const [calOpen,setCalOpen]=useState(false);
 
   if(configuring)return h('div',null,
     h('div',{style:card},h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},h('div',{style:{fontSize:'15px',fontWeight:'800'}},'⚙️ Configurar rutina'),h('button',{onClick:()=>setConfiguring(false),style:{background:G,color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Listo ✓'))),
@@ -241,6 +243,22 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
         h('span',{style:{fontSize:'18px',fontWeight:'900'}},s),
         h('span',{style:{fontSize:'9px',color:'#999'}},(cfg.assign[s]||[]).length+' ej.')
       )))
+    ),
+    calExes.length>0&&h('div',{style:{...card,marginBottom:'10px'}},
+      h('div',{onClick:()=>setCalOpen(o=>!o),style:{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+          h('span',{style:{fontSize:'16px'}},'🔥'),
+          h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#111'}},'Calentamiento'),
+          h('span',{style:{fontSize:'11px',color:'#999'}},calExes.length+' opciones')
+        ),
+        h('span',{style:{fontSize:'12px',color:'#999',fontWeight:'700'}},calOpen?'▲':'▼')
+      ),
+      calOpen&&h('div',{style:{marginTop:'12px',display:'flex',gap:'8px',overflowX:'auto',paddingBottom:'4px'}},
+        calExes.map(ex=>h('a',{key:ex.id,href:ex.url,target:'_blank',rel:'noreferrer',style:{flexShrink:0,background:'#F5F5F5',border:'1px solid rgba(0,0,0,0.08)',borderRadius:'10px',padding:'10px 14px',textDecoration:'none',display:'flex',flexDirection:'column',gap:'4px',minWidth:'130px'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#111'}},ex.n),
+          h('div',{style:{fontSize:'11px',color:B,fontWeight:'600'}},'▶ Ver video')
+        ))
+      )
     ),
     sessExes.length===0
       ? h('div',{style:{...card,textAlign:'center',padding:'30px 20px'}},h('div',{style:{fontSize:'30px',marginBottom:'10px'}},'📋'),h('div',{style:{fontSize:'14px',color:'#999',fontWeight:'600'}},'Esta sesión no tiene ejercicios asignados'),h('button',{onClick:()=>setConfiguring(true),style:{marginTop:'12px',background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'10px 20px',fontSize:'13px',cursor:'pointer',fontWeight:'600'}},'⚙️ Configurar sesión'))
