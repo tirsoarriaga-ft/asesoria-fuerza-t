@@ -89,6 +89,45 @@ function getWk(off=0){
 }
 function calcE1RM(kg,reps){if(!reps||reps<=0)return kg;return Math.round(kg*(1+reps/30)*10)/10;}
 
+// Construye la base de alimentos desde la hoja Menus
+function buildFoodDB(rows){
+  const db={};
+  (rows||[]).forEach(row=>{
+    const clave=String(row.Clave||row.clave||'').trim().toLowerCase();
+    if(!clave)return;
+    db[clave]={
+      cat:String(row.Categoria||row.categoria||'P').toUpperCase().trim(),
+      n:String(row.Nombre||row.nombre||clave),
+      gB:parseFloat(row.Gramos2000||row.gramos2000)||0,
+      vU:String(row.UnidadVisual||row.unidadvisual||'').trim(),
+      vB:parseFloat(row.CantVisual||row.cantvisual)||1,
+    };
+  });
+  return db;
+}
+
+// Construye el array de comidas desde la fila de Dietas + food DB
+function parseDietas(row,foodDB){
+  const MEALS=[
+    {id:'desayuno',nom:'Desayuno',ic:'☀️',cols:['DesayunoA','DesayunoB','DesayunoC']},
+    {id:'almuerzo',nom:'Almuerzo',ic:'🌞',cols:['AlmuerzoA','AlmuerzoB','AlmuerzoC']},
+    {id:'merienda',nom:'Merienda',ic:'☕',cols:['MeriendaA','MeriendaB','MeriendaC']},
+    {id:'cena',nom:'Cena',ic:'🌙',cols:['CenaA','CenaB','CenaC']},
+    {id:'postentreno',nom:'Post-Entreno',ic:'💪',cols:['PostEntrenoA','PostEntrenoB','PostEntrenoC']},
+  ];
+  const OPT=['A','B','C'];
+  return MEALS.map(meal=>{
+    const ops=meal.cols.map((col,i)=>{
+      const val=String(row[col]||'').trim();if(!val)return null;
+      const items=val.split(',').map(k=>k.trim().toLowerCase()).filter(Boolean).map(k=>foodDB[k]).filter(Boolean);
+      if(!items.length)return null;
+      return{id:OPT[i],nom:'Opción '+OPT[i],items};
+    }).filter(Boolean);
+    if(!ops.length)return null;
+    return{...meal,ops};
+  }).filter(Boolean);
+}
+
 // Semana secuencial basada en contador localStorage — sin cálculos de fechas
 function getWkForNum(user,num){
   const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
@@ -477,6 +516,7 @@ function App(){
   // Efecto 2: cargar rutinas y menús después de ejercicios
   useEffect(()=>{
     if(!user||!exesReady)return;
+    // Rutinas → sesiones y ejercicios
     fetch(SCRIPT_URL+'?action=rutinas')
       .then(r=>r.json())
       .then(rutinas=>{
@@ -493,34 +533,23 @@ function App(){
           if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
         }
       }).catch(()=>{});
-    fetch(SCRIPT_URL+'?action=menus')
-      .then(r=>r.json())
-      .then(rows=>{
-        if(rows&&rows.length>0){
-          const MICONS={desayuno:'☀️',almuerzo:'🌞',merienda:'☕',cena:'🌙',postentreno:'💪'};
-          const MNAMES={desayuno:'Desayuno',almuerzo:'Almuerzo',merienda:'Merienda',cena:'Cena',postentreno:'Post-Entreno'};
-          const MORDER=['desayuno','almuerzo','merienda','cena','postentreno'];
-          const map={};
-          rows.forEach(row=>{
-            const raw=String(row.Comida||row.comida||'').trim();
-            const ck=raw.toLowerCase().replace(/\s+/g,'').replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/-/g,'');
-            const opId=String(row.Opcion||row['Opción']||'A').toUpperCase().trim();
-            const nomOp=String(row.NombreOpcion||row['NombreOpción']||opId).trim();
-            const cat=String(row.Categoria||row['Categoría']||'P').toUpperCase().trim();
-            const alimento=String(row.Alimento||row.alimento||'').trim();
-            const gB=parseFloat(row.Gramos2000)||0;const vU=String(row.UnidadVisual||'').trim();const vB=parseFloat(row.CantVisual)||1;
-            if(!ck||!alimento)return;
-            if(!map[ck])map[ck]={id:ck,nom:MNAMES[ck]||raw,ic:MICONS[ck]||'🍽️',ops:[]};
-            let op=map[ck].ops.find(o=>o.id===opId);
-            if(!op){op={id:opId,nom:nomOp,items:[]};map[ck].ops.push(op);}
-            op.items.push({cat,n:alimento,gB,vB,vU});
-          });
-          Object.values(map).forEach(m=>m.ops.sort((a,b)=>a.id.localeCompare(b.id)));
-          const ordered=[...MORDER.filter(k=>map[k]),...Object.keys(map).filter(k=>!MORDER.includes(k))].map(k=>map[k]);
-          localStorage.setItem(`ase_${user}_menus`,JSON.stringify(ordered));
+    // Alimentos (hoja Menus) + Dietas en paralelo → construye la dieta del asesorado
+    Promise.all([
+      fetch(SCRIPT_URL+'?action=menus').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=dietas').then(r=>r.json()).catch(()=>[])
+    ]).then(([menusRows,dietasRows])=>{
+      const foodDB=buildFoodDB(menusRows||[]);
+      const dietaFila=(dietasRows||[]).find(r=>String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase());
+      if(dietaFila){
+        const tmpl=parseInt(dietaFila.Template);
+        if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
+        const comidas=parseDietas(dietaFila,foodDB);
+        if(comidas.length>0){
+          localStorage.setItem(`ase_${user}_menus`,JSON.stringify(comidas));
           setMenusVer(v=>v+1);
         }
-      }).catch(()=>{});
+      }
+    }).catch(()=>{});
   },[user,exesReady]);
 
   const login=name=>{localStorage.setItem(USER_KEY,name);setUser(name);};
