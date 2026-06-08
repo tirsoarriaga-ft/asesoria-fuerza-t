@@ -27,34 +27,7 @@ const TEMPLATES=[1500,1800,2100,2400,2700];
 const BASE_T=2000;
 function toFrac(n){if(n<=0)return'0';const w=Math.floor(n),d=n-w;const fs=[[0,''],[0.25,'¼'],[0.333,'⅓'],[0.5,'½'],[0.667,'⅔'],[0.75,'¾']];let best=fs[0];fs.forEach(f=>{if(Math.abs(d-f[0])<Math.abs(d-best[0]))best=f;});if(Math.abs(d-1)<Math.abs(d-best[0]))return String(w+1);return(w>0?String(w):'')+best[1]||'0';}
 function calcP(item,tmpl){if(item.fx)return{v:item.vB+' '+item.vU,g:null};const f=tmpl/BASE_T;return{v:toFrac(item.vB*f)+' '+item.vU,g:Math.round(item.gB*f)+'g'};}
-const COMIDAS=[
-  {id:'desayuno',nom:'Desayuno',ic:'☀️',ops:[
-    {id:'A',nom:'Avena con leche y frutas',items:[{cat:'P',n:'Leche descremada',gB:240,vB:1,vU:'taza'},{cat:'C',n:'Avena en copos',gB:50,vB:5,vU:'cdas'},{cat:'G',n:'Maní natural',gB:15,vB:1,vU:'cda'},{cat:'FV',n:'Banana',gB:120,vB:1,vU:'unidad'}]},
-    {id:'B',nom:'Tostadas con huevo y queso',items:[{cat:'P',n:'Huevo',gB:60,vB:1,vU:'unidad'},{cat:'C',n:'Pan integral',gB:60,vB:2,vU:'rebanadas'},{cat:'FV',n:'Fruta de estación',gB:150,vB:1,vU:'porción'}]},
-    {id:'C',nom:'Yogur con granola',items:[{cat:'P',n:'Yogur griego desc.',gB:200,vB:1,vU:'taza'},{cat:'C',n:'Granola sin azúcar',gB:40,vB:4,vU:'cdas'},{cat:'FV',n:'Frutos rojos',gB:100,vB:1,vU:'puñado'}]},
-  ]},
-  {id:'almuerzo',nom:'Almuerzo',ic:'🌞',ops:[
-    {id:'A',nom:'Arroz con pollo',items:[{cat:'P',n:'Pechuga de pollo',gB:150,vB:1,vU:'porción'},{cat:'C',n:'Arroz integral cocido',gB:150,vB:0.75,vU:'taza'},{cat:'G',n:'Aceite de oliva',gB:10,vB:2,vU:'cditas'},{cat:'FV',n:'Vegetales salteados',gB:200,vB:1,vU:'taza'}]},
-    {id:'B',nom:'Pasta con carne',items:[{cat:'P',n:'Carne magra picada',gB:120,vB:1,vU:'porción'},{cat:'C',n:'Pasta cocida',gB:150,vB:0.75,vU:'taza'},{cat:'G',n:'Aceite de oliva',gB:10,vB:2,vU:'cditas'},{cat:'FV',n:'Ensalada mixta',gB:200,vB:2,vU:'tazas'}]},
-    {id:'C',nom:'Lentejas con vegetales',items:[{cat:'P',n:'Lentejas cocidas',gB:200,vB:1,vU:'taza'},{cat:'C',n:'Papa cocida',gB:130,vB:1,vU:'unidad med.'},{cat:'G',n:'Aceite de oliva',gB:10,vB:2,vU:'cditas'},{cat:'FV',n:'Zanahoria y apio',gB:150,vB:1,vU:'taza'}]},
-  ]},
-  {id:'merienda',nom:'Merienda',ic:'☕',ops:[
-    {id:'A',nom:'Fruta con almendras',items:[{cat:'FV',n:'Fruta fresca',gB:200,vB:1.5,vU:'porciones'},{cat:'G',n:'Almendras',gB:20,vB:15,vU:'unidades'}]},
-    {id:'B',nom:'Yogur con nueces',items:[{cat:'P',n:'Yogur natural desc.',gB:180,vB:0.75,vU:'taza'},{cat:'G',n:'Nueces',gB:12,vB:3,vU:'unidades'}]},
-    {id:'C',nom:'Tostadas con queso',items:[{cat:'P',n:'Queso untable desc.',gB:45,vB:3,vU:'cdas'},{cat:'C',n:'Pan integral',gB:60,vB:2,vU:'rebanadas'}]},
-  ]},
-  {id:'cena',nom:'Cena',ic:'🌙',ops:[
-    {id:'A',nom:'Proteína con papa y vegetales',items:[{cat:'P',n:'Pescado o pollo',gB:180,vB:1,vU:'porción'},{cat:'C',n:'Papa cocida',gB:150,vB:1,vU:'unidad med.'},{cat:'G',n:'Aceite de oliva',gB:10,vB:2,vU:'cditas'},{cat:'FV',n:'Vegetales al vapor',gB:250,vB:1.5,vU:'tazas'}]},
-    {id:'B',nom:'Ensalada completa',items:[{cat:'P',n:'Atún o pollo',gB:150,vB:1,vU:'porción'},{cat:'C',n:'Garbanzos cocidos',gB:100,vB:0.5,vU:'taza'},{cat:'G',n:'Aceite y limón',gB:10,vB:1,vU:'cda'},{cat:'FV',n:'Hojas verdes y cherry',gB:300,vB:2,vU:'tazas'}]},
-  ]},
-];
-const POST_ENT={id:'postentreno',nom:'Post-Entreno',ic:'💪',nota:'Tomalo solo o sumalo a la comida siguiente al entreno',ops:[
-  {id:'A',nom:'Banana con proteína',items:[{cat:'P',n:'Proteína en polvo',gB:25,vB:1,vU:'medida',fx:true},{cat:'C',n:'Banana',gB:120,vB:1,vU:'unidad'}]},
-  {id:'B',nom:'Arroz con pollo',items:[{cat:'P',n:'Pechuga de pollo',gB:100,vB:1,vU:'porción'},{cat:'C',n:'Arroz cocido',gB:100,vB:0.5,vU:'taza'}]},
-]};
 const CAT={'P':{l:'Proteína',bg:'#EBF4FF',c:B},'C':{l:'Carbohidrato',bg:'#FEF3C7',c:O},'G':{l:'Grasa',bg:'#F3E8FF',c:'#7C3AED'},'FV':{l:'Fruta/Verdura',bg:'#EAF7F2',c:G}};
-
-// Sensaciones
 const SENS={
   energia:{l:'Energía',opts:['Alta toda la semana','Variable','Baja toda la semana'],colors:[G,O,R]},
   hambre:{l:'Hambre',opts:['No sentí','Sentí a veces','Bastante presente'],colors:[G,O,R]},
@@ -63,11 +36,7 @@ const SENS={
 };
 
 // ── DEFAULTS ──────────────────────────────────────────────────────────
-const DEFAULT_EXES=[
-  {id:1,n:'Press Banca',m:'Pecho',low:8,hi:12,kg:70,url:'',r1:'',r2:''},
-  {id:2,n:'Sentadilla',m:'Piernas',low:8,hi:12,kg:80,url:'',r1:'',r2:''},
-  {id:3,n:'Peso Muerto',m:'Espalda',low:6,hi:10,kg:100,url:'',r1:'',r2:''},
-];
+const DEFAULT_EXES=[];
 const DIAS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
 const DS=['L','M','X','J','V','S','D'];
 const rKg=kg=>Math.ceil(kg/2.5)*2.5;
@@ -326,7 +295,7 @@ function Diet({hab,user,menusVer}){
   const [tmpl,setTmplState]=useState(()=>parseInt(localStorage.getItem(tKey))||2100);
   const [opts,setOpts]=useState(()=>{try{return JSON.parse(localStorage.getItem(oKey))||{};}catch(e){return{};}});
   const [collapsed,setCollapsed]=useState({});
-  const comidas=useMemo(()=>{try{const s=localStorage.getItem(`ase_${user}_menus`);if(s){const p=JSON.parse(s);if(p&&p.length>0)return p;}}catch(e){}return COMIDAS;},[user,menusVer]);
+  const comidas=useMemo(()=>{try{const s=localStorage.getItem(`ase_${user}_menus`);if(s){const p=JSON.parse(s);if(p&&p.length>0)return p;}}catch(e){}return [];},[user,menusVer]);
   useEffect(()=>{const t=parseInt(localStorage.getItem(tKey));if(!isNaN(t)&&TEMPLATES.includes(t))setTmplState(t);},[menusVer]);
   const setO=(m,o)=>{const n={...opts,[m]:o};setOpts(n);localStorage.setItem(oKey,JSON.stringify(n));};
   const toggle=id=>setCollapsed(c=>({...c,[id]:!c[id]}));
@@ -354,20 +323,18 @@ function Diet({hab,user,menusVer}){
       )
     );
   }
-  const peId=opts['postentreno']||'A';const peOp=POST_ENT.ops.find(o=>o.id===peId)||POST_ENT.ops[0];
-  const hasSheetPE=comidas.find(c=>c.id==='postentreno');
   return h('div',null,
     h('div',{style:{...card,marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('div',null,h('div',{style:lbl},'Plan calórico'),h('div',{style:{fontSize:'20px',fontWeight:'800',color:G}},tmpl,' ',h('span',{style:{fontSize:'13px',color:'#999',fontWeight:'400'}},'kcal'))),
       h('div',{style:{fontSize:'11px',color:'#bbb'}},h('div',null,'Template asignado'),h('div',null,'por tu coach'))
     ),
-    comidas.map(c=>h(MC,{key:c.id,comida:c})),
-    !hasSheetPE&&h('div',{style:card},
-      h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}},h('span',{style:{fontSize:'20px'}},POST_ENT.ic),h('div',{style:{fontSize:'14px',fontWeight:'700'}},POST_ENT.nom)),
-      h('div',{style:{fontSize:'12px',color:O,fontWeight:'600',marginBottom:'10px',padding:'7px 10px',background:'#FEF3C7',borderRadius:'8px'}},POST_ENT.nota),
-      h('div',{style:{display:'flex',gap:'4px',marginBottom:'12px'}},POST_ENT.ops.map(o=>h('button',{key:o.id,onClick:()=>setO('postentreno',o.id),style:{flex:1,padding:'6px 2px',fontSize:'11px',fontWeight:peId===o.id?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',color:peId===o.id?'#111':'#999',background:peId===o.id?'#F0F0F0':'#fff',borderColor:peId===o.id?'rgba(0,0,0,0.2)':'rgba(0,0,0,0.08)'}},o.id+' — '+o.nom))),
-      peOp.items.map((item,i)=>h(IR,{key:i,item,last:i===peOp.items.length-1}))
-    )
+    comidas.length===0
+      ?h('div',{style:{...card,textAlign:'center',padding:'32px 20px'}},
+          h('div',{style:{fontSize:'32px',marginBottom:'10px'}},'🍽️'),
+          h('div',{style:{fontSize:'15px',fontWeight:'700',color:'#333',marginBottom:'6px'}},'Dieta no configurada'),
+          h('div',{style:{fontSize:'13px',color:'#999'}},'Tu coach todavía no cargó tu plan de alimentación.')
+        )
+      :comidas.map(c=>h(MC,{key:c.id,comida:c}))
   );
 }
 
