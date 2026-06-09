@@ -495,7 +495,7 @@ function App(){
           });
           setExes(exData);exesRef.current=exData;
         }
-      }).catch(()=>{}).finally(()=>{setLoadingExes(false);setExesReady(true);load(wk.id);});
+      }).catch(()=>{}).finally(()=>{setLoadingExes(false);setExesReady(true);load(`sem_${wkNum}`);});
   },[user]);
 
   // Efecto 2: cargar rutinas y menús después de ejercicios
