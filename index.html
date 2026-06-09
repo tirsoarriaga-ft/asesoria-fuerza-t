@@ -542,7 +542,13 @@ function App(){
   const logout=()=>{if(confirm('¿Cambiar nombre?')){localStorage.removeItem(USER_KEY);setUser(null);}};
 
   function load(id){
-    try{const r=localStorage.getItem(SK(id,user));if(r){const d=JSON.parse(r);setNut(d.n||iN());setHab(d.h||iH());if(d.sr)setSessionReps(d.sr);else setSessionReps({});setSaved(true);}else{setNut(iN());setHab(iH());setSessionReps({});setSaved(false);}}catch(e){setNut(iN());setHab(iH());setSessionReps({});setSaved(false);}
+    try{
+      const draft=localStorage.getItem(`ase_${user}_draft_${id}`);
+      const saved=localStorage.getItem(SK(id,user));
+      const d=draft?JSON.parse(draft):(saved?JSON.parse(saved):null);
+      if(d){setNut(d.n||iN());setHab(d.h||iH());if(d.sr)setSessionReps(d.sr);else setSessionReps({});setSaved(!!saved);}
+      else{setNut(iN());setHab(iH());setSessionReps({});setSaved(false);}
+    }catch(e){setNut(iN());setHab(iH());setSessionReps({});setSaved(false);}
     loadH();
   }
   function loadH(){
@@ -602,9 +608,17 @@ function App(){
     if(!saved)save();
     const nextNum=(parseInt(localStorage.getItem(`ase_${user}_wknum`))||1)+1;
     localStorage.setItem(`ase_${user}_wknum`,String(nextNum));
+    localStorage.removeItem(`ase_${user}_draft_sem_${nextNum}`);
     setWk(getWkForNum(user,nextNum));
     setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
   }
+  // Auto-guardar borrador en localStorage ante cualquier cambio
+  useEffect(()=>{
+    if(!user||!wk.id||!wk.num)return;
+    const draft={sr:sessionReps,n:nut,h:hab};
+    localStorage.setItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(draft));
+  },[sessionReps,nut,hab,user,wk.id]);
+
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
 
   // Chart data
