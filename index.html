@@ -480,6 +480,14 @@ function App(){
     }
     const wkNum=parseInt(localStorage.getItem(`ase_${user}_wknum`))||1;
     setWk(getWkForNum(user,wkNum));
+    // Restaurar borrador inmediatamente antes del fetch para no sobreescribir
+    try{
+      const wkId=`sem_${wkNum}`;
+      const draftStr=localStorage.getItem(`ase_${user}_draft_${wkId}`);
+      const savedStr=localStorage.getItem(SK(wkId,user));
+      const d=draftStr?JSON.parse(draftStr):(savedStr?JSON.parse(savedStr):null);
+      if(d){if(d.sr)setSessionReps(d.sr);if(d.n)setNut(d.n);if(d.h)setHab(d.h);setSaved(!!savedStr);}
+    }catch(e){}
     setCfg(()=>{try{return JSON.parse(localStorage.getItem(CFG_KEY(user)))||defCfg;}catch(e){return defCfg;}});
     try{const sk=localStorage.getItem(`ase_${user}_sessKg`);if(sk)setSessionKg(JSON.parse(sk)||{});}catch(e){}
     setExesReady(false);setLoadingExes(true);
@@ -495,7 +503,7 @@ function App(){
           });
           setExes(exData);exesRef.current=exData;
         }
-      }).catch(()=>{}).finally(()=>{setLoadingExes(false);setExesReady(true);load(`sem_${wkNum}`);});
+      }).catch(()=>{}).finally(()=>{setLoadingExes(false);setExesReady(true);draftReady.current=true;load(`sem_${wkNum}`);});
   },[user]);
 
   // Efecto 2: cargar rutinas y menús después de ejercicios
@@ -612,9 +620,11 @@ function App(){
     setWk(getWkForNum(user,nextNum));
     setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
   }
+  const draftReady=useRef(false);
+
   // Auto-guardar borrador en localStorage ante cualquier cambio
   useEffect(()=>{
-    if(!user||!wk.id||!wk.num)return;
+    if(!user||!wk.id||!wk.num||!draftReady.current)return;
     const draft={sr:sessionReps,n:nut,h:hab};
     localStorage.setItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(draft));
   },[sessionReps,nut,hab,user,wk.id]);
