@@ -163,7 +163,22 @@ function Login({onLogin}){
 }
 
 // ── TRAINING ──────────────────────────────────────────────────────────
-function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist}){
+function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk}){
+  const BLOQUES={
+    volumen:{label:'Volumen',color:'#1D9E75',emoji:'📈',hint:null},
+    carga:{label:'Carga',color:'#378ADD',emoji:'🏋️',hint:'kg sube cada 2 semanas'},
+    nm:{label:'Conexión NM',color:'#F59E0B',emoji:'⚡',hint:'Cortá la serie cuando las últimas reps van más lentas que las primeras'},
+    health:{label:'Health Phase',color:'#EF4444',emoji:'🏥',hint:'Sin progresión. Priorizá técnica y bienestar articular'},
+    man:{label:'Mantenimiento',color:'#6B7280',emoji:'🔄',hint:'Variables estables. Sin progresión'},
+    deporte:{label:'Deporte',color:'#8B5CF6',emoji:'🏀',hint:'Cortá la serie cuando las últimas reps van más lentas que las primeras'},
+  };
+  const bloque=(cfg?.bloque||'volumen').toLowerCase();
+  const bloqueInfo=BLOQUES[bloque]||BLOQUES.volumen;
+  const bloqueInicio=cfg?.bloqueInicio||1;
+  const wkNum=wk?.num||1;
+  const weeksInBlock=Math.max(0,wkNum-bloqueInicio);
+  const hasProgression=bloque==='volumen'||bloque==='carga';
+  const seriesBase=Math.min(4,Math.max(2,cfg?.series||2));
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
   if(!cfg)cfg=defCfg;
   const [configuring,setConfiguring]=useState(false);
@@ -181,7 +196,11 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const getKg=ex=>sessionKg?.[activeSess]?.[ex.id]; // undefined si no fue establecido
   const getRep=(sess,exId,k)=>sessionReps?.[sess]?.[exId]?.[k]||'';
 
-  const numSeries=Math.min(4,Math.max(2,cfg?.series||2));
+  const numSeries=(()=>{
+    if(bloque==='volumen')return Math.min(4,seriesBase+Math.floor(weeksInBlock/2));
+    return seriesBase;
+  })();
+  const semanasParaSiguienteSerie=(bloque==='volumen'&&numSeries<4)?(2-(weeksInBlock%2)||2):null;
   const SERIES_KEYS=['r1','r2','r3','r4'].slice(0,numSeries);
 
   // Mejor serie = siempre Serie 1
@@ -202,16 +221,24 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     setSessionReps(prev=>{const next={...prev};if(!next[sess])next[sess]={};if(!next[sess][exId])next[sess][exId]={};next[sess][exId][k]=v;return next;});
     setSaved(false);
   };
-  // Progresión semanal basada en Serie 1
+  const canIncreaseKg=ex=>{
+    if(!hasProgression)return false;
+    if(bloque==='carga'){
+      const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${activeSess}_${ex.id}`))||0;
+      return wkNum>=lastUp+2;
+    }
+    return true;
+  };
   const nKg=ex=>{
     const curKg=getKg(ex);if(!curKg)return null;
+    if(!canIncreaseKg(ex))return null;
     const r1=parseInt(sessionReps?.[activeSess]?.[ex.id]?.r1)||0;
     return r1>=ex.hi?rKg(curKg*1.05):null;
   };
-  // Sugerencia intraserie: si serie anterior < mitad del rango → bajar 10%
+  // Sugerencia intraserie: si serie anterior ≤ mitad del rango → bajar 10%
   const suggestedKg=(ex,serieIdx)=>{
     if(serieIdx===0)return null;
-    const prevKey='r'+serieIdx; // r1 para serie 2, r2 para serie 3, etc.
+    const prevKey='r'+serieIdx;
     const prevReps=parseInt(sessionReps?.[activeSess]?.[ex.id]?.[prevKey])||0;
     if(!prevReps)return null;
     const mitad=(ex.low+ex.hi)/2;
@@ -256,6 +283,20 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
         h('span',{style:{fontSize:'18px',fontWeight:'900'}},s),
         h('span',{style:{fontSize:'9px',color:'#999'}},(cfg.assign[s]||[]).length+' ej.')
       )))
+    ),
+    h('div',{style:{...card,marginBottom:'10px',background:bloqueInfo.color+'12',border:'1px solid '+bloqueInfo.color+'30'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('div',null,
+          h('div',{style:{fontSize:'13px',fontWeight:'800',color:bloqueInfo.color}},bloqueInfo.emoji+' '+bloqueInfo.label),
+          h('div',{style:{fontSize:'11px',color:'#666',marginTop:'2px'}},'Semana '+(weeksInBlock+1)+' del bloque')
+        ),
+        bloque==='volumen'&&h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'800',color:bloqueInfo.color}},numSeries+' series'),
+          semanasParaSiguienteSerie&&h('div',{style:{fontSize:'10px',color:'#999'}},'+1 en '+semanasParaSiguienteSerie+' sem')
+        ),
+        bloque==='carga'&&h('div',{style:{textAlign:'right',fontSize:'11px',color:bloqueInfo.color,fontWeight:'700'}},'kg sube c/2 sem')
+      ),
+      bloqueInfo.hint&&(bloque==='nm'||bloque==='deporte'||bloque==='health'||bloque==='man')&&h('div',{style:{marginTop:'8px',fontSize:'11px',color:bloqueInfo.color,fontWeight:'600',padding:'6px 8px',background:bloqueInfo.color+'18',borderRadius:'6px'}},bloqueInfo.hint)
     ),
     calExes.length>0&&h('div',{style:{...card,marginBottom:'10px'}},
       h('div',{onClick:()=>setCalOpen(o=>!o),style:{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}},
@@ -541,7 +582,7 @@ function App(){
             const norm=s=>s.trim().toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');
             assign[s]=nombres.map(nombre=>{const ex=exesRef.current.find(e=>norm(e.n)===norm(nombre));return ex?ex.id:null;}).filter(Boolean);
           });
-          const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2))};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
+          const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:String(fila.Bloque||'volumen').toLowerCase().trim(),bloqueInicio:parseInt(fila.BloqueInicio)||1};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
           const tmpl=parseInt(fila.Template);
           if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
         }
@@ -586,13 +627,23 @@ function App(){
     try{
       // Auto-actualizar kg cuando se alcanzó el techo de reps
       const curSR=sessionRepsRef.current;
+      const bloqueActual=(cfg?.bloque||'volumen').toLowerCase();
+      const hasProgressionSave=bloqueActual==='volumen'||bloqueActual==='carga';
       const newSK={...sessionKg};
       Object.entries(curSR).forEach(([sessId,sessData])=>{
         Object.entries(sessData).forEach(([exId,reps])=>{
           const ex=exes.find(e=>e.id===parseInt(exId));if(!ex)return;
           const curKg=(sessionKg[sessId]?.[exId])||ex.kg;
-          const r1=parseInt(reps.r1)||0; // progresión basada en Serie 1
-          if(r1>=ex.hi){
+          if(!hasProgressionSave)return;
+          const r1=parseInt(reps.r1)||0;
+          if(r1<ex.hi)return;
+          if(bloqueActual==='carga'){
+            const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${sessId}_${exId}`))||0;
+            if(wk.num<lastUp+2)return;
+            if(!newSK[sessId])newSK[sessId]={};
+            newSK[sessId][exId]=rKg(curKg*1.05);
+            localStorage.setItem(`ase_${user}_lastKgUp_${sessId}_${exId}`,String(wk.num));
+          }else{
             if(!newSK[sessId])newSK[sessId]={};
             newSK[sessId][exId]=rKg(curKg*1.05);
           }
@@ -772,7 +823,7 @@ function App(){
     ),
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       tab==='d'&&h(Dashboard,null),
-      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist}),
+      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer}),
       tab==='n'&&h(Registro,{key:'registro',nut,upN,tC,tA,pC,pA}),
       tab==='hb'&&h(Habitos,{key:'habitos',hab,setHab,setSaved,pp,pc,sC})
