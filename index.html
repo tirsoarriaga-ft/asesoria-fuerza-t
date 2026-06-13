@@ -372,11 +372,12 @@ function Diet({hab,user,menusVer}){
   const tKey=`ase_${user}_tmpl`;const oKey=`ase_${user}_opts`;
   const [tmpl,setTmplState]=useState(()=>parseInt(localStorage.getItem(tKey))||2100);
   const [opts,setOpts]=useState(()=>{try{return JSON.parse(localStorage.getItem(oKey))||{};}catch(e){return{};}});
-  const [collapsed,setCollapsed]=useState({});
+  const cKey=`ase_${user}_diet_collapsed`;
+  const [collapsed,setCollapsed]=useState(()=>{try{return JSON.parse(localStorage.getItem(cKey))||{};}catch(e){return{};}});
+  const toggle=id=>setCollapsed(c=>{const n={...c,[id]:c[id]===undefined?true:!c[id]};localStorage.setItem(cKey,JSON.stringify(n));return n;});
   const comidas=useMemo(()=>{try{const s=localStorage.getItem(`ase_${user}_menus`);if(s){const p=JSON.parse(s);if(p&&p.length>0)return p;}}catch(e){}return [];},[user,menusVer]);
   useEffect(()=>{const t=parseInt(localStorage.getItem(tKey));if(!isNaN(t)&&TEMPLATES.includes(t))setTmplState(t);},[menusVer]);
   const setO=(m,o)=>{const n={...opts,[m]:o};setOpts(n);localStorage.setItem(oKey,JSON.stringify(n));};
-  const toggle=id=>setCollapsed(c=>({...c,[id]:!c[id]}));
   const pesoVal=parseFloat(hab.meds.find(m=>m.p&&parseFloat(m.p)>0)?.p)||70;
   const wML=Math.round(pesoVal*40/4);const sSalt=(pesoVal*40/4/1000).toFixed(1);
 
@@ -388,7 +389,7 @@ function Diet({hab,user,menusVer}){
     );
   }
   function MC({comida}){
-    const optId=opts[comida.id]||'A';const op=comida.ops.find(o=>o.id===optId)||comida.ops[0];const isC=collapsed[comida.id];
+    const optId=opts[comida.id]||'A';const op=comida.ops.find(o=>o.id===optId)||comida.ops[0];const isC=collapsed[comida.id]===undefined?true:collapsed[comida.id];
     return h('div',{style:card},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer',marginBottom:isC?0:'12px'},onClick:()=>toggle(comida.id)},
         h('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},h('span',{style:{fontSize:'20px'}},comida.ic),h('div',null,h('div',{style:{fontSize:'14px',fontWeight:'700'}},comida.nom),h('div',{style:{fontSize:'11px',color:'#999',marginTop:'1px'}},op.nom))),
