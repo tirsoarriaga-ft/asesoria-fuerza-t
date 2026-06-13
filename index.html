@@ -116,9 +116,9 @@ function getWkForNum(user,num){
 }
 
 // ── CHARTS ────────────────────────────────────────────────────────────
-function LineChart({data,color,h:ht=140,labels}){
+function LineChart({data,color,h:ht=140,labels,pointLabels}){
   if(!data||data.length<2)return null;
-  const W=300,H=ht,pad={t:10,b:24,l:32,r:10};
+  const W=300,H=ht,pad={t:pointLabels?22:10,b:24,l:pointLabels?10:32,r:10};
   const iW=W-pad.l-pad.r,iH=H-pad.t-pad.b;
   const mn=Math.min(...data)*0.97,mx=Math.max(...data)*1.03;
   const x=i=>pad.l+i/(data.length-1)*iW;
@@ -126,13 +126,14 @@ function LineChart({data,color,h:ht=140,labels}){
   const pts=data.map((v,i)=>`${x(i)},${y(v)}`).join(' ');
   const poly=pts+` ${x(data.length-1)},${H-pad.b} ${x(0)},${H-pad.b}`;
   const step=Math.ceil(data.length/5);
-  return h('svg',{width:'100%',viewBox:`0 0 ${W} ${H}`,style:{display:'block'}},
+  return h('svg',{width:'100%',viewBox:`0 0 ${W} ${H}`,style:{display:'block',overflow:'visible'}},
     h('polygon',{points:poly,fill:color,opacity:'0.08'}),
     h('polyline',{points:pts,fill:'none',stroke:color,strokeWidth:'2',strokeLinejoin:'round'}),
     data.map((v,i)=>(i%step===0||i===data.length-1)?h('circle',{key:i,cx:x(i),cy:y(v),r:'3',fill:color}):null),
+    pointLabels&&pointLabels.map((pl,i)=>(i%step===0||i===data.length-1)?h('text',{key:'pl'+i,x:x(i),y:y(data[i])-8,textAnchor:'middle',fontSize:'9',fontWeight:'700',fill:color},pl):null),
     labels&&labels.map((l,i)=>(i%step===0||i===labels.length-1)?h('text',{key:i,x:x(i),y:H-6,textAnchor:'middle',fontSize:'9',fill:'#999'},l):null),
-    h('text',{x:pad.l-2,y:y(mn)+4,textAnchor:'end',fontSize:'9',fill:'#999'},mn.toFixed(1)),
-    h('text',{x:pad.l-2,y:y(mx)+4,textAnchor:'end',fontSize:'9',fill:'#999'},mx.toFixed(1))
+    !pointLabels&&h('text',{x:pad.l-2,y:y(mn)+4,textAnchor:'end',fontSize:'9',fill:'#999'},mn.toFixed(1)),
+    !pointLabels&&h('text',{x:pad.l-2,y:y(mx)+4,textAnchor:'end',fontSize:'9',fill:'#999'},mx.toFixed(1))
   );
 }
 function DualBarChart({data}){
@@ -753,7 +754,7 @@ function App(){
       if(!kg||!reps)return null;
       const r1=parseInt(reps.r1)||0;
       if(r1===0)return null;
-      return calcE1RM(kg,r1);
+      return{e1rm:calcE1RM(kg,r1),r1,kg};
     }).filter(v=>v!==null);
   },[hist,exOptions,selExOpt]);
 
@@ -769,11 +770,14 @@ function App(){
   function Dashboard(){
     return h('div',null,
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}},
-        [{l:'Peso promedio',v:pp,u:'kg',k:'pp',c:G},{l:'Cintura promedio',v:pc,u:'cm',k:'pc',c:B}].map((m,i)=>{
-          const prev=hist.length>1?hist[hist.length-2]:null;
-          const diff=prev&&prev[m.k]&&m.v!=='—'?(parseFloat(m.v)-parseFloat(prev[m.k])).toFixed(1):null;
+        [{l:'Peso',u:'kg',k:'pp'},{l:'Cintura',u:'cm',k:'pc',c2:B}].map((m,i)=>{
+          const hPW2=hist.filter(w=>w[m.k]&&w[m.k]!=='—');
+          const lastV=hPW2.length?hPW2[hPW2.length-1][m.k]:'—';
+          const prevV=hPW2.length>1?hPW2[hPW2.length-2][m.k]:null;
+          const diff=prevV&&lastV!=='—'?(parseFloat(lastV)-parseFloat(prevV)).toFixed(1):null;
+          const color=m.k==='pp'?G:B;
           return h('div',{key:i,style:{...card,marginBottom:0}},
-            h('div',{style:lbl},m.l),h('div',{style:{fontSize:'24px',fontWeight:'800'}},m.v,' ',h('span',{style:{fontSize:'13px',color:'#999'}},m.u)),
+            h('div',{style:lbl},m.l),h('div',{style:{fontSize:'24px',fontWeight:'800'}},lastV,' ',h('span',{style:{fontSize:'13px',color:'#999'}},m.u)),
             diff?h('div',{style:{fontSize:'12px',color:parseFloat(diff)<0?G:O,marginTop:'4px'}},(parseFloat(diff)<0?'↓':'↑')+' '+Math.abs(diff)+' vs sem. ant.'):null
           );
         })
@@ -783,20 +787,7 @@ function App(){
           h('div',{key:i,style:{background:'#F8F8F8',borderRadius:'8px',padding:'10px 4px',textAlign:'center'}},h('div',{style:{fontSize:'18px',fontWeight:'800',color:m.c}},m.v),h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},m.l))
         )
       ),
-      // Sensaciones resumen
-      hab.sens&&Object.values(hab.sens).some(v=>v)&&h('div',{style:{...card,marginBottom:'10px'}},
-        h('div',{style:{...lbl,marginBottom:'8px'}},'Sensaciones esta semana'),
-        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
-          Object.entries(SENS).map(([key,cfg2])=>{
-            const val=(hab.sens||{})[key];if(!val)return null;
-            const idx=cfg2.opts.indexOf(val);
-            return h('div',{key,style:{background:'#F8F8F8',borderRadius:'8px',padding:'8px 10px'}},
-              h('div',{style:{fontSize:'10px',color:'#999',fontWeight:'600'}},cfg2.l),
-              h('div',{style:{fontSize:'12px',fontWeight:'700',color:idx>=0?cfg2.colors[idx]:'#111',marginTop:'2px'}},val)
-            );
-          })
-        )
-      ),
+
       h('div',{style:card},
         h('div',{style:{...lbl,marginBottom:'10px'}},'Tendencia — peso y cintura',useDemo?' (datos de ejemplo)':''),
         h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
@@ -817,7 +808,7 @@ function App(){
         exOptions.length>0&&h('div',null,
           h('select',{value:selExOpt,onChange:e=>setSelExOpt(parseInt(e.target.value)),style:{...inp,marginBottom:'10px',fontSize:'13px'}},exOptions.map((o,i)=>h('option',{key:i,value:i},o.label))),
           e1rmHistory.length>=2
-            ?h('div',null,h(LineChart,{data:e1rmHistory,color:G,h:120,labels:hist.map(w=>w.wi?.slice(5)||'')}),h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},h('span',{style:{color:'#666'}},'Inicio: '+e1rmHistory[0]+' kg'),h('span',{style:{color:G,fontWeight:'700'}},'Actual: '+e1rmHistory[e1rmHistory.length-1]+' kg')))
+            ?h('div',null,h(LineChart,{data:e1rmHistory.map(v=>v.e1rm),color:G,h:130,labels:hist.map(w=>w.wi?.slice(5)||''),pointLabels:e1rmHistory.map(v=>v.r1+'×'+v.kg)}),h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},h('span',{style:{color:'#666'}},'Inicio: '+e1rmHistory[0].r1+'×'+e1rmHistory[0].kg+' kg'),h('span',{style:{color:G,fontWeight:'700'}},'Actual: '+e1rmHistory[e1rmHistory.length-1].r1+'×'+e1rmHistory[e1rmHistory.length-1].kg+' kg')))
             :h('div',{style:{textAlign:'center',padding:'16px',color:'#bbb',fontSize:'13px'}},'Guardá al menos 2 semanas para ver la progresión')
         )
       ),
