@@ -65,6 +65,7 @@ function getWk(off=0){
   return{id,label:`${fmt(mon)} — ${fmt(sun)}`};
 }
 function calcE1RM(kg,reps){if(!reps||reps<=0)return kg;return Math.round(kg*(1+reps/30)*10)/10;}
+const normNum=v=>{const s=String(v||'').trim().replace(',','.');const n=parseFloat(s);return isNaN(n)?0:n;};
 
 // Construye la base de alimentos desde la hoja Menus
 function buildFoodDB(rows){
@@ -387,7 +388,7 @@ function Diet({hab,user,menusVer}){
   const comidas=useMemo(()=>{try{const s=localStorage.getItem(`ase_${user}_menus`);if(s){const p=JSON.parse(s);if(p&&p.length>0)return p;}}catch(e){}return [];},[user,menusVer]);
   useEffect(()=>{const t=parseInt(localStorage.getItem(tKey));if(!isNaN(t)&&TEMPLATES.includes(t))setTmplState(t);},[menusVer]);
   const setO=(m,o)=>{const n={...opts,[m]:o};setOpts(n);localStorage.setItem(oKey,JSON.stringify(n));};
-  const pesoVal=parseFloat(hab.meds.find(m=>m.p&&parseFloat(m.p)>0)?.p)||70;
+  const pesoVal=normNum(hab.meds.find(m=>m.p&&normNum(m.p)>0)?.p)||70;
   const wML=Math.round(pesoVal*40/4);const sSalt=(pesoVal*40/4/1000).toFixed(1);
 
   function IR({item,last}){
@@ -543,9 +544,9 @@ function App(){
   const [exesReady,setExesReady]=useState(false);
   const exesRef=useRef(DEFAULT_EXES);
 
-  const mP=hab.meds.filter(m=>m.p).map(m=>parseFloat(m.p));
+  const mP=hab.meds.filter(m=>m.p).map(m=>normNum(m.p));
   const pp=mP.length?(mP.reduce((a,b)=>a+b,0)/mP.length).toFixed(1):'—';
-  const mC=hab.meds.filter(m=>m.c).map(m=>parseFloat(m.c));
+  const mC=hab.meds.filter(m=>m.c).map(m=>normNum(m.c));
   const pc=mC.length?(mC.reduce((a,b)=>a+b,0)/mC.length).toFixed(1):'—';
   const tC=nut.reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0),pC=Math.round(tC/28*100);
   const tA=nut.reduce((a,d)=>a+d.a,0),pA=Math.round(tA/28*100);
