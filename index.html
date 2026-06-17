@@ -37,7 +37,7 @@ const SENS={
 
 // ── DEFAULTS ──────────────────────────────────────────────────────────
 const DEFAULT_EXES=[];
-const DIAS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+const DIAS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 const DS=['L','M','X','J','V','S','D'];
 const rKg=kg=>Math.ceil(kg/2.5)*2.5;
 const SK=(id,u)=>`ase_${u}_${id}`;
@@ -548,12 +548,12 @@ function Habitos({hab,setHab,setSaved,pp,pc,sC}){
 }
 
 // ── REGISTRO ──────────────────────────────────────────────────────────
-function Registro({nut,upN,toggleMeal,tC,tA,pC,pA,metaAgua,metaSal}){
+function Registro({nut,upN,toggleMeal,setWater,tC,tA,pC,pA,metaAgua,metaSal}){
   function PBar({v,color}){return h('div',{style:{height:'4px',background:'#F0F0F0',borderRadius:'2px',marginTop:'8px'}},h('div',{style:{height:'100%',width:Math.min(100,v)+'%',background:color||G,borderRadius:'2px',transition:'width 0.3s'}}));}
   return h('div',null,
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}},
-      h('div',{style:{...card,marginBottom:0}},h('div',{style:lbl},'Comidas'),h('div',{style:{fontSize:'22px',fontWeight:'800'}},tC,h('span',{style:{fontSize:'13px',color:'#999'}},'/28')),h(PBar,{v:pC}),h('div',{style:{fontSize:'12px',color:G,marginTop:'4px',fontWeight:'700'}},pC+'%')),
-      h('div',{style:{...card,marginBottom:0}},h('div',{style:lbl},'Agua'),h('div',{style:{fontSize:'22px',fontWeight:'800'}},tA,h('span',{style:{fontSize:'13px',color:'#999'}},'/'+(7)+'d')),h(PBar,{v:pA,color:B}),h('div',{style:{fontSize:'12px',color:B,marginTop:'4px',fontWeight:'700'}},pA+'% · meta '+metaAgua+'L'))
+      h('div',{style:{...card,marginBottom:0}},h('div',{style:lbl},'Comidas'),h('div',{style:{fontSize:'22px',fontWeight:'800'}},tC,h('span',{style:{fontSize:'13px',color:'#999'}},'/24')),h(PBar,{v:pC}),h('div',{style:{fontSize:'12px',color:G,marginTop:'4px',fontWeight:'700'}},pC+'%')),
+      h('div',{style:{...card,marginBottom:0}},h('div',{style:lbl},'Agua'),h('div',{style:{fontSize:'22px',fontWeight:'800'}},tA,h('span',{style:{fontSize:'13px',color:'#999'}},'/6d')),h(PBar,{v:pA,color:B}),h('div',{style:{fontSize:'12px',color:B,marginTop:'4px',fontWeight:'700'}},pA+'% · meta '+metaAgua+'L'))
     ),
     nut.map((day,i)=>{
       const m=day.m||{};
@@ -578,7 +578,7 @@ function Registro({nut,upN,toggleMeal,tC,tA,pC,pA,metaAgua,metaSal}){
             h('span',{style:{color:'#999'}},metaAgua+'L · 🧂 '+metaSal+'g sal')
           ),
           h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
-            h('input',{type:'text',inputMode:'decimal',placeholder:'ej: 2.5',value:day.a,onChange:e=>{const n=[...nut];n[i]={...n[i],a:e.target.value};setNut(n);setSaved(false);},style:{...inp,fontSize:'22px',fontWeight:'700',flex:1,textAlign:'center',borderColor:aguaOk?G:aguaV>0?O:'rgba(0,0,0,0.1)'}}),
+            h('input',{type:'text',inputMode:'decimal',placeholder:'ej: 2.5',value:day.a,onChange:e=>setWater(i,e.target.value),style:{...inp,fontSize:'22px',fontWeight:'700',flex:1,textAlign:'center',borderColor:aguaOk?G:aguaV>0?O:'rgba(0,0,0,0.1)'}}),
             h('span',{style:{fontSize:'14px',fontWeight:'700',color:'#999'}},'L'),
             aguaOk&&h('span',{style:{fontSize:'18px',color:G}},'✓')
           )
@@ -619,10 +619,10 @@ function App(){
   const metaAgua=(pesoRef*40/1000).toFixed(1);
   const metaSal=parseFloat(metaAgua).toFixed(1);
   const pesoVal=normNum(hab.meds.find(m=>m.p&&normNum(m.p)>0)?.p)||pesoRef;
-  const tC=nut.reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0),pC=Math.round(tC/28*100);
+  const tC=nut.reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0),pC=Math.round(tC/24*100);
   const aguaDias=nut.filter(d=>normNum(d.a)>=parseFloat(metaAgua)).length;
-  const aguaPromedio=(nut.reduce((a,d)=>a+normNum(d.a),0)/7).toFixed(1);
-  const tA=aguaDias,pA=Math.round(aguaDias/7*100);
+  const aguaPromedio=(nut.reduce((a,d)=>a+normNum(d.a),0)/6).toFixed(1);
+  const tA=aguaDias,pA=Math.round(aguaDias/6*100);
   const sC=(hab.sleep||[]).filter(Boolean).length,pS=Math.round(sC/7*100);
   const actExtraC=(hab.actExtra||[]).filter(Boolean).length;
   const toxC=(hab.toxics||[]).filter(Boolean).length;
@@ -777,6 +777,11 @@ function App(){
     }catch(e){}
     setSaving(false);
   }
+  function resetWeek(){
+    if(!window.confirm('¿Resetear la semana actual? Se borrarán las reps, comidas y hábitos cargados. Los kg se mantienen.'))return;
+    setSessionReps({});setNut(iN());setHab(iH());setSaved(false);
+    localStorage.removeItem(`ase_${user}_draft_${wk.id}`);
+  }
   function newWeek(){
     if(!saved)save();
     const nextNum=(parseInt(localStorage.getItem(`ase_${user}_wknum`))||1)+1;
@@ -796,6 +801,7 @@ function App(){
 
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
   function toggleMeal(i,mealKey){const n=[...nut];const m={...(n[i].m||{})};m[mealKey]=!m[mealKey];n[i]={...n[i],m};setNut(n);setSaved(false);}
+  function setWater(i,val){const n=[...nut];n[i]={...n[i],a:val};setNut(n);setSaved(false);}
 
   // Chart data
   const hPW=hist.filter(w=>w.pp&&w.pp!=='—');
@@ -924,14 +930,17 @@ function App(){
       ),
       h('div',{style:{display:'flex',flexDirection:'column',gap:'5px',alignItems:'flex-end'}},
         h('button',{onClick:save,disabled:saving||saved,style:{border:saved?'1px solid #A3DFC8':'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:saved?'default':'pointer',background:saved?'#EAF7F2':'#111',color:saved?G:'#fff'}},saving?'Guardando...':saved?'✓ Guardado':'Guardar semana'),
-        h('button',{onClick:newWeek,style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'#999',padding:0}},'Nueva semana →')
+        h('div',{style:{display:'flex',gap:'12px',marginTop:'4px'}},
+          h('button',{onClick:resetWeek,style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'#EF4444',padding:0}},'↺ Resetear'),
+          h('button',{onClick:newWeek,style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:'#999',padding:0}},'Nueva sem →')
+        )
       )
     ),
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal}),
-      tab==='n'&&h(Registro,{key:'registro',nut,upN,toggleMeal,tC,tA,pC,pA,metaAgua,metaSal}),
+      tab==='n'&&h(Registro,{key:'registro',nut,upN,toggleMeal,setWater,tC,tA,pC,pA,metaAgua,metaSal}),
       tab==='hb'&&h(Habitos,{key:'habitos',hab,setHab,setSaved,pp,pc,sC})
     ),
     h('div',{style:{background:'#fff',borderTop:'1px solid rgba(0,0,0,0.08)',display:'flex',position:'sticky',bottom:0,zIndex:10}},
