@@ -448,9 +448,23 @@ function Diet({hab,user,menusVer,metaAgua,metaSal}){
   const pesoVal=normNum(hab.meds.find(m=>m.p&&normNum(m.p)>0)?.p)||70;
   const wML=Math.round(pesoVal*40/4);const sSalt=(pesoVal*40/4/1000).toFixed(1);
 
+  const [swapItem,setSwapItem]=useState(null); // {n, cat, key} of tapped item
+
+  // Todos los alimentos únicos de la misma categoría del plan
+  const equivalents=useMemo(()=>{
+    if(!swapItem)return[];
+    const seen=new Set();const result=[];
+    comidas.forEach(c=>c.ops.forEach(op=>op.items.forEach(item=>{
+      if(item.cat===swapItem.cat&&item.key&&!seen.has(item.key)&&item.key!==swapItem.key){
+        seen.add(item.key);result.push(item);
+      }
+    })));
+    return result;
+  },[swapItem,comidas]);
+
   function IR({item,last}){
     const cs=CAT[item.cat]||{l:item.cat,bg:'#F8F8F8',c:'#666'};const p=calcP(item,tmpl);
-    return h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)'}},
+    return h('div',{onClick:e=>{e.stopPropagation();setSwapItem(item);},style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)',cursor:'pointer'}},
       h('div',{style:{flex:1,paddingRight:'8px'}},h('span',{style:{fontSize:'10px',background:cs.bg,color:cs.c,padding:'2px 6px',borderRadius:'20px',fontWeight:'700',marginRight:'6px'}},cs.l),h('span',{style:{fontSize:'13px',color:'#111'}},item.n)),
       h('div',{style:{textAlign:'right',flexShrink:0}},h('div',{style:{fontSize:'15px',fontWeight:'800',color:'#111'}},p.v),p.g&&h('div',{style:{fontSize:'10px',color:'#ccc',marginTop:'1px'}},p.g))
     );
@@ -474,6 +488,22 @@ function Diet({hab,user,menusVer,metaAgua,metaSal}){
     );
   }
   return h('div',null,
+    swapItem&&h('div',{onClick:()=>setSwapItem(null),style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:100,display:'flex',alignItems:'flex-end'}},
+      h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 16px 32px',maxHeight:'70vh',overflowY:'auto'}},
+        h('div',{style:{width:'36px',height:'4px',background:'#E0E0E0',borderRadius:'2px',margin:'0 auto 16px'}}),
+        h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#999',marginBottom:'4px'}},'Equivalentes — '+(CAT[swapItem.cat]?.l||swapItem.cat)),
+        h('div',{style:{fontSize:'15px',fontWeight:'800',marginBottom:'14px'}},'¿No tenés '+swapItem.n+'? Reemplazalo con:'),
+        equivalents.length===0
+          ?h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay otros alimentos de esta categoría en tu plan')
+          :equivalents.map((item,i)=>{
+              const p=calcP(item,tmpl);
+              return h('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:i<equivalents.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
+                h('span',{style:{fontSize:'14px',color:'#111'}},item.n),
+                h('div',{style:{textAlign:'right'}},h('div',{style:{fontSize:'15px',fontWeight:'800'}},p.v),p.g&&h('div',{style:{fontSize:'10px',color:'#ccc'}},p.g))
+              );
+            })
+      )
+    ),
     h('div',{style:{...card,marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('div',null,h('div',{style:lbl},'Plan calórico'),h('div',{style:{fontSize:'20px',fontWeight:'800',color:G}},tmpl,' ',h('span',{style:{fontSize:'13px',color:'#999',fontWeight:'400'}},'kcal'))),
       h('div',{style:{fontSize:'11px',color:'#bbb'}},h('div',null,'Template asignado'),h('div',null,'por tu coach'))
