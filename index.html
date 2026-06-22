@@ -22,7 +22,6 @@ const card={background:'#fff',border:'1px solid rgba(0,0,0,0.09)',borderRadius:'
 const lbl={fontSize:'10px',color:'#999',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'6px'};
 const inp={width:'100%',padding:'10px',border:'1px solid rgba(0,0,0,0.1)',borderRadius:'8px',fontSize:'15px',color:'#111',background:'#fff'};
 
-// ── MENÚ ─────────────────────────────────────────────────────────────
 const TEMPLATES=[1500,1800,2100,2400,2700];
 const BASE_T=2000;
 function toFrac(n){if(n<=0)return'0';const w=Math.floor(n),d=n-w;const fs=[[0,''],[0.25,'¼'],[0.333,'⅓'],[0.5,'½'],[0.667,'⅔'],[0.75,'¾']];let best=fs[0];fs.forEach(f=>{if(Math.abs(d-f[0])<Math.abs(d-best[0]))best=f;});if(Math.abs(d-1)<Math.abs(d-best[0]))return String(w+1);return(w>0?String(w):'')+best[1]||'0';}
@@ -36,7 +35,6 @@ const SENS={
   estres:{l:'Estrés',opts:['Sin estrés','Estrés moderado','Estrés alto'],colors:[G,O,R]},
 };
 
-// ── DEFAULTS ──────────────────────────────────────────────────────────
 const DEFAULT_EXES=[];
 const DIAS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
 const DS=['L','M','X','J','V','S','D'];
@@ -60,7 +58,7 @@ function migrateHab(h){
   if(h.actExtra===undefined)return{...h,actExtra:Array(7).fill(false)};
   return h;
 }
-const iHiit=()=>({regs:{},hiitKg:{}});// regs: {A:{cumple:'',exig:'',fatiga:'',dolor:'',nota:''}, B:...}, hiitKg: {A:{detalle:'',ritmo:''}}
+const iHiit=()=>({regs:{},hiitKg:{}});
 const iH=()=>({sleep:Array(7).fill(false),toxics:Array(7).fill(false),actExtra:Array(7).fill(false),meds:[{p:'',c:''},{p:'',c:''},{p:'',c:''}],sens:{energia:'',hambre:'',digestion:'',estres:'',nota:''}});
 function getWk(off=0){
   const now=new Date();now.setDate(now.getDate()+off*7);
@@ -74,7 +72,6 @@ function getWk(off=0){
 function calcE1RM(kg,reps){if(!reps||reps<=0)return kg;return Math.round(kg*(1+reps/30)*10)/10;}
 const normNum=v=>{const s=String(v||'').trim().replace(',','.');const n=parseFloat(s);return isNaN(n)?0:n;};
 
-// Construye la base de alimentos desde la hoja Menus
 function buildFoodDB(rows){
   const db={};
   (rows||[]).forEach(row=>{
@@ -91,7 +88,6 @@ function buildFoodDB(rows){
   return db;
 }
 
-// Construye el array de comidas desde la fila de Dietas + food DB
 function parseDietas(row,foodDB){
   const MEALS=[
     {id:'desayuno',nom:'Desayuno',ic:'☀️',cols:['DesayunoA','DesayunoB','DesayunoC']},
@@ -116,7 +112,6 @@ function parseDietas(row,foodDB){
   }).filter(Boolean);
 }
 
-// Semana secuencial basada en contador localStorage — sin cálculos de fechas
 function getWkForNum(user,num){
   const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
   const startMon=new Date(startId+'T12:00:00');
@@ -126,7 +121,6 @@ function getWkForNum(user,num){
   return{id:`sem_${num}`,num,label:`${fmt(wkMon)} — ${fmt(wkSun)}`};
 }
 
-// ── CHARTS ────────────────────────────────────────────────────────────
 function LineChart({data,color,h:ht=140,labels,pointLabels}){
   if(!data||data.length<2)return null;
   const W=300,H=ht,pad={t:pointLabels?22:10,b:24,l:pointLabels?10:32,r:10};
@@ -167,7 +161,6 @@ function DualBarChart({data}){
   );
 }
 
-// ── LOGIN ─────────────────────────────────────────────────────────────
 function AjustarSemana({onClose}){
   const COACH_PIN='1234';
   const [pin,setPin]=useState('');
@@ -230,7 +223,6 @@ function Login({onLogin}){
   );
 }
 
-// ── TRAINING ──────────────────────────────────────────────────────────
 function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk}){
   const BLOQUES={
     volumen:{label:'Volumen',color:'#1D9E75',emoji:'📈',hint:null},
@@ -256,22 +248,17 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const [kgVal,setKgVal]=useState('');
   const [cfgSess,setCfgSess]=useState('A');
   const SESS=['A','B','C','D'].slice(0,cfg.num);
-
   const saveCfg=nc=>{setCfg(nc);localStorage.setItem(CFG_KEY(user),JSON.stringify(nc));};
   const toggleEx=(s,id)=>{const cur=cfg.assign[s]||[];const na=cur.includes(id)?cur.filter(x=>x!==id):[...cur,id];saveCfg({...cfg,assign:{...cfg.assign,[s]:na}});};
   const setNum=n=>{const na={};['A','B','C','D'].slice(0,n).forEach(s=>{na[s]=cfg.assign[s]||[];});saveCfg({...cfg,num:n,assign:na});};
-
-  const getKg=ex=>sessionKg?.[activeSess]?.[ex.id]; // undefined si no fue establecido
+  const getKg=ex=>sessionKg?.[activeSess]?.[ex.id];
   const getRep=(sess,exId,k)=>sessionReps?.[sess]?.[exId]?.[k]||'';
-
   const numSeries=(()=>{
     if(bloque==='volumen')return Math.min(4,seriesBase+Math.floor(weeksInBlock/2));
     return seriesBase;
   })();
   const semanasParaSiguienteSerie=(bloque==='volumen'&&numSeries<4)?(2-(weeksInBlock%2)||2):null;
   const SERIES_KEYS=['r1','r2','r3','r4'].slice(0,numSeries);
-
-  // Mejor serie = siempre Serie 1
   const prevBestSet=(ex)=>{
     if(!hist||hist.length===0)return null;
     for(let i=hist.length-1;i>=0;i--){
@@ -303,7 +290,6 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     const r1=parseInt(sessionReps?.[activeSess]?.[ex.id]?.r1)||0;
     return r1>=ex.hi?rKg(curKg*1.05):null;
   };
-  // Sugerencia intraserie: si serie anterior ≤ mitad del rango → bajar 10%
   const suggestedKg=(ex,serieIdx)=>{
     if(serieIdx===0)return null;
     const prevKey='r'+serieIdx;
@@ -323,7 +309,6 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const calExes=exes.filter(e=>String(e.m||'').toLowerCase()==='calentamiento'&&e.url);
   const sessExes=(cfg.assign[activeSess]||[]).map(id=>exes.find(e=>e.id===id)).filter(e=>e&&String(e.m||'').toLowerCase()!=='calentamiento');
   const [calOpen,setCalOpen]=useState(false);
-
   if(configuring)return h('div',null,
     h('div',{style:card},h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},h('div',{style:{fontSize:'15px',fontWeight:'800'}},'⚙️ Configurar rutina'),h('button',{onClick:()=>setConfiguring(false),style:{background:G,color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Listo ✓'))),
     h('div',{style:card},h('div',{style:lbl},'Cantidad de sesiones'),h('div',{style:{display:'flex',gap:'8px'}},[2,3,4].map(n=>h('button',{key:n,onClick:()=>setNum(n),style:{flex:1,padding:'14px',fontSize:'16px',fontWeight:cfg.num===n?'800':'400',cursor:'pointer',borderRadius:'10px',border:'2px solid',color:cfg.num===n?'#fff':'#999',background:cfg.num===n?G:'#fff',borderColor:cfg.num===n?G:'rgba(0,0,0,0.1)'}},n+' sesiones')))),
@@ -340,7 +325,6 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
       })
     )
   );
-
   return h('div',null,
     h('div',{style:card},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
@@ -435,7 +419,6 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   );
 }
 
-// ── DIET ──────────────────────────────────────────────────────────────
 function Diet({hab,user,menusVer,metaAgua,metaSal}){
   const tKey=`ase_${user}_tmpl`;const oKey=`ase_${user}_opts`;
   const [tmpl,setTmplState]=useState(()=>parseInt(localStorage.getItem(tKey))||2100);
@@ -448,10 +431,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal}){
   const setO=(m,o)=>{const n={...opts,[m]:o};setOpts(n);localStorage.setItem(oKey,JSON.stringify(n));};
   const pesoVal=normNum(hab.meds.find(m=>m.p&&normNum(m.p)>0)?.p)||70;
   const wML=Math.round(pesoVal*40/4);const sSalt=(pesoVal*40/4/1000).toFixed(1);
-
-  const [swapItem,setSwapItem]=useState(null); // {n, cat, key} of tapped item
-
-  // Todos los alimentos únicos de la misma categoría del plan
+  const [swapItem,setSwapItem]=useState(null);
   const equivalents=useMemo(()=>{
     if(!swapItem)return[];
     const seen=new Set();const result=[];
@@ -462,7 +442,6 @@ function Diet({hab,user,menusVer,metaAgua,metaSal}){
     })));
     return result;
   },[swapItem,comidas]);
-
   function IR({item,last}){
     const cs=CAT[item.cat]||{l:item.cat,bg:'#F8F8F8',c:'#666'};const p=calcP(item,tmpl);
     return h('div',{onClick:e=>{e.stopPropagation();setSwapItem(item);},style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)',cursor:'pointer'}},
@@ -518,23 +497,14 @@ function Diet({hab,user,menusVer,metaAgua,metaSal}){
       :h('div',null,
           comidas.map(c=>h(MC,{key:c.id,comida:c})),
           h('div',{style:{...card,marginTop:'4px',display:'flex',justifyContent:'space-around',alignItems:'center'}},
-            h('div',{style:{textAlign:'center'}},
-              h('div',{style:{fontSize:'24px'}},'💧'),
-              h('div',{style:{fontSize:'18px',fontWeight:'800',color:B}},metaAgua+' L'),
-              h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},'agua / día')
-            ),
+            h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'24px'}},'💧'),h('div',{style:{fontSize:'18px',fontWeight:'800',color:B}},metaAgua+' L'),h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},'agua / día')),
             h('div',{style:{width:'1px',height:'40px',background:'rgba(0,0,0,0.08)'}}),
-            h('div',{style:{textAlign:'center'}},
-              h('div',{style:{fontSize:'24px'}},'🧂'),
-              h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#6B7280'}},metaSal+' g'),
-              h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},'sal / día')
-            )
+            h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'24px'}},'🧂'),h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#6B7280'}},metaSal+' g'),h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},'sal / día'))
           )
         )
   );
 }
 
-// ── HABITOS ───────────────────────────────────────────────────────────
 function Habitos({hab,setHab,setSaved,pp,pc,sC}){
   const tC=(hab.toxics||[]).filter(Boolean).length;
   function ToggleRow({field,color,label,sublabel}){
@@ -586,7 +556,6 @@ function Habitos({hab,setHab,setSaved,pp,pc,sC}){
   );
 }
 
-// ── REGISTRO ──────────────────────────────────────────────────────────
 function Registro({nut,upN,toggleMeal,setWater,tC,tA,pC,pA,metaAgua,metaSal}){
   function PBar({v,color}){return h('div',{style:{height:'4px',background:'#F0F0F0',borderRadius:'2px',marginTop:'8px'}},h('div',{style:{height:'100%',width:Math.min(100,v)+'%',background:color||G,borderRadius:'2px',transition:'width 0.3s'}}));}
   return h('div',null,
@@ -627,13 +596,11 @@ function Registro({nut,upN,toggleMeal,setWater,tC,tA,pC,pA,metaAgua,metaSal}){
   );
 }
 
-// ── APP ───────────────────────────────────────────────────────────────
 function SelBtn({val,cur,onClick,color}){
   const sel=val===cur;
   return h('button',{onClick,style:{flex:1,padding:'10px 4px',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'2px solid',color:sel?(color||'#111'):'#999',background:sel?((color||'#111')+'18'):'#fff',borderColor:sel?(color||'#111'):'rgba(0,0,0,0.08)'}},val);
 }
 
-// ── HIIT ─────────────────────────────────────────────────────────────
 const HIIT_SENS={
   'RST':'Muy alta, manteniendo calidad de sprint',
   'SIT':'Muy alta con dolor muscular acumulado',
@@ -646,11 +613,10 @@ const HIIT_SENS={
 function Hiit({cfg,hiitData,setHiitData,setSaved}){
   const sess=cfg?.hiit||[];
   const [activeS,setActiveS]=useState(sess[0]?.id||'A');
-  const [editField,setEditField]=useState(null);// {sessId, field}
+  const [editField,setEditField]=useState(null);
   const [editVal,setEditVal]=useState('');
   if(!sess.length)return h('div',{style:{...card,textAlign:'center',padding:'32px'}},h('div',{style:{fontSize:'32px',marginBottom:'8px'}},'🏃'),h('div',{style:{fontSize:'14px',color:'#999'}},'Sin protocolo HIIT asignado'));
   const curS=sess.find(s=>s.id===activeS)||sess[0];
-  // Valores editables guardados en hiitData.hiitKg
   const getSessVal=(sessId,field)=>hiitData?.hiitKg?.[sessId]?.[field]||'';
   const setSessVal=(sessId,field,val)=>{
     setHiitData(prev=>{const n={...prev,hiitKg:{...prev.hiitKg,[sessId]:{...(prev.hiitKg?.[sessId]||{}),[field]:val}}};return n;});
@@ -665,12 +631,10 @@ function Hiit({cfg,hiitData,setHiitData,setSaved}){
   const detalle=getSessVal(curS.id,'detalle')||curS.detalle;
   const ritmo=getSessVal(curS.id,'ritmo')||curS.ritmo;
   return h('div',null,
-    // Selector de sesión
     h('div',{style:card},
       h('div',{style:{...lbl,marginBottom:'8px'}},'Sesión HIIT'),
       h('div',{style:{display:'flex',gap:'6px'}},sess.map(s=>h('button',{key:s.id,onClick:()=>setActiveS(s.id),style:{flex:1,padding:'10px 4px',fontSize:'13px',cursor:'pointer',border:'2px solid',borderRadius:'8px',fontWeight:activeS===s.id?'800':'400',color:activeS===s.id?'#111':'#999',background:activeS===s.id?'#F0F0F0':'#fff',borderColor:activeS===s.id?'rgba(0,0,0,0.2)':'rgba(0,0,0,0.08)'}},s.id,' ',h('span',{style:{fontSize:'10px',display:'block',marginTop:'2px',color:'#999'}},s.nom))))
     ),
-    // Plan
     h('div',{style:card},
       h('div',{style:{fontSize:'15px',fontWeight:'800',marginBottom:'4px'}},curS.nom),
       h('div',{style:{fontSize:'12px',color:'#999',marginBottom:'12px'}},'Sensación esperada: ',h('span',{style:{color:B,fontWeight:'600'}},sensEsp)),
@@ -688,10 +652,8 @@ function Hiit({cfg,hiitData,setHiitData,setSaved}){
         })
       )
     ),
-    // Registro semanal
     h('div',{style:card},
       h('div',{style:{...lbl,marginBottom:'12px'}},'Registro de la semana'),
-      // Cumplimiento
       h('div',{style:{marginBottom:'14px'}},
         h('div',{style:{fontSize:'13px',fontWeight:'700',marginBottom:'8px'}},'¿Cumpliste el protocolo?'),
         h('div',{style:{display:'flex',gap:'8px'}},
@@ -700,7 +662,6 @@ function Hiit({cfg,hiitData,setHiitData,setSaved}){
         ),
         getReg(curS.id,'cumple')==='Parcial'&&h('input',{type:'text',placeholder:'¿Qué fue distinto?',value:getReg(curS.id,'cumpleParcial'),onChange:e=>setReg(curS.id,'cumpleParcial',e.target.value),style:{...inp,marginTop:'8px',fontSize:'13px'}})
       ),
-      // Exigencia
       h('div',{style:{marginBottom:'14px'}},
         h('div',{style:{fontSize:'13px',fontWeight:'700',marginBottom:'4px'}},'¿Cómo fue la exigencia?'),
         h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'8px'}},'Esperada: '+sensEsp),
@@ -708,21 +669,18 @@ function Hiit({cfg,hiitData,setHiitData,setSaved}){
           [{v:'Esperada',c:G},{v:'Mayor',c:O},{v:'Menor',c:B}].map(({v,c})=>h(SelBtn,{key:v,val:v,cur:getReg(curS.id,'exig'),onClick:()=>setReg(curS.id,'exig',v),color:c}))
         )
       ),
-      // Fatiga
       h('div',{style:{marginBottom:'14px'}},
         h('div',{style:{fontSize:'13px',fontWeight:'700',marginBottom:'8px'}},'Fatiga (mismo día)'),
         h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},
           ['Nada','Moderada','Alta, me limitó'].map(v=>h(SelBtn,{key:v,val:v,cur:getReg(curS.id,'fatiga'),onClick:()=>setReg(curS.id,'fatiga',v)}))
         )
       ),
-      // DOMS
       h('div',{style:{marginBottom:'14px'}},
         h('div',{style:{fontSize:'13px',fontWeight:'700',marginBottom:'8px'}},'Dolor muscular (1-2 días después)'),
         h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap'}},
           ['Ninguno','Leve','Moderado','Intenso'].map(v=>h(SelBtn,{key:v,val:v,cur:getReg(curS.id,'dolor'),onClick:()=>setReg(curS.id,'dolor',v)}))
         )
       ),
-      // Nota
       h('div',null,
         h('div',{style:{fontSize:'13px',fontWeight:'700',marginBottom:'8px'}},'Nota libre (opcional)'),
         h('textarea',{placeholder:'Cómo te sentiste, condiciones del día, etc.',value:getReg(curS.id,'nota'),onChange:e=>setReg(curS.id,'nota',e.target.value),style:{...inp,minHeight:'70px',resize:'none',fontSize:'13px'}})
@@ -739,6 +697,7 @@ function App(){
   const [hiitData,setHiitData]=useState(iHiit());
   const HK2=u=>`ase_${u}_hiit`;
   const [saved,setSaved]=useState(false);
+  const [saving,setSaving]=useState(false);  // ← LÍNEA AGREGADA (fix)
   const [hist,setHist]=useState([]);
   const [nut,setNut]=useState(iN());
   const [exes,setExes]=useState(DEFAULT_EXES);
@@ -746,14 +705,13 @@ function App(){
   const [sessionReps,setSessionReps]=useState({});
   const [sessionKg,setSessionKg]=useState({});
   const sessionRepsRef=useRef({});
-  sessionRepsRef.current=sessionReps; // actualización sincrónica en cada render — sin useEffect
+  sessionRepsRef.current=sessionReps;
   const [loadingExes,setLoadingExes]=useState(false);
   const [menusVer,setMenusVer]=useState(0);
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
   const [cfg,setCfg]=useState(defCfg);
   const [exesReady,setExesReady]=useState(false);
   const exesRef=useRef(DEFAULT_EXES);
-
   const mP=hab.meds.filter(m=>m.p).map(m=>normNum(m.p));
   const pp=mP.length?(mP.reduce((a,b)=>a+b,0)/mP.length).toFixed(1):'—';
   const mC=hab.meds.filter(m=>m.c).map(m=>normNum(m.c));
@@ -769,19 +727,14 @@ function App(){
   const sC=(hab.sleep||[]).filter(Boolean).length,pS=Math.round(sC/7*100);
   const actExtraC=(hab.actExtra||[]).filter(Boolean).length;
   const toxC=(hab.toxics||[]).filter(Boolean).length;
-
   useEffect(()=>{const s=localStorage.getItem(USER_KEY);if(s)setUser(s);},[]);
-
-  // Efecto 1: cargar ejercicios
   useEffect(()=>{
     if(!user)return;
-    // Inicializar semana secuencial
     if(!localStorage.getItem(`ase_${user}_startdate`)){
       localStorage.setItem(`ase_${user}_startdate`,new Date().toISOString().split('T')[0]);
     }
     const wkNum=parseInt(localStorage.getItem(`ase_${user}_wknum`))||1;
     setWk(getWkForNum(user,wkNum));
-    // Restaurar borrador inmediatamente antes del fetch para no sobreescribir
     try{
       const wkId=`sem_${wkNum}`;
       const draftStr=localStorage.getItem(`ase_${user}_draft_${wkId}`);
@@ -806,11 +759,8 @@ function App(){
         }
       }).catch(()=>{}).finally(()=>{setLoadingExes(false);setExesReady(true);draftReady.current=true;load(`sem_${wkNum}`);});
   },[user]);
-
-  // Efecto 2: cargar rutinas y menús después de ejercicios
   useEffect(()=>{
     if(!user||!exesReady)return;
-    // Rutinas → sesiones y ejercicios
     fetch(SCRIPT_URL+'?action=rutinas')
       .then(r=>r.json())
       .then(rutinas=>{
@@ -833,7 +783,6 @@ function App(){
           if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
         }
       }).catch(()=>{});
-    // Alimentos (hoja Menus) + Dietas en paralelo → construye la dieta del asesorado
     Promise.all([
       fetch(SCRIPT_URL+'?action=menus').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=dietas').then(r=>r.json()).catch(()=>[])
@@ -851,10 +800,8 @@ function App(){
       }
     }).catch(()=>{});
   },[user,exesReady]);
-
   const login=name=>{localStorage.setItem(USER_KEY,name);setUser(name);};
   const logout=()=>{if(confirm('¿Cambiar nombre?')){localStorage.removeItem(USER_KEY);setUser(null);}};
-
   function load(id){
     try{
       const draft=localStorage.getItem(`ase_${user}_draft_${id}`);
@@ -939,19 +886,14 @@ function App(){
     setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
   }
   const draftReady=useRef(false);
-
-  // Auto-guardar borrador en localStorage ante cualquier cambio
   useEffect(()=>{
     if(!user||!wk.id||!wk.num||!draftReady.current)return;
     const draft={sr:sessionReps,n:nut,h:hab,hiit:hiitData};
     localStorage.setItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(draft));
   },[sessionReps,nut,hab,hiitData,user,wk.id]);
-
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
   function toggleMeal(i,mealKey){const n=[...nut];const m={...(n[i].m||{})};m[mealKey]=!m[mealKey];n[i]={...n[i],m};setNut(n);setSaved(false);}
   function setWater(i,val){const n=[...nut];n[i]={...n[i],a:val};setNut(n);setSaved(false);}
-
-  // Chart data
   const hPW=hist.filter(w=>w.pp&&w.pp!=='—');
   const hP=hPW.map(w=>parseFloat(w.pp));
   const hC2=hist.filter(w=>w.pc&&w.pc!=='—').map(w=>parseFloat(w.pc));
@@ -959,8 +901,6 @@ function App(){
   const useDemo=hP.length<2;
   const DEMO_P=[82.5,82.1,81.6,81.2,80.7,80.3,80.0],DEMO_C=[91.0,90.5,90.0,89.5,89.1,88.7,88.3],DEMO_L=['S1','S2','S3','S4','S5','S6','S7'];
   const cP=useDemo?DEMO_P:hP,cC=useDemo?DEMO_C:hC2,cL=useDemo?DEMO_L:hL;
-
-  // e1RM exercise options (detect repeated exercises across sessions)
   const exOptions=useMemo(()=>{
     const opts=[];
     const nameCount={};
@@ -973,7 +913,6 @@ function App(){
     }));
     return opts;
   },[cfg,exes]);
-
   const e1rmHistory=useMemo(()=>{
     const opt=exOptions[selExOpt];if(!opt)return[];
     return hist.map(w=>{
@@ -986,18 +925,14 @@ function App(){
       return{e1rm:calcE1RM(kg,r1),r1,kg};
     }).filter(v=>v!==null);
   },[hist,exOptions,selExOpt]);
-
-  // Sleep vs toxics data
   const svtData=hist.map(w=>({
     label:w.wi?.slice(5)||'',
     sleep:(w.h?.sleep||[]).filter(Boolean).length,
     toxics:w.toxics||0
   }));
-
   const hiitSess=cfg?.hiit||[];
   const hasHiit=hiitSess.length>0;
   const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'n',l:'Registro',ic:'✅'},{id:'hb',l:'Hábitos',ic:'😴'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
-
   function Dashboard(){
     return h('div',null,
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}},
@@ -1018,7 +953,6 @@ function App(){
           h('div',{key:i,style:{background:'#F8F8F8',borderRadius:'8px',padding:'10px 4px',textAlign:'center'}},h('div',{style:{fontSize:'18px',fontWeight:'800',color:m.c}},m.v),h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},m.l))
         )
       ),
-
       h('div',{style:card},
         h('div',{style:{...lbl,marginBottom:'10px'}},'Tendencia — peso y cintura',useDemo?' (datos de ejemplo)':''),
         h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
@@ -1067,7 +1001,6 @@ function App(){
       )
     );
   }
-
   const showAjustar=new URLSearchParams(window.location.search).get('ajustar')==='true';
   if(showAjustar)return h(AjustarSemana,{onClose:()=>window.location.href=window.location.pathname});
   if(!user)return h(Login,{onLogin:login});
