@@ -628,6 +628,11 @@ function Registro({nut,upN,toggleMeal,setWater,tC,tA,pC,pA,metaAgua,metaSal}){
 }
 
 // ── APP ───────────────────────────────────────────────────────────────
+function SelBtn({val,cur,onClick,color}){
+  const sel=val===cur;
+  return h('button',{onClick,style:{flex:1,padding:'10px 4px',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'2px solid',color:sel?(color||'#111'):'#999',background:sel?((color||'#111')+'18'):'#fff',borderColor:sel?(color||'#111'):'rgba(0,0,0,0.08)'}},val);
+}
+
 // ── HIIT ─────────────────────────────────────────────────────────────
 const HIIT_SENS={
   'RST':'Muy alta, manteniendo calidad de sprint',
@@ -659,10 +664,6 @@ function Hiit({cfg,hiitData,setHiitData,setSaved}){
   const sensEsp=HIIT_SENS[curS.nom]||'—';
   const detalle=getSessVal(curS.id,'detalle')||curS.detalle;
   const ritmo=getSessVal(curS.id,'ritmo')||curS.ritmo;
-  function SelBtn({val,cur,onClick,color}){
-    const sel=val===cur;
-    return h('button',{onClick,style:{flex:1,padding:'10px 4px',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'2px solid',color:sel?(color||'#111'):'#999',background:sel?((color||'#111')+'18'):'#fff',borderColor:sel?(color||'#111'):'rgba(0,0,0,0.08)'}},val);
-  }
   return h('div',null,
     // Selector de sesión
     h('div',{style:card},
@@ -944,7 +945,7 @@ function App(){
     if(!user||!wk.id||!wk.num||!draftReady.current)return;
     const draft={sr:sessionReps,n:nut,h:hab,hiit:hiitData};
     localStorage.setItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(draft));
-  },[sessionReps,nut,hab,user,wk.id]);
+  },[sessionReps,nut,hab,hiitData,user,wk.id]);
 
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
   function toggleMeal(i,mealKey){const n=[...nut];const m={...(n[i].m||{})};m[mealKey]=!m[mealKey];n[i]={...n[i],m};setNut(n);setSaved(false);}
