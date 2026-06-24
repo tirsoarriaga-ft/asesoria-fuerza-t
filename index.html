@@ -384,6 +384,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     return acc;
   },[]).map(g=>g.map(id=>findEx(id)).filter(Boolean)).filter(g=>g.length>0&&!g.every(e=>String(e.m||'').toLowerCase()==='calentamiento'));
   const sessExes=sessGroups.flat();
+  console.log('[DEBUG] rawAssign:',JSON.stringify(rawAssign),'sessGroups count:',sessGroups.length,sessGroups.map(g=>g.map(e=>e?.n)));
 
   if(loadingExes)return h('div',{style:{...card,textAlign:'center',padding:'40px 20px'}},h('div',{style:{fontSize:'30px',marginBottom:'8px'}},'⏳'),h('div',{style:{fontSize:'14px',color:'#999'}},'Cargando ejercicios...'));
   if(configuring)return h('div',null,
