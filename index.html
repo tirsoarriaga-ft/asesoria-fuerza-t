@@ -436,7 +436,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
         ))
       )
     ),
-      h('input',{ref:fileRef,type:'file',accept:'video/*',capture:'environment',onChange:onFileChange,style:{display:'none'}}),
+      h('input',{ref:fileRef,type:'file',accept:'video/*',onChange:onFileChange,style:{display:'none'}}),
     sessGroups.length===0
       ? h('div',{style:{...card,textAlign:'center',padding:'30px 20px'}},h('div',{style:{fontSize:'30px',marginBottom:'10px'}},'📋'),h('div',{style:{fontSize:'14px',color:'#999',fontWeight:'600'}},'Esta sesión no tiene ejercicios asignados'),h('button',{onClick:()=>setConfiguring(true),style:{marginTop:'12px',background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'10px 20px',fontSize:'13px',cursor:'pointer',fontWeight:'600'}},'⚙️ Configurar sesión'))
       : sessGroups.map((group,gi)=>{
