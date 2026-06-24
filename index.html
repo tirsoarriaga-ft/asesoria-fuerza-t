@@ -243,7 +243,7 @@ function Login({onLogin}){
 }
 
 // ── TRAINING ──────────────────────────────────────────────────────────
-function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk}){
+function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes}){
   const BLOQUES={
     volumen:    {label:'Volumen',     color:'#1D9E75',emoji:'📈',hint:null},
     intensidad: {label:'Intensidad',  color:'#378ADD',emoji:'🏋️',hint:null},
@@ -376,13 +376,16 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const calExes=exes.filter(e=>String(e.m||'').toLowerCase()==='calentamiento'&&e.url);
   const rawAssign=cfg.assign[activeSess]||[];
   const [calOpen,setCalOpen]=useState(false);
+  // eslint-disable-next-line eqeqeq
+  const findEx=id=>exes.find(e=>e.id==id); // loose equality handles string/number mismatch
   const sessGroups=rawAssign.reduce((acc,item)=>{
     if(typeof item==='object'&&Array.isArray(item)){acc.push(item);}
     else{acc.push([item]);}
     return acc;
-  },[]).map(g=>g.map(id=>exes.find(e=>e.id===id)).filter(Boolean)).filter(g=>g.length>0&&!g.every(e=>String(e.m||'').toLowerCase()==='calentamiento'));
+  },[]).map(g=>g.map(id=>findEx(id)).filter(Boolean)).filter(g=>g.length>0&&!g.every(e=>String(e.m||'').toLowerCase()==='calentamiento'));
   const sessExes=sessGroups.flat();
 
+  if(loadingExes)return h('div',{style:{...card,textAlign:'center',padding:'40px 20px'}},h('div',{style:{fontSize:'30px',marginBottom:'8px'}},'⏳'),h('div',{style:{fontSize:'14px',color:'#999'}},'Cargando ejercicios...'));
   if(configuring)return h('div',null,
     h('div',{style:card},h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},h('div',{style:{fontSize:'15px',fontWeight:'800'}},'⚙️ Configurar rutina'),h('button',{onClick:()=>setConfiguring(false),style:{background:G,color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Listo ✓'))),
     h('div',{style:card},h('div',{style:lbl},'Cantidad de sesiones'),h('div',{style:{display:'flex',gap:'8px'}},[2,3,4].map(n=>h('button',{key:n,onClick:()=>setNum(n),style:{flex:1,padding:'14px',fontSize:'16px',fontWeight:cfg.num===n?'800':'400',cursor:'pointer',borderRadius:'10px',border:'2px solid',color:cfg.num===n?'#fff':'#999',background:cfg.num===n?G:'#fff',borderColor:cfg.num===n?G:'rgba(0,0,0,0.1)'}},n+' sesiones')))),
@@ -1220,7 +1223,7 @@ function App(){
     ),
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       tab==='d'&&h(Dashboard,null),
-      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk}),
+      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal}),
       tab==='n'&&h(Registro,{key:'registro',nut,upN,toggleMeal,setWater,tC,tA,pC,pA,metaAgua,metaSal}),
       tab==='hb'&&h(Habitos,{key:'habitos',hab,setHab,setSaved,pp,pc,sC}),
