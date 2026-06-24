@@ -35,6 +35,10 @@ const TECNICAS=[
   {id:'ne',n:'Negativas',d:'Al llegar al fallo, bajás el peso muy lento (4-6 seg) con ayuda para subir. Solo la fase excéntrica.'},
 ];
 
+const CLOUD_NAME='ifcf8hmy';
+const UPLOAD_PRESET='fuerzat_videos';
+const CLOUD_URL=`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`;
+
 const MEAT_KEYS=['pollo','ternera','lomo','muslopollo','carne','salmon','merluza'];
 const CAT={'P':{l:'Proteína',bg:'#EBF4FF',c:B},'C':{l:'Carbohidrato',bg:'#FEF3C7',c:O},'G':{l:'Grasa',bg:'#F3E8FF',c:'#7C3AED'},'FV':{l:'Fruta/Verdura',bg:'#EAF7F2',c:G}};
 const SENS={
@@ -263,6 +267,43 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const [tut,setTut]=useState(null);
   const [editKg,setEditKg]=useState(null);
   const [kgVal,setKgVal]=useState('');
+  const [videos,setVideos]=useState(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_videos`)||'{}')}catch(e){return{};}});
+  const [uploading,setUploading]=useState({});
+  const fileRef=useRef(null);
+  const uploadTarget=useRef(null); // {sessId, exId}
+
+  function getVideoKey(sessId,exId){return sessId+'_'+exId;}
+  function getVideo(sessId,exId){return videos[getVideoKey(sessId,exId)];}
+  function setVideo(sessId,exId,url){
+    const nv={...videos,[getVideoKey(sessId,exId)]:url};
+    setVideos(nv);
+    localStorage.setItem(`ase_${user}_videos`,JSON.stringify(nv));
+  }
+  async function uploadVideo(file,sessId,exId){
+    const key=getVideoKey(sessId,exId);
+    setUploading(p=>({...p,[key]:true}));
+    try{
+      const fd=new FormData();
+      fd.append('file',file);
+      fd.append('upload_preset',UPLOAD_PRESET);
+      fd.append('public_id',`${user}_${key}_${Date.now()}`);
+      const res=await fetch(CLOUD_URL,{method:'POST',body:fd});
+      const data=await res.json();
+      if(data.secure_url)setVideo(sessId,exId,data.secure_url);
+    }catch(e){}
+    setUploading(p=>({...p,[key]:false}));
+  }
+  function triggerUpload(sessId,exId){
+    uploadTarget.current={sessId,exId};
+    fileRef.current.click();
+  }
+  function onFileChange(e){
+    const file=e.target.files[0];
+    if(!file||!uploadTarget.current)return;
+    const{sessId,exId}=uploadTarget.current;
+    uploadVideo(file,sessId,exId);
+    e.target.value='';
+  }
   const [cfgSess,setCfgSess]=useState('A');
   const [openTec,setOpenTec]=useState(null);
   const SESS=['A','B','C','D'].slice(0,cfg.num);
@@ -395,6 +436,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
         ))
       )
     ),
+      h('input',{ref:fileRef,type:'file',accept:'video/*',capture:'environment',onChange:onFileChange,style:{display:'none'}}),
     sessGroups.length===0
       ? h('div',{style:{...card,textAlign:'center',padding:'30px 20px'}},h('div',{style:{fontSize:'30px',marginBottom:'10px'}},'📋'),h('div',{style:{fontSize:'14px',color:'#999',fontWeight:'600'}},'Esta sesión no tiene ejercicios asignados'),h('button',{onClick:()=>setConfiguring(true),style:{marginTop:'12px',background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'10px 20px',fontSize:'13px',cursor:'pointer',fontWeight:'600'}},'⚙️ Configurar sesión'))
       : sessGroups.map((group,gi)=>{
@@ -421,6 +463,16 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                 )
               ),
               to&&ex.url&&h('div',{style:{background:'#EBF4FF',border:'1px solid rgba(55,138,221,0.2)',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px'}},h('a',{href:ex.url,target:'_blank',rel:'noreferrer',style:{fontSize:'13px',color:B,fontWeight:'600',textDecoration:'none'}},'▶ Ver video tutorial')),
+              h('div',{style:{marginBottom:'8px'}},
+                getVideo(activeSess,ex.id)
+                  ?h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
+                      h('a',{href:getVideo(activeSess,ex.id),target:'_blank',rel:'noreferrer',style:{flex:1,background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:G,textDecoration:'none',display:'flex',alignItems:'center',gap:'6px'}},h('span',null,'🎬'),'Ver mi video'),
+                      h('button',{onClick:()=>triggerUpload(activeSess,ex.id),style:{background:'#F5F5F5',border:'none',borderRadius:'8px',padding:'7px 10px',fontSize:'11px',cursor:'pointer',color:'#666'}},'Reemplazar')
+                    )
+                  :uploading[getVideoKey(activeSess,ex.id)]
+                    ?h('div',{style:{background:'#F5F5F5',borderRadius:'8px',padding:'7px 12px',fontSize:'12px',color:'#999',textAlign:'center'}},'⏳ Subiendo video...')
+                    :h('button',{onClick:()=>triggerUpload(activeSess,ex.id),style:{width:'100%',background:'#F5F5F5',border:'1px dashed rgba(0,0,0,0.15)',borderRadius:'8px',padding:'7px 12px',fontSize:'12px',cursor:'pointer',color:'#666',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px'}},h('span',null,'📹'),'Subir video del ejercicio')
+              ),
               h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
                 SERIES_KEYS.map((k,i)=>{
                   const sug=suggestedKg(ex,i);
