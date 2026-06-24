@@ -442,7 +442,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
           );
           if(isBiserie){
             return h('div',{key:'g'+gi,style:card},
-              h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}},h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}}),h('span',{style:{fontSize:'10px',fontWeight:'800',color:'#999',letterSpacing:'0.1em'}},'BISERIE'),h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}})),
+              h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}},h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}}),h('span',{style:{fontSize:'10px',fontWeight:'800',color:'#999',letterSpacing:'0.1em'}},group.length>2?'SERIE GIGANTE':'BISERIE'),h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}})),
               group.map(ex=>exCard(ex)),
               tecBanner
             );
@@ -840,10 +840,11 @@ function App(){
           ['A','B','C','D'].slice(0,num).forEach(s=>{
             const nombres=String(fila['Sesion'+s]||'').split(',').map(n=>n.trim()).filter(Boolean);
             assign[s]=nombres.map(nombre=>{
-              if(nombre.includes('/')){
-                return nombre.split('/').map(n=>{const ex=exesRef.current.find(e=>norm2(e.n)===norm2(n.trim()));return ex?ex.id:null;}).filter(Boolean);
+              if(nombre.includes('+')){
+                // biserie o serie gigante: 2+ ejercicios separados por +
+                return nombre.split('+').map(n=>{const ex=exesRef.current.find(e=>norm2(e.n)===norm2(n.trim()));return ex?ex.id:null;}).filter(Boolean);
               }
-              const ex=exesRef.current.find(e=>norm2(e.n)===norm2(nombre));
+              const ex=exesRef.current.find(e=>norm2(e.n)===norm2(nombre.trim()));
               return ex?ex.id:null;
             }).filter(v=>v!==null);
           });
