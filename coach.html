@@ -398,21 +398,27 @@ function ClientDetail({name,weeks,rutina,onBack}){
 }
 
 function VideoPanel({name}){
-  const CLOUD_NAME='ifcf8hmy';
-  const [videos,setVids]=useState({});
+  const [videos,setVideos]=useState([]);
+  const [loading,setLoading]=useState(true);
   useEffect(()=>{
-    // Lee los videos guardados en localStorage del asesorado
-    // Los videos se guardan como ase_${user}_videos en el dispositivo del asesorado
-    // Desde el coach los vemos via Cloudinary buscando por nombre
-    // Por ahora mostramos mensaje de cómo acceder
+    fetch(SCRIPT_URL+'?action=videos')
+      .then(r=>r.json())
+      .then(rows=>{
+        const vids=rows.filter(r=>String(r.Asesorado||'').trim().toLowerCase()===name.trim().toLowerCase());
+        setVideos(vids);
+      }).catch(()=>{}).finally(()=>setLoading(false));
   },[name]);
+  if(loading)return null;
+  if(!videos.length)return null;
   return h('div',{style:card},
-    h('div',{style:{...lbl,marginBottom:'8px'}},'🎬 Videos del asesorado'),
-    h('div',{style:{fontSize:'12px',color:'#999',lineHeight:'1.6'}},
-      'Los videos subidos por ',h('strong',null,name),' se guardan en tu Cloudinary.',h('br',null),
-      h('a',{href:'https://cloudinary.com/console/media_library',target:'_blank',rel:'noreferrer',style:{color:B,fontWeight:'600'}},'Ver en Cloudinary →'),
-      h('br',null),h('span',{style:{fontSize:'11px'}},'Buscá por el nombre del asesorado para filtrar sus videos.')
-    )
+    h('div',{style:{...lbl,marginBottom:'10px'}},'🎬 Videos subidos'),
+    videos.slice().reverse().map((v,i)=>h('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:i<videos.length-1?'1px solid rgba(0,0,0,0.05)':'none'}},
+      h('div',null,
+        h('div',{style:{fontWeight:'600',fontSize:'13px'}},'Ses. '+(v.Sesion||''),' — ',v.Ejercicio||''),
+        h('div',{style:{fontSize:'10px',color:'#999'}},v.Fecha||'')
+      ),
+      h('a',{href:v.URL,target:'_blank',rel:'noreferrer',style:{background:'#EAF7F2',color:G,borderRadius:'8px',padding:'6px 12px',fontSize:'12px',fontWeight:'700',textDecoration:'none'}},'▶ Ver')
+    ))
   );
 }
 function App(){
