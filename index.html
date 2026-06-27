@@ -1262,12 +1262,12 @@ function App(){
     );
   }
 
+  const [showInstall,setShowInstall]=useState(()=>!window.navigator.standalone&&!window.matchMedia('(display-mode: standalone)').matches&&!localStorage.getItem('ft_install_shown'));
+  function dismissInstall(){localStorage.setItem('ft_install_shown','1');setShowInstall(false);}
+
   const showAjustar=new URLSearchParams(window.location.search).get('ajustar')==='true';
   if(showAjustar)return h(AjustarSemana,{onClose:()=>window.location.href=window.location.pathname});
   if(!user)return h(Login,{onLogin:login});
-  const isStandalone=window.navigator.standalone||window.matchMedia('(display-mode: standalone)').matches;
-  const [showInstall,setShowInstall]=useState(()=>!isStandalone&&!localStorage.getItem('ft_install_shown'));
-  function dismissInstall(){localStorage.setItem('ft_install_shown','1');setShowInstall(false);}
   const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
