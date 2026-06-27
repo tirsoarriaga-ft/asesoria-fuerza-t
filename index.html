@@ -254,21 +254,20 @@ function Login({onLogin}){
 // ── TRAINING ──────────────────────────────────────────────────────────
 function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes}){
   const BLOQUES={
-    volumen:    {label:'Volumen',     color:'#1D9E75',emoji:'📈',hint:'Triple progresión: más reps dentro del rango → más kg → más series cada 2 semanas.'},
-    intensidad: {label:'Intensidad',  color:'#378ADD',emoji:'🏋️',hint:'Doble progresión: más reps → más kg al alcanzar el techo. Última serie con técnica de intensidad.'},
-    man:        {label:'Mantenimiento',color:'#6B7280',emoji:'🔄',hint:'Doble progresión normal. Variables estables, sin cambios automáticos de series.'},
-    base:       {label:'Progresión Base',color:'#F59E0B',emoji:'🌱',hint:'Si el entrenamiento anterior se sintió cómodo y controlado, hoy es momento de subir un poco el peso.'},
-    deporte:    {label:'Deporte',     color:'#8B5CF6',emoji:'🏀',hint:'Velocidad máxima en cada rep. Terminá la serie cuando notes pérdida de velocidad.'},
-    rehab:      {label:'Rehabilitación',color:'#EF4444',emoji:'🏥',hint:'Registrá los kg y reps de cada ejercicio. La progresión la indicará tu coach.'},
+    volumen:    {label:'Volumen',        color:'#1D9E75',emoji:'📈',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. Cada 2 semanas la app te agregará una serie efectiva extra.'},
+    intensidad: {label:'Intensidad',     color:'#378ADD',emoji:'🏋️',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. En la última serie de cada ejercicio, aplicá una técnica de intensidad.'},
+    fuerza:     {label:'Fuerza',         color:'#DC2626',emoji:'💪',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cada 2 semanas la app aumentará los kg con el fin de progresar en carga. Intentá no perder reps con el peso nuevo.'},
+    man:        {label:'Mantenimiento',  color:'#6B7280',emoji:'🔄',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión.'},
+    base:       {label:'Progresión Base',color:'#F59E0B',emoji:'🌱',hint:'Las series y reps son fijas. Los kg los elegís vos: el peso no debe generarte dolor, pérdida de técnica ni desconfianza. Solo cuando lo sentís fácil, agregás peso — pero no series ni reps.'},
+    deporte:    {label:'Deporte',        color:'#8B5CF6',emoji:'🏀',hint:'El protocolo series-reps-kg ya está pautado. El objetivo es respetar lo indicado por la app y ejecutar cada rep a máxima velocidad. Si perdés velocidad, frenás la serie. Si te quedan series, podés sacar peso.'},
   };
   const bloque=(cfg?.bloque||'volumen').toLowerCase();
   const bloqueInfo=BLOQUES[bloque]||BLOQUES.volumen;
   const bloqueInicio=cfg?.bloqueInicio||1;
   const wkNum=wk?.num||1;
   const weeksInBlock=Math.max(0,wkNum-bloqueInicio);
-  // volumen: triple progresión | intensidad: doble c/2sem | man: doble normal | deporte/rehab: sin progresión
-  const hasProgression=bloque==='volumen'||bloque==='intensidad'||bloque==='man';
-  const hasAutoSeries=bloque==='volumen'; // solo volumen sube series
+  const hasProgression=bloque==='volumen'||bloque==='intensidad'||bloque==='man'||bloque==='fuerza';
+  const hasAutoSeries=bloque==='volumen';
   const seriesBase=Math.min(4,Math.max(2,cfg?.series||2));
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
   if(!cfg)cfg=defCfg;
@@ -328,8 +327,14 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const toggleEx=(s,id)=>{const cur=cfg.assign[s]||[];const na=cur.includes(id)?cur.filter(x=>x!==id):[...cur,id];saveCfg({...cfg,assign:{...cfg.assign,[s]:na}});};
   const setNum=n=>{const na={};['A','B','C','D'].slice(0,n).forEach(s=>{na[s]=cfg.assign[s]||[];});saveCfg({...cfg,num:n,assign:na});};
 
-  const getKg=ex=>sessionKg?.[activeSess]?.[ex.id]; // undefined si no fue establecido
-  const getRep=(sess,exId,k)=>sessionReps?.[sess]?.[exId]?.[k]||'';
+  const getKg=ex=>sessionKg?.[activeSess]?.[ex.id];
+  const getRep=(sess,exId,k)=>{
+    const stored=sessionReps?.[sess]?.[exId]?.[k]||'';
+    if(stored)return stored;
+    // Para bloque base: pre-cargar con la mitad del rango
+    if(bloque==='base'){const ex=exes.find(e=>e.id==exId);if(ex)return String(Math.round((ex.low+ex.hi)/2));}
+    return '';
+  };
 
   const numSeries=(()=>{
     if(bloque==='base')return 4;
@@ -359,14 +364,21 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   };
   const canIncreaseKg=ex=>{
     if(!hasProgression)return false;
-    return true; // volumen, intensidad y man: sube al alcanzar techo inmediatamente
+    if(bloque==='fuerza'){
+      // fuerza: sube c/2 semanas sin importar reps
+      const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${activeSess}_${ex.id}`))||0;
+      return wkNum>=lastUp+2;
+    }
+    return true; // volumen, intensidad, man: sube al alcanzar techo
   };
   const nKg=ex=>{
     const curKg=getKg(ex);if(!curKg)return null;
     if(!canIncreaseKg(ex))return null;
+    if(bloque==='fuerza')return rKg(curKg*1.05); // fuerza: sube siempre al cumplir 2 sem
     const r1=parseInt(sessionReps?.[activeSess]?.[ex.id]?.r1)||0;
     return r1>=ex.hi?rKg(curKg*1.05):null;
   };
+  // Para base: reps pre-cargadas con la mitad del rango
   // Sugerencia intraserie: si serie anterior ≤ mitad del rango → bajar 10%
   const suggestedKg=(ex,serieIdx)=>{
     if(serieIdx===0)return null;
@@ -1002,7 +1014,7 @@ function App(){
           }).filter(Boolean);
           const normBloque=s=>{
             const n=s.toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');
-            const MAP={'mantenimiento':'man','mant':'man','manteniment':'man','deportivo':'deporte','rehabilitacion':'rehab','rehab':'rehab','progresion base':'base','progresionbase':'base','base':'base','intensidad':'intensidad','volumen':'volumen','deporte':'deporte','man':'man'};
+            const MAP={'mantenimiento':'man','mant':'man','manteniment':'man','deportivo':'deporte','rehabilitacion':'base','rehab':'base','progresion base':'base','progresionbase':'base','base':'base','intensidad':'intensidad','volumen':'volumen','deporte':'deporte','man':'man','fuerza':'fuerza'};
             return MAP[n]||n;
           };
           const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
@@ -1058,18 +1070,27 @@ function App(){
     try{
       const curSR=sessionRepsRef.current;
       const bloqueActual=(cfg?.bloque||'volumen').toLowerCase();
-      const hasProgressionSave=bloqueActual==='volumen'||bloqueActual==='intensidad'||bloqueActual==='man';
+      const hasProgressionSave=bloqueActual==='volumen'||bloqueActual==='intensidad'||bloqueActual==='man'||bloqueActual==='fuerza';
       const newSK={...sessionKg};
       Object.entries(curSR).forEach(([sessId,sessData])=>{
         Object.entries(sessData).forEach(([exId,reps])=>{
           const ex=exes.find(e=>e.id===parseInt(exId));if(!ex)return;
           const curKg=(sessionKg[sessId]?.[exId])||ex.kg;
           if(!hasProgressionSave)return;
-          const r1=parseInt(reps.r1)||0;
-          if(r1<ex.hi)return;
-          // volumen, intensidad y man: sube al alcanzar techo inmediatamente
-          if(!newSK[sessId])newSK[sessId]={};
-          newSK[sessId][exId]=rKg(curKg*1.05);
+          if(bloqueActual==='fuerza'){
+            // fuerza: sube c/2 semanas sin importar reps
+            const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${sessId}_${exId}`))||0;
+            if(wk.num<lastUp+2)return;
+            if(!newSK[sessId])newSK[sessId]={};
+            newSK[sessId][exId]=rKg(curKg*1.05);
+            localStorage.setItem(`ase_${user}_lastKgUp_${sessId}_${exId}`,String(wk.num));
+          }else{
+            // volumen, intensidad, man: sube al alcanzar techo de reps
+            const r1=parseInt(reps.r1)||0;
+            if(r1<ex.hi)return;
+            if(!newSK[sessId])newSK[sessId]={};
+            newSK[sessId][exId]=rKg(curKg*1.05);
+          }
         });
       });
       setSessionKg(newSK);
