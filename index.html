@@ -59,12 +59,12 @@ const KG_KEY=(u,n)=>`ase_${u}_kg_${n}`;
 const CFG_KEY=u=>`ase_${u}_sessConfig`;
 const USER_KEY='ase_user';
 const MEALS_CHECK=[{k:'desayuno',l:'Desayuno',ic:'☀️'},{k:'almuerzo',l:'Almuerzo',ic:'🌞'},{k:'merienda',l:'Merienda',ic:'☕'},{k:'cena',l:'Cena',ic:'🌙'}];
-const iN=()=>DIAS.map(d=>({day:d,m:{desayuno:false,almuerzo:false,merienda:false,cena:false},a:''}));
+const iN=()=>DIAS.map(d=>({day:d,m:{desayuno:false,almuerzo:false,merienda:false,cena:false},a:'',ak:false}));
 function migrateNut(n){
   if(!n)return iN();
   return n.map(d=>{
-    if(d.m)return{...d,a:d.a===undefined?'':d.a};
-    return{day:d.day,a:'',m:{desayuno:false,almuerzo:false,merienda:false,cena:false}};
+    if(d.m)return{...d,a:d.a===undefined?'':d.a,ak:d.ak!==undefined?d.ak:normNum(d.a||'')>0};
+    return{day:d.day,a:'',ak:false,m:{desayuno:false,almuerzo:false,merienda:false,cena:false}};
   });
 }
 function migrateHab(h){
@@ -131,8 +131,8 @@ function parseDietas(row,foodDB){
 // Semana secuencial basada en contador localStorage — Lun a Dom
 function getWkForNum(user,num){
   const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
-  const startMon=new Date(startId+'T12:00:00');
-  // Ajustar al lunes de esa semana
+  let startMon=new Date(startId+'T12:00:00');
+  if(isNaN(startMon.getTime())){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
   const day=startMon.getDay();
   const diffToMon=day===0?-6:1-day;
   startMon.setDate(startMon.getDate()+diffToMon);
@@ -165,20 +165,23 @@ function LineChart({data,color,h:ht=140,labels,pointLabels}){
     !pointLabels&&h('text',{x:pad.l-2,y:y(mx)+4,textAnchor:'end',fontSize:'9',fill:'#999'},mx.toFixed(1))
   );
 }
-function DualBarChart({data}){
+function DualBarChart({data,key2='toxics',color2=R}){
   if(!data||data.length<1)return null;
   const W=300,H=100,pad={t:8,b:22,l:20,r:8};
   const iW=W-pad.l-pad.r,iH=H-pad.t-pad.b;
   const bW=Math.min(10,iW/data.length/2-2);
   const gap=iW/data.length;
+  const max2=Math.max(...data.map(d=>d[key2]||0),1);
   return h('svg',{width:'100%',viewBox:`0 0 ${W} ${H}`,style:{display:'block'}},
     h('line',{x1:pad.l,y1:pad.t+iH,x2:W-pad.r,y2:pad.t+iH,stroke:'rgba(0,0,0,0.08)',strokeWidth:'1'}),
     data.map((d,i)=>{
       const cx=pad.l+i*gap+gap/2;
-      const sH=(d.sleep/7)*iH,tH=(d.toxics/7)*iH;
+      const sH=(d.sleep/7)*iH;
+      const v2=d[key2]||0;
+      const tH=(v2/max2)*iH;
       return h('g',{key:i},
-        h('rect',{x:cx-bW-1,y:pad.t+iH-sH,width:bW,height:Math.max(sH,1),fill:G,rx:'2'}),
-        h('rect',{x:cx+1,y:pad.t+iH-tH,width:bW,height:Math.max(tH,1),fill:R,rx:'2'}),
+        h('rect',{x:cx-bW-1,y:pad.t+iH-sH,width:bW,height:Math.max(sH,1),fill:'#111',rx:'2'}),
+        h('rect',{x:cx+1,y:pad.t+iH-tH,width:bW,height:Math.max(tH,1),fill:color2,rx:'2'}),
         h('text',{x:cx,y:H-6,textAnchor:'middle',fontSize:'8',fill:'#999'},d.label)
       );
     })
@@ -627,27 +630,11 @@ function Diet({hab,user,menusVer,metaAgua,metaSal}){
 }
 
 // ── HABITOS ───────────────────────────────────────────────────────────
-function Habitos({hab,setHab,setSaved,pp,pc,sC}){
-  const tC=(hab.toxics||[]).filter(Boolean).length;
-  function ToggleRow({field,color,label,sublabel}){
-    const vals=hab[field]||Array(7).fill(false);
-    return h('div',{style:card},
-      h('div',{style:lbl},label),
-      sublabel&&h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'8px'}},sublabel),
-      h('div',{style:{display:'flex',justifyContent:'space-between',margin:'8px 0 6px'}},
-        DS.map((d,i)=>h('button',{key:i,onClick:()=>{const n=[...(hab[field]||Array(7).fill(false))];n[i]=!n[i];setHab({...hab,[field]:n});setSaved(false);},
-          style:{width:'38px',height:'38px',borderRadius:'50%',cursor:'pointer',fontWeight:'700',fontSize:'12px',
-          background:vals[i]?color:'#F8F8F8',color:vals[i]?'#fff':'#999',border:`1px solid ${vals[i]?color:'rgba(0,0,0,0.1)'}`}},d))
-      ),
-      h('div',{style:{fontSize:'12px',color:'#999'}},vals.filter(Boolean).length+' de 7 días')
-    );
-  }
+// ── MEDICIONES ────────────────────────────────────────────────────────
+function Mediciones({hab,setHab,setSaved,pp,pc,sC}){
   return h('div',null,
-    h(ToggleRow,{field:'sleep',color:'#111',label:'Sueño — mínimo 7 hs por noche'}),
-    h(ToggleRow,{field:'toxics',color:R,label:'Tóxicos — alcohol, tabaco, etc.',sublabel:'Marcá los días donde hubo consumo'}),
-    h(ToggleRow,{field:'actExtra',color:O,label:'Actividad extra fuera del gym',sublabel:'Cardio, caminata, bici, deporte, etc.'}),
     h('div',{style:card},
-      h('div',{style:lbl},'Mediciones de la semana'),
+      h('div',{style:{...lbl,marginBottom:'12px'}},'📏 Mediciones de la semana'),
       h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'14px',padding:'12px',background:'#F8F8F8',borderRadius:'8px'}},
         h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'2px'}},'Promedio peso'),h('div',{style:{fontWeight:'800',fontSize:'18px'}},pp+' kg')),
         h('div',{style:{width:'1px',background:'rgba(0,0,0,0.08)'}}),
@@ -659,7 +646,7 @@ function Habitos({hab,setHab,setSaved,pp,pc,sC}){
       ))
     ),
     h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'12px'}},'Sensaciones de la semana'),
+      h('div',{style:{...lbl,marginBottom:'12px'}},'🧠 Sensaciones de la semana'),
       Object.entries(SENS).map(([key,cfg2])=>h('div',{key,style:{marginBottom:'14px'}},
         h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},cfg2.l),
         h('div',{style:{display:'flex',gap:'4px'}},cfg2.opts.map((opt,i)=>{
@@ -678,44 +665,81 @@ function Habitos({hab,setHab,setSaved,pp,pc,sC}){
   );
 }
 
-// ── REGISTRO ──────────────────────────────────────────────────────────
-function Registro({nut,upN,toggleMeal,setWater,tC,tA,pC,pA,metaAgua,metaSal}){
-  function PBar({v,color}){return h('div',{style:{height:'4px',background:'#F0F0F0',borderRadius:'2px',marginTop:'8px'}},h('div',{style:{height:'100%',width:Math.min(100,v)+'%',background:color||G,borderRadius:'2px',transition:'width 0.3s'}}));}
+// ── CUMPLIMIENTO ──────────────────────────────────────────────────────
+const NIVEL_BANNER={
+  1:'Marcá qué comidas del día fueron con alimentos naturales (tenés menú de referencia)',
+  2:'Marcá qué comidas del día cumpliste las cantidades de los menús pautados',
+  3:'Marcá qué comidas del día siguieron el plan exacto: alimentos, porciones y horarios',
+};
+const MEAL_SHORT=[{k:'desayuno',s:'D'},{k:'almuerzo',s:'A'},{k:'merienda',s:'M'},{k:'cena',s:'C'}];
+const DS_SHORT=['Lu','Ma','Mi','Ju','Vi','Sá'];
+function Cumplimiento({nut,toggleMeal,toggleAguaOk,hab,setHab,setSaved,metaAgua,metaSal,nivel,tC,tA,pC,pA}){
+  function Bubble({on,onClick,color,label,size}){
+    const s=size||38;
+    return h('button',{onClick,style:{width:s+'px',height:s+'px',borderRadius:'50%',cursor:'pointer',border:'none',background:on?(color||G):'#F0F0F0',color:on?'#fff':'#bbb',fontSize:'11px',fontWeight:'700',flexShrink:0}},on?'✓':label||'');
+  }
+  function NutGrid({from,to}){
+    const indices=Array.from({length:to-from},(_,i)=>i+from);
+    return h('div',{style:{display:'grid',gridTemplateColumns:'16px repeat('+indices.length+',1fr)',gap:'4px',alignItems:'center'}},
+      h('div',{}),
+      ...indices.map(i=>h('div',{key:i,style:{textAlign:'center',fontSize:'11px',fontWeight:'700',color:'#999',paddingBottom:'2px'}},DS_SHORT[i])),
+      ...MEAL_SHORT.flatMap(mc=>[
+        h('div',{key:'l'+mc.k,style:{fontSize:'10px',fontWeight:'800',color:'#bbb',textAlign:'right',paddingRight:'2px'}},mc.s),
+        ...indices.map(i=>{
+          const done=!!(nut[i]?.m?.[mc.k]);
+          return h('div',{key:i+mc.k,style:{display:'flex',justifyContent:'center'}},
+            h(Bubble,{on:done,onClick:()=>toggleMeal(i,mc.k),color:G})
+          );
+        })
+      ])
+    );
+  }
+  function DayRow({field,color}){
+    const vals=(hab[field]||Array(7).fill(false)).slice(0,6);
+    return h('div',{style:{display:'flex',gap:'6px',justifyContent:'space-between'}},
+      vals.map((on,i)=>h('div',{key:i,style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'4px'}},
+        h('div',{style:{fontSize:'10px',fontWeight:'700',color:'#999'}},DS_SHORT[i]),
+        h(Bubble,{on,onClick:()=>{const n=[...(hab[field]||Array(7).fill(false))];n[i]=!n[i];setHab({...hab,[field]:n});setSaved(false);},color})
+      ))
+    );
+  }
   return h('div',null,
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}},
-      h('div',{style:{...card,marginBottom:0}},h('div',{style:lbl},'Comidas'),h('div',{style:{fontSize:'22px',fontWeight:'800'}},tC,h('span',{style:{fontSize:'13px',color:'#999'}},'/24')),h(PBar,{v:pC}),h('div',{style:{fontSize:'12px',color:G,marginTop:'4px',fontWeight:'700'}},pC+'%')),
-      h('div',{style:{...card,marginBottom:0}},h('div',{style:lbl},'Agua'),h('div',{style:{fontSize:'22px',fontWeight:'800'}},tA,h('span',{style:{fontSize:'13px',color:'#999'}},'/6d')),h(PBar,{v:pA,color:B}),h('div',{style:{fontSize:'12px',color:B,marginTop:'4px',fontWeight:'700'}},pA+'% · meta '+metaAgua+'L'))
+      h('div',{style:{...card,marginBottom:0}},h('div',{style:lbl},'Comidas'),h('div',{style:{fontSize:'22px',fontWeight:'800'}},tC,h('span',{style:{fontSize:'13px',color:'#999'}},'/24')),h('div',{style:{fontSize:'12px',color:G,marginTop:'4px',fontWeight:'700'}},pC+'%')),
+      h('div',{style:{...card,marginBottom:0}},h('div',{style:lbl},'Agua'),h('div',{style:{fontSize:'22px',fontWeight:'800'}},tA,h('span',{style:{fontSize:'13px',color:'#999'}},'/6d')),h('div',{style:{fontSize:'12px',color:B,marginTop:'4px',fontWeight:'700'}},pA+'%'))
     ),
-    nut.map((day,i)=>{
-      const m=day.m||{};
-      const doneCount=MEALS_CHECK.filter(mc=>m[mc.k]).length;
-      const aguaV=normNum(day.a);
-      const aguaMeta=parseFloat(metaAgua);
-      const aguaOk=aguaV>0&&aguaV>=aguaMeta;
-      return h('div',{key:i,style:card},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},h('div',{style:{fontWeight:'700',fontSize:'14px'}},day.day),h('div',{style:{fontSize:'11px',color:'#999'}},doneCount+'/4 comidas')),
-        h('div',{style:{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'12px'}},
-          MEALS_CHECK.map(mc=>{
-            const done=!!m[mc.k];
-            return h('div',{key:mc.k,onClick:()=>toggleMeal(i,mc.k),style:{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 12px',borderRadius:'8px',cursor:'pointer',background:done?'#EAF7F2':'#F8F8F8',border:'1px solid',borderColor:done?'#A3DFC8':'rgba(0,0,0,0.06)'}},
-              h('span',{style:{fontSize:'13px',color:done?G:'#666',fontWeight:done?'700':'400'}},mc.ic+' '+mc.l),
-              h('span',{style:{fontSize:'16px',color:done?G:'#ccc'}},done?'✓':'—')
-            );
-          })
-        ),
-        h('div',null,
-          h('div',{style:{...lbl,display:'flex',justifyContent:'space-between'}},
-            h('span',null,'💧 Agua del día'),
-            h('span',{style:{color:'#999'}},metaAgua+'L · 🧂 '+metaSal+'g sal')
-          ),
-          h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
-            h('input',{type:'text',inputMode:'decimal',placeholder:'ej: 2.5',value:day.a,onChange:e=>setWater(i,e.target.value),style:{...inp,fontSize:'22px',fontWeight:'700',flex:1,textAlign:'center',borderColor:aguaOk?G:aguaV>0?O:'rgba(0,0,0,0.1)'}}),
-            h('span',{style:{fontSize:'14px',fontWeight:'700',color:'#999'}},'L'),
-            aguaOk&&h('span',{style:{fontSize:'18px',color:G}},'✓')
-          )
-        )
-      );
-    })
+    h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'4px'}},'🍽️ Nutrición'),
+      h('div',{style:{fontSize:'12px',color:'#555',marginBottom:'12px',lineHeight:'1.5',padding:'8px',background:'#F8F8F8',borderRadius:'8px'}},NIVEL_BANNER[nivel]||NIVEL_BANNER[1]),
+      h(NutGrid,{from:0,to:3}),
+      h('div',{style:{height:'10px'}}),
+      h(NutGrid,{from:3,to:6})
+    ),
+    h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'4px'}},'💧 Agua y sal'),
+      h('div',{style:{fontSize:'12px',color:'#555',marginBottom:'12px',lineHeight:'1.5'}},'Marcá qué días alcanzaste tus '+metaAgua+'L de agua y '+metaSal+'g de sal'),
+      h('div',{style:{display:'flex',gap:'6px',justifyContent:'space-between'}},
+        nut.slice(0,6).map((day,i)=>h('div',{key:i,style:{display:'flex',flexDirection:'column',alignItems:'center',gap:'4px'}},
+          h('div',{style:{fontSize:'10px',fontWeight:'700',color:'#999'}},DS_SHORT[i]),
+          h(Bubble,{on:day.ak,onClick:()=>toggleAguaOk(i),color:B})
+        ))
+      )
+    ),
+    h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'4px'}},'😴 Sueño'),
+      h('div',{style:{fontSize:'12px',color:'#555',marginBottom:'12px',lineHeight:'1.5'}},'Marcá qué días dormiste al menos 7hs'),
+      h(DayRow,{field:'sleep',color:'#111'})
+    ),
+    h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'4px'}},'⚠️ Tóxicos'),
+      h('div',{style:{fontSize:'12px',color:'#555',marginBottom:'12px',lineHeight:'1.5'}},'Marcá qué días hubo tabaco, alcohol, atracones o comida muy procesada'),
+      h(DayRow,{field:'toxics',color:R})
+    ),
+    h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'4px'}},'🏃 NEAT'),
+      h('div',{style:{fontSize:'12px',color:'#555',marginBottom:'12px',lineHeight:'1.5'}},'Marcá qué días hiciste otra actividad física fuera del gym: caminar, bici, deporte recreativo'),
+      h(DayRow,{field:'actExtra',color:O})
+    )
   );
 }
 
@@ -901,15 +925,17 @@ function App(){
   const pp=mP.length?(mP.reduce((a,b)=>a+b,0)/mP.length).toFixed(1):'—';
   const mC=hab.meds.filter(m=>m.c).map(m=>normNum(m.c));
   const pc=mC.length?(mC.reduce((a,b)=>a+b,0)/mC.length).toFixed(1):'—';
-  const pesoRef=mP.length?mP[0]:(hist.length>0?parseFloat(hist[hist.length-1].pp)||70:70);
+  const pesoInicial=parseFloat(localStorage.getItem(`ase_${user}_pesoinicial`)||'0')||0;
+  const nivel=parseInt(localStorage.getItem(`ase_${user}_nivel`)||'1')||1;
+  const pesoRef=pesoInicial>0?pesoInicial:(mP.length?mP[0]:(hist.length>0?parseFloat(hist[hist.length-1].pp)||70:70));
   const metaAgua=(pesoRef*40/1000).toFixed(1);
   const metaSal=parseFloat(metaAgua).toFixed(1);
   const pesoVal=normNum(hab.meds.find(m=>m.p&&normNum(m.p)>0)?.p)||pesoRef;
   const tC=nut.reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0),pC=Math.round(tC/24*100);
-  const aguaDias=nut.filter(d=>normNum(d.a)>=parseFloat(metaAgua)).length;
+  const aguaDias=nut.filter(d=>d.ak).length;
   const aguaPromedio=(nut.reduce((a,d)=>a+normNum(d.a),0)/6).toFixed(1);
   const tA=aguaDias,pA=Math.round(aguaDias/6*100);
-  const sC=(hab.sleep||[]).filter(Boolean).length,pS=Math.round(sC/7*100);
+  const sC=(hab.sleep||[]).filter(Boolean).length,pS=Math.round(sC/6*100);
   const actExtraC=(hab.actExtra||[]).filter(Boolean).length;
   const toxC=(hab.toxics||[]).filter(Boolean).length;
 
@@ -974,7 +1000,12 @@ function App(){
             if(!nom)return null;
             return{id:s,nom,detalle:String(fila['HIIT'+s+'Detalle']||'').trim(),ritmo:String(fila['HIIT'+s+'Ritmo']||'').trim()};
           }).filter(Boolean);
-          const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:String(fila.Bloque||'volumen').toLowerCase().trim(),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
+          const normBloque=s=>{
+            const n=s.toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');
+            const MAP={'mantenimiento':'man','mant':'man','manteniment':'man','deportivo':'deporte','rehabilitacion':'rehab','rehab':'rehab','progresion base':'base','progresionbase':'base','base':'base','intensidad':'intensidad','volumen':'volumen','deporte':'deporte','man':'man'};
+            return MAP[n]||n;
+          };
+          const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
           // FechaInicio: fecha de arranque para calcular semanas (lunes de esa semana)
           const fechaInicio=String(fila.FechaInicio||'').trim();
           if(fechaInicio){localStorage.setItem(`ase_${user}_startdate`,fechaInicio);}
@@ -993,6 +1024,10 @@ function App(){
       if(dietaFila){
         const tmpl=parseInt(dietaFila.Template);
         if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
+        const pi=parseFloat(String(dietaFila.PesoInicial||'').replace(',','.'));
+        if(!isNaN(pi)&&pi>0)localStorage.setItem(`ase_${user}_pesoinicial`,String(pi));
+        const niv=parseInt(dietaFila.Nivel||'1');
+        if(niv>=1&&niv<=3)localStorage.setItem(`ase_${user}_nivel`,String(niv));
         const comidas=parseDietas(dietaFila,foodDB);
         if(comidas.length>0){
           localStorage.setItem(`ase_${user}_menus`,JSON.stringify(comidas));
@@ -1104,6 +1139,7 @@ function App(){
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
   function toggleMeal(i,mealKey){const n=[...nut];const m={...(n[i].m||{})};m[mealKey]=!m[mealKey];n[i]={...n[i],m};setNut(n);setSaved(false);}
   function setWater(i,val){const n=[...nut];n[i]={...n[i],a:val};setNut(n);setSaved(false);}
+  function toggleAguaOk(i){const n=[...nut];n[i]={...n[i],ak:!n[i].ak};setNut(n);setSaved(false);}
 
   // Chart data
   const hPW=hist.filter(w=>w.pp&&w.pp!=='—');
@@ -1141,22 +1177,26 @@ function App(){
     }).filter(v=>v!==null);
   },[hist,exOptions,selExOpt]);
 
-  // Sleep vs toxics data
-  const svtData=hist.map(w=>({
+  // Last 3 weeks for charts
+  const hist3=hist.slice(-3);
+
+  // Sleep vs Energía data (last 3 weeks)
+  const ENERGIA_VAL={alta:3,buena:2.5,normal:2,baja:1,muy_baja:0.5};
+  const svtData=hist3.map(w=>({
     label:w.wi?.slice(5)||'',
     sleep:(w.h?.sleep||[]).filter(Boolean).length,
-    toxics:w.toxics||0
+    energia:ENERGIA_VAL[String(w.h?.sens?.energia||'').toLowerCase().replace(/\s/g,'_')]||0
   }));
 
   const hiitSess=cfg?.hiit||[];
   const hasHiit=hiitSess.length>0;
-  const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'n',l:'Registro',ic:'✅'},{id:'hb',l:'Hábitos',ic:'😴'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
+  const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'n',l:'Cumplimiento',ic:'✅'},{id:'hb',l:'Mediciones',ic:'📏'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
 
   function Dashboard(){
     return h('div',null,
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}},
         [{l:'Peso',u:'kg',k:'pp'},{l:'Cintura',u:'cm',k:'pc',c2:B}].map((m,i)=>{
-          const hPW2=hist.filter(w=>w[m.k]&&w[m.k]!=='—');
+          const hPW2=hist3.filter(w=>w[m.k]&&w[m.k]!=='—');
           const lastV=hPW2.length?hPW2[hPW2.length-1][m.k]:'—';
           const prevV=hPW2.length>1?hPW2[hPW2.length-2][m.k]:null;
           const diff=prevV&&lastV!=='—'?(parseFloat(lastV)-parseFloat(prevV)).toFixed(1):null;
@@ -1181,12 +1221,12 @@ function App(){
         )
       ),
       svtData.length>0&&h('div',{style:card},
-        h('div',{style:{...lbl,marginBottom:'4px'}},'Sueño vs Tóxicos — sem. a sem.'),
+        h('div',{style:{...lbl,marginBottom:'4px'}},'Sueño vs Energía — sem. a sem.'),
         h('div',{style:{display:'flex',gap:'12px',marginBottom:'8px'}},
-          h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'10px',height:'10px',background:G,borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Noches ≥7hs')),
-          h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'10px',height:'10px',background:R,borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Días con tóxicos'))
+          h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'10px',height:'10px',background:'#111',borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Noches ≥7hs')),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'10px',height:'10px',background:O,borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Energía (1-3)'))
         ),
-        h(DualBarChart,{data:svtData})
+        h(DualBarChart,{data:svtData,key2:'energia',color2:O})
       ),
       h('div',{style:card},
         h('div',{style:{...lbl,marginBottom:'8px'}},'e1RM por ejercicio',exOptions.length===0?' (configura sesiones primero)':''),
@@ -1225,7 +1265,22 @@ function App(){
   const showAjustar=new URLSearchParams(window.location.search).get('ajustar')==='true';
   if(showAjustar)return h(AjustarSemana,{onClose:()=>window.location.href=window.location.pathname});
   if(!user)return h(Login,{onLogin:login});
+  const isStandalone=window.navigator.standalone||window.matchMedia('(display-mode: standalone)').matches;
+  const [showInstall,setShowInstall]=useState(()=>!isStandalone&&!localStorage.getItem('ft_install_shown'));
+  function dismissInstall(){localStorage.setItem('ft_install_shown','1');setShowInstall(false);}
+  const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
+    showInstall&&h('div',{style:{background:'#1D9E75',padding:'12px 16px',display:'flex',alignItems:'flex-start',gap:'10px',zIndex:20,position:'sticky',top:0}},
+      h('span',{style:{fontSize:'20px',flexShrink:0}},'📱'),
+      h('div',{style:{flex:1}},
+        h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#fff',marginBottom:'3px'}},'Agregá esta app a tu pantalla de inicio'),
+        h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.85)',lineHeight:'1.4'}},
+          isIOS?"Safari: icono compartir > Agregar a pantalla de inicio":"Chrome: menu > Agregar a pantalla de inicio"
+        )
+      ),
+      h('button',{onClick:dismissInstall,style:{background:'none',border:'none',color:'rgba(255,255,255,0.7)',fontSize:'18px',cursor:'pointer',padding:'0',flexShrink:0}},'×')
+    ),
     h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'14px 18px',position:'sticky',top:0,zIndex:10,display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('div',null,
         h('div',{style:{fontSize:'10px',color:'#999',fontWeight:'600',letterSpacing:'0.08em',textTransform:'uppercase'}},'Asesoría Personalizada'),
@@ -1246,8 +1301,8 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal}),
-      tab==='n'&&h(Registro,{key:'registro',nut,upN,toggleMeal,setWater,tC,tA,pC,pA,metaAgua,metaSal}),
-      tab==='hb'&&h(Habitos,{key:'habitos',hab,setHab,setSaved,pp,pc,sC}),
+      tab==='n'&&h(Cumplimiento,{key:'cumplimiento',nut,toggleMeal,toggleAguaOk,hab,setHab,setSaved,metaAgua,metaSal,nivel,tC,tA,pC,pA}),
+      tab==='hb'&&h(Mediciones,{key:'mediciones',hab,setHab,setSaved,pp,pc,sC}),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
     ),
     h('div',{style:{background:'#fff',borderTop:'1px solid rgba(0,0,0,0.08)',display:'flex',position:'sticky',bottom:0,zIndex:10}},
