@@ -1092,12 +1092,15 @@ function App(){
           });
         });
       }catch(err){}
-      fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        user,wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
-        neat:actExtraC,toxics:toxC,
-        sens:hab.sens||{},
-        e1rm:e1rmSnap
-      })}).catch(()=>{});
+      // Solo enviar al sheet al guardar semana completa (no en Guardar progreso)
+      if(completeWeek){
+        fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          user,wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
+          neat:actExtraC,toxics:toxC,
+          sens:hab.sens||{},
+          e1rm:e1rmSnap
+        })}).catch(()=>{});
+      }
     }catch(e){}
     setSaving(false);
   }
