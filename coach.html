@@ -103,6 +103,28 @@ function getStatus(weeks){
 const ALERT_COLOR={red:R,yellow:O,info:B};
 const ALERT_BG={red:'#FEF2F2',yellow:'#FEF3C7',info:'#EBF4FF'};
 
+// Promedios históricos pre-app (Reporte_raw)
+const HIST_BASE={
+  'agustina martinez':{p:71.8,c:80.2,n:8},
+  'alejandro bogado':{p:78.8,c:81.1,n:3},
+  'alma ontivero':{p:65.3,c:83.0,n:1},
+  'araceli zarate':{p:74.4,c:92.3,n:12},
+  'ariadna salina':{p:57.1,c:73.1,n:10},
+  'celeste favari':{p:59.6,c:71.8,n:12},
+  'daiana dominguez':{p:81.0,c:99.0,n:10},
+  'daiana rosini':{p:65.5,c:89.7,n:8},
+  'fiona mirazo':{p:70.1,c:88.0,n:1},
+  'francisco montoya':{p:82.7,c:87.0,n:6},
+  'gladys verdugo':{p:56.3,c:79.0,n:13},
+  'jesica moreno':{p:74.4,c:90.8,n:11},
+  'liliana carrazco':{p:53.0,c:75.1,n:8},
+  'maria presta':{p:64.1,c:72.3,n:12},
+  'sofia munoz':{p:79.8,c:103.7,n:12},
+  'tamara manazzi':{p:65.0,c:71.5,n:11},
+  'yesica fernandez':{p:71.1,c:82.6,n:11},
+};
+function normName(s){return s.toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');}
+
 // ── SENSACIONES COLORES ───────────────────────────────────────────────
 const SENS_CLR={
   'Alta toda la semana':G,'Variable':O,'Baja toda la semana':R,
@@ -299,26 +321,46 @@ function ClientDetail({name,weeks,rutina,onBack}){
 
       // TAB: TENDENCIAS
       tab==='med'&&h('div',null,
-        h('div',{style:card},
-          h('div',{style:{...lbl,marginBottom:'8px'}},'Peso — evolución'),
-          pesos.length>=2?h(LineChart,{data:pesos,color:G,h:110,labels:pesoLabels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Faltan más semanas'),
-          pesos.length>=2&&h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},
-            h('span',{style:{color:'#666'}},'Inicio: '+pesos[0]+' kg'),
-            h('span',{style:{color:G,fontWeight:'700'}},'Actual: '+pesos[pesos.length-1]+' kg')
-          )
-        ),
-        h('div',{style:card},
-          h('div',{style:{...lbl,marginBottom:'8px'}},'Cintura — evolución'),
-          cinturas.length>=2?h(LineChart,{data:cinturas,color:B,h:110,labels:cinLabels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Faltan más semanas'),
-          cinturas.length>=2&&h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},
-            h('span',{style:{color:'#666'}},'Inicio: '+cinturas[0]+' cm'),
-            h('span',{style:{color:B,fontWeight:'700'}},'Actual: '+cinturas[cinturas.length-1]+' cm')
-          )
-        ),
-        h('div',{style:card},
-          h('div',{style:{...lbl,marginBottom:'8px'}},'Compliance — comidas semana a semana'),
-          comps.length>=2?h(LineChart,{data:comps,color:O,h:90,labels:labels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'16px'}},'Faltan más semanas')
-        )
+        (()=>{
+          const hb=HIST_BASE[normName(name)]||null;
+          const pesoBase=hb?hb.p:(pesos[0]||null);
+          const cinBase=hb?hb.c:(cinturas[0]||null);
+          const pesoActual=pesos.length>0?pesos[pesos.length-1]:null;
+          const cinActual=cinturas.length>0?cinturas[cinturas.length-1]:null;
+          const pesoColor=pesoActual&&pesoBase?(pesoActual<pesoBase?G:pesoActual>pesoBase?R:'#111'):'#111';
+          const cinColor=cinActual&&cinBase?(cinActual<cinBase?G:cinActual>cinBase?R:'#111'):'#111';
+          const pesoDelta=pesoActual&&pesoBase?(' ('+(pesoActual-pesoBase>0?'+':'')+(pesoActual-pesoBase).toFixed(1)+'kg)'):'';
+          const cinDelta=cinActual&&cinBase?(' ('+(cinActual-cinBase>0?'+':'')+(cinActual-cinBase).toFixed(1)+'cm)'):'';
+          return h('div',null,
+            hb&&h('div',{style:{...card,background:'#F8F8F8',marginBottom:'10px'}},
+              h('div',{style:{...lbl,marginBottom:'6px'}},'Referencia pre-app ('+hb.n+' semanas)'),
+              h('div',{style:{display:'flex',gap:'16px'}},
+                h('div',null,h('div',{style:{fontSize:'11px',color:'#999'}},'Peso base'),h('div',{style:{fontSize:'16px',fontWeight:'800'}},hb.p+' kg')),
+                h('div',null,h('div',{style:{fontSize:'11px',color:'#999'}},'Cintura base'),h('div',{style:{fontSize:'16px',fontWeight:'800'}},hb.c+' cm'))
+              )
+            ),
+            h('div',{style:card},
+              h('div',{style:{...lbl,marginBottom:'8px'}},'Peso'),
+              pesos.length>=1?h(LineChart,{data:pesos,color:G,h:110,labels:pesoLabels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Sin registros aún'),
+              pesoActual&&h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},
+                h('span',{style:{color:'#666'}},'Base: '+(pesoBase||'—')+' kg'),
+                h('span',{style:{fontWeight:'700',color:pesoColor}},pesoActual+' kg'+pesoDelta)
+              )
+            ),
+            h('div',{style:card},
+              h('div',{style:{...lbl,marginBottom:'8px'}},'Cintura'),
+              cinturas.length>=1?h(LineChart,{data:cinturas,color:B,h:110,labels:cinLabels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Sin registros aún'),
+              cinActual&&h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},
+                h('span',{style:{color:'#666'}},'Base: '+(cinBase||'—')+' cm'),
+                h('span',{style:{fontWeight:'700',color:cinColor}},cinActual+' cm'+cinDelta)
+              )
+            ),
+            h('div',{style:card},
+              h('div',{style:{...lbl,marginBottom:'8px'}},'Compliance comidas'),
+              comps.length>=2?h(LineChart,{data:comps,color:O,h:90,labels:labels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'16px'}},'Faltan más semanas')
+            )
+          );
+        })()
       ),
 
       // TAB: ENTRENAMIENTO
