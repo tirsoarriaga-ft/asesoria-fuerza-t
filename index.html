@@ -448,8 +448,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
           h('div',{style:{fontSize:'12px',fontWeight:'800',color:bloqueInfo.color}},numSeries+' series'),
           semanasParaSiguienteSerie&&h('div',{style:{fontSize:'10px',color:'#999'}},'+1 en '+semanasParaSiguienteSerie+' sem')
         ),
-        bloque==='intensidad'&&h('div',{style:{textAlign:'right',fontSize:'11px',color:bloqueInfo.color,fontWeight:'700'}},'kg sube c/2 sem'),
-        bloque==='man'&&h('div',{style:{textAlign:'right',fontSize:'11px',color:bloqueInfo.color,fontWeight:'700'}},'doble progresión')
+        bloque==='fuerza'&&h('div',{style:{textAlign:'right',fontSize:'11px',color:bloqueInfo.color,fontWeight:'700'}},'kg sube c/2 sem'),
       ),
       bloqueInfo.hint&&h('div',{style:{marginTop:'8px',fontSize:'11px',color:bloqueInfo.color,fontWeight:'600',padding:'6px 8px',background:bloqueInfo.color+'18',borderRadius:'6px'}},bloqueInfo.hint)
     ),
@@ -1065,7 +1064,35 @@ function App(){
   function loadH(){
     try{const list=JSON.parse(localStorage.getItem(HK(user))||'[]');const w=list.map(id=>{try{return JSON.parse(localStorage.getItem(SK(id,user)));}catch(e){return null;}}).filter(Boolean).sort((a,b)=>(a.wi||'').localeCompare(b.wi||''));setHist(w);}catch(e){setHist([]);}
   }
+  const [saveErrors,setSaveErrors]=useState([]);
+  function validateSave(){
+    const errors=[];
+    // MEDICIONES: peso, cintura y al menos una sensación
+    const meds=hab.meds||[];
+    const hasPeso=meds.some(m=>parseFloat(m.p)>0);
+    const hasCintura=meds.some(m=>parseFloat(m.c)>0);
+    const sens=hab.sens||{};
+    const hasSens=['energia','hambre','digestion','estres'].every(k=>sens[k]);
+    if(!hasPeso)errors.push('Peso corporal (Mediciones): registrá al menos un día');
+    if(!hasCintura)errors.push('Cintura (Mediciones): registrá al menos un día');
+    if(!hasSens)errors.push('Sensaciones (Mediciones): completá Energía, Hambre, Digestión y Estrés');
+    // ENTRENO: al menos un ejercicio con kg y reps en serie 1
+    const allExes=Object.values(cfg.assign||{}).flat();
+    const hasAnyExData=allExes.some(exId=>{
+      const sesId=Object.entries(cfg.assign||{}).find(([s,ids])=>ids.includes(exId))?.[0];
+      const r1=parseInt(sessionReps?.[sesId]?.[exId]?.r1)||0;
+      const kg=sessionKg?.[sesId]?.[exId]||exes.find(e=>e.id===exId)?.kg||0;
+      return r1>0&&kg>0;
+    });
+    if(!hasAnyExData)errors.push('Entrenamiento: registrá kg y reps de al menos un ejercicio');
+    return errors;
+  }
   function doSave(completeWeek){
+    if(completeWeek){
+      const errs=validateSave();
+      if(errs.length>0){setSaveErrors(errs);return;}
+    }
+    setSaveErrors([]);
     setSaving(true);
     try{
       const curSR=sessionRepsRef.current;
@@ -1125,8 +1152,18 @@ function App(){
     }catch(e){}
     setSaving(false);
   }
-  function save(){doSave(true);}
-  function saveProgress(){doSave(false);}
+  const [cumplWarning,setCumplWarning]=useState(false);
+  function save(){
+    // Check cumplimiento warning (no bloquea)
+    const anyMeal=nut.some(d=>Object.values(d.m||{}).some(Boolean));
+    const anyAguaOk=nut.some(d=>d.ak);
+    const anySueno=(hab.sleep||[]).some(Boolean);
+    const anyNeat=(hab.actExtra||[]).some(Boolean);
+    if(!anyMeal&&!anyAguaOk&&!anySueno&&!anyNeat){setCumplWarning(true);}
+    else{setCumplWarning(false);}
+    doSave(true);
+  }
+  function saveProgress(){setCumplWarning(false);setSaveErrors([]);doSave(false);}
   function resetWeek(){
     if(!window.confirm('¿Resetear la semana actual? Se borrarán las reps, comidas y hábitos cargados. Los kg se mantienen.'))return;
     setSessionReps({});setNut(iN());setHab(iH());setHiitData(iHiit());setSaved(false);
@@ -1311,13 +1348,24 @@ function App(){
         h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},h('div',{style:{fontSize:'17px',fontWeight:'800'}},user),h('button',{onClick:logout,style:{background:'none',border:'none',cursor:'pointer',fontSize:'10px',color:'#ddd',padding:0}},'cambiar')),
         h('div',{style:{fontSize:'11px',color:'#999',marginTop:'1px'}},wk.label)
       ),
-      h('div',{style:{display:'flex',flexDirection:'column',gap:'5px',alignItems:'flex-end'}},
-        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
-          h('button',{onClick:saveProgress,disabled:saving,style:{borderRadius:'8px',padding:'8px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer',border:'1px solid rgba(0,0,0,0.12)',background:saved==='progreso'?'#EBF4FF':'#fff',color:saved==='progreso'?B:'#555'}},saving?'...':(saved==='progreso'?'✓ Progreso':'Guardar progreso')),
-          h('button',{onClick:save,disabled:saving||saved===true,style:{borderRadius:'8px',padding:'8px 10px',fontSize:'11px',fontWeight:'700',cursor:saving||saved===true?'default':'pointer',border:'none',background:saved===true?'#EAF7F2':'#111',color:saved===true?G:'#fff'}},saving?'...':(saved===true?'✓ Sem. guardada':'Guardar semana')),
-          h('button',{onClick:resetWeek,style:{borderRadius:'8px',padding:'8px 10px',fontSize:'11px',fontWeight:'600',cursor:'pointer',border:'1px solid rgba(239,68,68,0.3)',background:'#FFF5F5',color:'#EF4444'}},'↺ Resetear'),
-          h('button',{onClick:prevWeek,disabled:(wk.num||1)<=1,style:{borderRadius:'8px',padding:'8px 10px',fontSize:'11px',fontWeight:'600',cursor:(wk.num||1)<=1?'default':'pointer',border:'1px solid rgba(0,0,0,0.1)',background:'#F8F8F8',color:(wk.num||1)<=1?'#ccc':'#555'}},'← Sem anterior'),
-          h('button',{onClick:newWeek,style:{borderRadius:'8px',padding:'8px 10px',fontSize:'11px',fontWeight:'600',cursor:'pointer',border:'1px solid rgba(0,0,0,0.1)',background:'#F8F8F8',color:'#555'},'gridColumn':'2'},'Nueva sem →')
+      h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-end',minWidth:'160px'}},
+        // Banner de errores de validación
+        saveErrors.length>0&&h('div',{style:{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:'8px',padding:'8px 10px',marginBottom:'2px',width:'100%'}},
+          h('div',{style:{fontSize:'11px',fontWeight:'700',color:'#DC2626',marginBottom:'4px'}},'⚠️ Completá antes de guardar:'),
+          saveErrors.map((e,i)=>h('div',{key:i,style:{fontSize:'10px',color:'#DC2626',lineHeight:'1.4'}},e))
+        ),
+        // Banner advertencia cumplimiento (no bloquea)
+        cumplWarning&&h('div',{style:{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:'8px',padding:'8px 10px',marginBottom:'2px',width:'100%'}},
+          h('div',{style:{fontSize:'10px',color:'#92400E',lineHeight:'1.4'}},'⚠️ No registraste cumplimiento esta semana. Si te olvidaste, completá antes de guardar. Si no pudiste cumplir nada, anotalo en Notas.')
+        ),
+        h('button',{onClick:save,disabled:saving||saved===true,style:{width:'100%',borderRadius:'10px',padding:'10px 14px',fontSize:'12px',fontWeight:'800',cursor:saving||saved===true?'default':'pointer',border:'none',background:saved===true?'#EAF7F2':'#111',color:saved===true?G:'#fff',letterSpacing:'0.02em'}},saving?'...':(saved===true?'✓ Semana guardada':'Guardar semana')),
+        // Guardar progreso — secundario
+        h('button',{onClick:saveProgress,disabled:saving,style:{width:'100%',borderRadius:'8px',padding:'7px 10px',fontSize:'11px',fontWeight:'600',cursor:'pointer',border:'1px solid rgba(0,0,0,0.12)',background:saved==='progreso'?'#EBF4FF':'#F8F8F8',color:saved==='progreso'?B:'#666'}},saving?'...':(saved==='progreso'?'✓ Progreso guardado':'Guardar progreso')),
+        // Nav semanas
+        h('div',{style:{display:'flex',gap:'4px',width:'100%',marginTop:'2px'}},
+          h('button',{onClick:prevWeek,disabled:(wk.num||1)<=1,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:(wk.num||1)<=1?'default':'pointer',border:'1px solid rgba(0,0,0,0.1)',background:'#F8F8F8',color:(wk.num||1)<=1?'#ccc':'#555'}},'← Anterior'),
+          h('button',{onClick:newWeek,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:'pointer',border:'1px solid rgba(0,0,0,0.1)',background:'#F8F8F8',color:'#555'}},'Nueva →'),
+          h('button',{onClick:resetWeek,title:'Resetear semana',style:{borderRadius:'8px',padding:'6px 8px',fontSize:'10px',fontWeight:'600',cursor:'pointer',border:'1px solid rgba(239,68,68,0.2)',background:'#FFF5F5',color:'#EF4444'}},'↺')
         )
       )
     ),
