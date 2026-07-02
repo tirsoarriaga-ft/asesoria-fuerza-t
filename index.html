@@ -542,7 +542,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
 }
 
 // ── DIET ──────────────────────────────────────────────────────────────
-function Diet({hab,user,menusVer,metaAgua,metaSal}){
+function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
   const tKey=`ase_${user}_tmpl`;const oKey=`ase_${user}_opts`;
   const [tmpl,setTmplState]=useState(()=>parseInt(localStorage.getItem(tKey))||2100);
   const [opts,setOpts]=useState(()=>{try{return JSON.parse(localStorage.getItem(oKey))||{};}catch(e){return{};}});
@@ -609,6 +609,13 @@ function Diet({hab,user,menusVer,metaAgua,metaSal}){
                 h('div',{style:{textAlign:'right'}},h('div',{style:{fontSize:'15px',fontWeight:'800'}},p.v),p.g&&h('div',{style:{fontSize:'10px',color:'#ccc'}},p.g))
               );
             })
+      )
+    ),
+    h('div',{style:{background:'#111',borderRadius:'12px',padding:'16px',marginBottom:'12px',display:'flex',gap:'12px',alignItems:'flex-start'}},
+      h('div',{style:{fontSize:'22px',flexShrink:0}},nivel===1?'🥗':nivel===2?'⚖️':'🎯'),
+      h('div',null,
+        h('div',{style:{fontSize:'10px',fontWeight:'700',color:'rgba(255,255,255,0.5)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Nivel '+nivel+' — Tu objetivo con la alimentación'),
+        h('div',{style:{fontSize:'13px',fontWeight:'600',color:'#fff',lineHeight:'1.5'}},NIVEL_BANNER[nivel]||NIVEL_BANNER[1])
       )
     ),
     h('div',{style:{...card,marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
@@ -678,9 +685,9 @@ function Mediciones({hab,setHab,setSaved,pp,pc,sC}){
 
 // ── CUMPLIMIENTO ──────────────────────────────────────────────────────
 const NIVEL_BANNER={
-  1:'Marcá qué comidas del día fueron con alimentos naturales (tenés menú de referencia)',
-  2:'Marcá qué comidas del día cumpliste las cantidades de los menús pautados',
-  3:'Marcá qué comidas del día siguieron el plan exacto: alimentos, porciones y horarios',
+  1:'Priorizá comer 4 veces por día eligiendo los alimentos del menú. La cantidad es secundaria por ahora.',
+  2:'Además de los alimentos del menú, prestá atención a las porciones indicadas. Son la referencia para cada comida.',
+  3:'Seguí el menú completo: alimentos, porciones y horarios. Cada detalle suma al resultado.',
 };
 const MEAL_SHORT=[{k:'desayuno',s:'D'},{k:'almuerzo',s:'A'},{k:'merienda',s:'M'},{k:'cena',s:'C'}];
 const DS_SHORT=['Lu','Ma','Mi','Ju','Vi','Sá'];
@@ -974,7 +981,7 @@ function App(){
         if(rows&&rows.length>0){
           const exData=rows.map((r,i)=>{
             const savedKg=parseFloat(localStorage.getItem(KG_KEY(user,r.Nombre||r.NOMBRE||'')));
-            const kg=isNaN(savedKg)?(parseFloat(r.KgInicial)||20):savedKg;
+            const kg=isNaN(savedKg)?(parseFloat(r.KgInicial)||null):savedKg;
             return{id:i+1,n:String(r.Nombre||r.NOMBRE||r.nombre||''),m:String(r.Musculo||r.Músculo||r.MÚSCULO||''),
               low:parseInt(r.RepMin||r['Rep Min'])||8,hi:parseInt(r.RepMax||r['Rep Max'])||12,kg,url:String(r.Tutorial||r.TUTORIAL||''),r1:'',r2:''};
           });
@@ -1372,7 +1379,7 @@ function App(){
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes}),
-      tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal}),
+      tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
       tab==='n'&&h(Cumplimiento,{key:'cumplimiento',nut,toggleMeal,toggleAguaOk,hab,setHab,setSaved,metaAgua,metaSal,nivel,tC,tA,pC,pA}),
       tab==='hb'&&h(Mediciones,{key:'mediciones',hab,setHab,setSaved,pp,pc,sC}),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
