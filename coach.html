@@ -70,27 +70,45 @@ function getAlerts(weeks){
   const A=[];
   if(!weeks.length)return A;
   const lat=weeks[weeks.length-1];
-  const comp=parseInt(String(lat['%Comidas']||'0').replace('%',''))||0;
-  const estres=String(lat.Estres||'');
-  const energia=String(lat.Energia||'');
-  const tox=parseInt(lat.Toxicos||0)||0;
+  const compPct=parsePct(lat['%Comidas']);
+  const estres=String(lat.Estres||lat.Estrés||'');
+  const energia=String(lat.Energia||lat.Energía||'');
+  const tox=parseInt(lat.Toxicos||lat.Tóxicos||0)||0;
 
-  if(comp<60)A.push({lvl:'red',txt:'Compliance '+comp+'% — no ajustar plan hasta mejorar adherencia'});
-  else if(comp<80)A.push({lvl:'yellow',txt:'Compliance '+comp+'% — revisar barreras antes de ajustar'});
+  // Compliance
+  if(compPct<60)A.push({lvl:'red',txt:'Adherencia baja — ajustar plan no tiene sentido todavía'});
+  else if(compPct<80)A.push({lvl:'yellow',txt:'Adherencia media — revisar barreras antes de cambiar variables'});
 
+  // Sensaciones
   if(estres==='Estrés alto'&&energia==='Baja toda la semana')
-    A.push({lvl:'red',txt:'Estrés alto + energía baja — no agregar carga esta semana'});
+    A.push({lvl:'red',txt:'Sensaciones alteradas — semana de descarga, no agregar estímulo'});
   else{
-    if(estres==='Estrés alto')A.push({lvl:'yellow',txt:'Estrés alto esta semana'});
-    if(energia==='Baja toda la semana')A.push({lvl:'yellow',txt:'Energía baja toda la semana'});
+    if(estres==='Estrés alto')A.push({lvl:'yellow',txt:'Estrés alto — monitorear recuperación'});
+    if(energia==='Baja toda la semana')A.push({lvl:'yellow',txt:'Energía baja — revisar sueño y adherencia nutricional'});
   }
-  if(tox>=4)A.push({lvl:'yellow',txt:'Tóxicos: '+tox+' días esta semana'});
 
-  if(weeks.length>=3){
+  // Tóxicos
+  if(tox>=4)A.push({lvl:'yellow',txt:'Semana con muchos permitidos — considerar en el análisis'});
+
+  // Tendencias peso y cintura (últimas 2-3 semanas)
+  if(weeks.length>=2){
     const ps=weeks.slice(-3).map(w=>parseFloat(w.Peso)).filter(v=>!isNaN(v)&&v>0);
-    if(ps.length===3){const d=ps[2]-ps[0];if(Math.abs(d)>=0.5)A.push({lvl:'info',txt:'Tendencia peso: '+(d>0?'+':'')+d.toFixed(1)+' kg en últimas 3 semanas'});}
     const cs=weeks.slice(-3).map(w=>parseFloat(w.Cintura)).filter(v=>!isNaN(v)&&v>0);
-    if(cs.length===3){const d=cs[2]-cs[0];if(Math.abs(d)>=0.5)A.push({lvl:'info',txt:'Tendencia cintura: '+(d>0?'+':'')+d.toFixed(1)+' cm en últimas 3 semanas'});}
+
+    if(ps.length>=2){
+      const diffP=ps[ps.length-1]-ps[0];
+      const nSem=ps.length-1;
+      if(diffP<=-0.5)A.push({lvl:'info',txt:'Peso en descenso ✓ ('+diffP.toFixed(1)+'kg en '+nSem+' sem)'});
+      else if(diffP>-0.5&&diffP<=0&&nSem>=2)A.push({lvl:'yellow',txt:'Posible estancamiento en peso ('+diffP.toFixed(1)+'kg en '+nSem+' sem)'});
+    }
+
+    if(cs.length>=2){
+      const diffC=cs[cs.length-1]-cs[0];
+      const nSem=cs.length-1;
+      if(diffC<=-0.5)A.push({lvl:'info',txt:'Cintura en descenso ✓ ('+diffC.toFixed(1)+'cm en '+nSem+' sem)'});
+      else if(diffC>-0.5&&diffC<=0&&nSem>=2)A.push({lvl:'yellow',txt:'Posible estancamiento en cintura ('+diffC.toFixed(1)+'cm en '+nSem+' sem)'});
+      else if(diffC>=0.5)A.push({lvl:'red',txt:'Cintura en aumento — revisar ('+'+'+diffC.toFixed(1)+'cm en '+nSem+' sem)'});
+    }
   }
   return A;
 }
@@ -98,7 +116,8 @@ function getStatus(weeks){
   const A=getAlerts(weeks);
   if(A.some(a=>a.lvl==='red'))return'red';
   if(A.some(a=>a.lvl==='yellow'))return'yellow';
-  return weeks.length>0?'green':'grey';
+  if(weeks.length>0)return'green';
+  return'grey';
 }
 const ALERT_COLOR={red:R,yellow:O,info:B};
 const ALERT_BG={red:'#FEF2F2',yellow:'#FEF3C7',info:'#EBF4FF'};
@@ -123,7 +142,8 @@ const HIST_BASE={
   'tamara manazzi':{p:65.0,c:71.5,n:11},
   'yesica fernandez':{p:71.1,c:82.6,n:11},
 };
-function normName(s){return s.toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');}
+function fmtPct(v){const n=parseFloat(String(v||'0').replace('%',''));if(isNaN(n))return'—';return(n<=1?Math.round(n*100):Math.round(n))+'%';}
+function parsePct(v){const n=parseFloat(String(v||'0').replace('%',''));if(isNaN(n))return 0;return n<=1?Math.round(n*100):Math.round(n);}
 
 // ── SENSACIONES COLORES ───────────────────────────────────────────────
 const SENS_CLR={
@@ -227,7 +247,7 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
             [
               {l:'Peso',v:lat?.Peso?lat.Peso+' kg':'—'},
               {l:'Cintura',v:lat?.Cintura?lat.Cintura+' cm':'—'},
-              {l:'Comidas',v:lat?.['%Comidas']||'—'},
+              {l:'Comidas',v:fmtPct(lat?.['%Comidas'])},
               {l:'Sueño',v:lat?.DiasSueno!=null?lat.DiasSueno+'/7':'—'},
             ].map((m,i)=>h('div',{key:i,style:{background:'rgba(255,255,255,0.7)',borderRadius:'6px',padding:'6px 4px',textAlign:'center'}},
               h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#111'}},m.v),
@@ -252,7 +272,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
   const pesoLabels=weeks.filter(w=>w.Peso&&!isNaN(parseFloat(w.Peso))&&parseFloat(w.Peso)>0).map(w=>String(w.SemanID||'').slice(5));
   const cinturas=weeks.map(w=>parseFloat(w.Cintura)).filter((v,i)=>weeks[i].Cintura&&!isNaN(v)&&v>0);
   const cinLabels=weeks.filter(w=>w.Cintura&&!isNaN(parseFloat(w.Cintura))&&parseFloat(w.Cintura)>0).map(w=>String(w.SemanID||'').slice(5));
-  const comps=weeks.map(w=>parseInt(String(w['%Comidas']||'0').replace('%',''))||0);
+  const comps=weeks.map(w=>parsePct(w['%Comidas']));
 
   const exNames=useMemo(()=>{
     const names=new Set();
@@ -306,7 +326,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
         [
           {l:'Peso',v:lat.Peso?lat.Peso+' kg':'—',c:'#111'},
           {l:'Cintura',v:lat.Cintura?lat.Cintura+' cm':'—',c:'#111'},
-          {l:'Comidas',v:lat['%Comidas']||'—',c:parseInt(String(lat['%Comidas']||'0'))<60?R:parseInt(String(lat['%Comidas']||'0'))<80?O:G},
+          {l:'Comidas',v:fmtPct(lat['%Comidas']),c:parsePct(lat['%Comidas'])<60?R:parsePct(lat['%Comidas'])<80?O:G},
           {l:'Sueño',v:lat.DiasSueno!=null?lat.DiasSueno+'/7':'—',c:G},
           {l:'Tóxicos',v:lat.Toxicos!=null?lat.Toxicos+'d':'—',c:parseInt(lat.Toxicos||0)>=4?O:'#111'},
         ].map((m,i)=>h('div',{key:i,style:{background:'#fff',borderRadius:'8px',padding:'8px 4px',textAlign:'center',border:'1px solid rgba(0,0,0,0.08)'}},
