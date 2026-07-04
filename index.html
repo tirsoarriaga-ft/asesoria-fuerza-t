@@ -949,7 +949,7 @@ function App(){
   const metaAgua=(pesoRef*40/1000).toFixed(1);
   const metaSal=parseFloat(metaAgua).toFixed(1);
   const pesoVal=normNum(hab.meds.find(m=>m.p&&normNum(m.p)>0)?.p)||pesoRef;
-  const tC=nut.reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0),pC=Math.round(tC/24*100);
+  const tC=Math.min(24,nut.slice(0,6).reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0)),pC=Math.min(100,Math.round(tC/24*100));
   const aguaDias=nut.filter(d=>d.ak).length;
   const aguaPromedio=(nut.reduce((a,d)=>a+normNum(d.a),0)/6).toFixed(1);
   const tA=aguaDias,pA=Math.round(aguaDias/6*100);
