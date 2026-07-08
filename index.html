@@ -327,7 +327,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const toggleEx=(s,id)=>{const cur=cfg.assign[s]||[];const na=cur.includes(id)?cur.filter(x=>x!==id):[...cur,id];saveCfg({...cfg,assign:{...cfg.assign,[s]:na}});};
   const setNum=n=>{const na={};['A','B','C','D'].slice(0,n).forEach(s=>{na[s]=cfg.assign[s]||[];});saveCfg({...cfg,num:n,assign:na});};
 
-  const getKg=ex=>sessionKg?.[activeSess]?.[ex.id];
+  const getKg=ex=>sessionKg?.[activeSess]?.[ex.id]??sessionKg?.[activeSess]?.[String(ex.id)]??undefined;
   const getRep=(sess,exId,k)=>{
     const stored=sessionReps?.[sess]?.[exId]?.[k]||'';
     if(stored)return stored;
@@ -344,16 +344,18 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const semanasParaSiguienteSerie=(hasAutoSeries&&numSeries<4)?(2-(weeksInBlock%2)||2):null;
   const SERIES_KEYS=['r1','r2','r3','r4'].slice(0,numSeries);
 
-  // Mejor serie = siempre Serie 1
   const prevBestSet=(ex)=>{
     if(!hist||hist.length===0)return null;
     for(let i=hist.length-1;i>=0;i--){
       const w=hist[i];
-      const reps=w.sr?.[activeSess]?.[ex.id];
+      const reps=w.sr?.[activeSess]?.[ex.id]||w.sr?.[activeSess]?.[String(ex.id)];
       if(!reps)continue;
       const r1=parseInt(reps.r1)||0;
       if(r1===0)continue;
-      const kg=(w.sk?.[activeSess]?.[ex.id])||w.e?.find(e=>e.id===ex.id)?.kg||ex.kg;
+      // Usar skUsed (kg con que se entrenó) no sk (kg ya progresado)
+      const kg=(w.skUsed?.[activeSess]?.[ex.id])||(w.skUsed?.[activeSess]?.[String(ex.id)])||
+               (w.sk?.[activeSess]?.[ex.id])||(w.sk?.[activeSess]?.[String(ex.id)])||
+               w.e?.find(e=>e.id===ex.id)?.kg||ex.kg;
       return{reps:r1,kg};
     }
     return null;
@@ -392,8 +394,11 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   };
   const doSaveKg=(ex,val)=>{
     const kg=parseFloat(val);if(isNaN(kg)||kg<=0)return setEditKg(null);
-    const newSK={...sessionKg};if(!newSK[activeSess])newSK[activeSess]={};newSK[activeSess][ex.id]=kg;
-    setSessionKg(newSK);localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(newSK));
+    const newSK={...sessionKg};
+    if(!newSK[activeSess])newSK[activeSess]={};
+    newSK[activeSess][ex.id]=kg; // ex.id siempre es entero
+    setSessionKg(newSK);
+    localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(newSK));
     setEditKg(null);setSaved(false);
   };
   const calExes=exes.filter(e=>String(e.m||'').toLowerCase()==='calentamiento'&&e.url);
@@ -973,7 +978,19 @@ function App(){
       if(d){if(d.sr)setSessionReps(d.sr);if(d.n)setNut(migrateNut(d.n));if(d.h)setHab(migrateHab(d.h));if(d.hiit)setHiitData(d.hiit);setSaved(!!savedStr);}
     }catch(e){}
     setCfg(()=>{try{return JSON.parse(localStorage.getItem(CFG_KEY(user)))||defCfg;}catch(e){return defCfg;}});
-    try{const sk=localStorage.getItem(`ase_${user}_sessKg`);if(sk)setSessionKg(JSON.parse(sk)||{});}catch(e){}
+    try{
+      const sk=localStorage.getItem(`ase_${user}_sessKg`);
+      if(sk){
+        const parsed=JSON.parse(sk)||{};
+        // Normalizar claves de ejercicios a enteros
+        const normalized={};
+        Object.entries(parsed).forEach(([sess,exMap])=>{
+          normalized[sess]={};
+          Object.entries(exMap||{}).forEach(([exId,kg])=>{normalized[sess][parseInt(exId)]=kg;});
+        });
+        setSessionKg(normalized);
+      }
+    }catch(e){}
     setExesReady(false);setLoadingExes(true);
     fetch(SCRIPT_URL+'?action=ejercicios')
       .then(r=>r.json())
@@ -1106,30 +1123,35 @@ function App(){
       const bloqueActual=(cfg?.bloque||'volumen').toLowerCase();
       const hasProgressionSave=bloqueActual==='volumen'||bloqueActual==='intensidad'||bloqueActual==='man'||bloqueActual==='fuerza';
       const newSK={...sessionKg};
+      const skUsed=JSON.parse(JSON.stringify(sessionKg)); // kg usados en esta sesión (antes de progresión)
       Object.entries(curSR).forEach(([sessId,sessData])=>{
         Object.entries(sessData).forEach(([exId,reps])=>{
-          const ex=exes.find(e=>e.id===parseInt(exId));if(!ex)return;
-          const curKg=(sessionKg[sessId]?.[exId])||ex.kg;
+          const exIdInt=parseInt(exId);
+          const ex=exes.find(e=>e.id===exIdInt);if(!ex)return;
+          // Fix tipo: buscar con int Y string
+          const curKg=(sessionKg[sessId]?.[exIdInt])||(sessionKg[sessId]?.[exId])||null;
+          if(!curKg||curKg<=0)return; // sin kg definido, no tocar
           if(!hasProgressionSave)return;
           if(bloqueActual==='fuerza'){
-            // fuerza: sube c/2 semanas sin importar reps
-            const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${sessId}_${exId}`))||0;
+            const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${sessId}_${exIdInt}`))||0;
             if(wk.num<lastUp+2)return;
             if(!newSK[sessId])newSK[sessId]={};
-            newSK[sessId][exId]=rKg(curKg*1.05);
-            localStorage.setItem(`ase_${user}_lastKgUp_${sessId}_${exId}`,String(wk.num));
+            newSK[sessId][exIdInt]=rKg(curKg*1.05);
+            localStorage.setItem(`ase_${user}_lastKgUp_${sessId}_${exIdInt}`,String(wk.num));
           }else{
-            // volumen, intensidad, man: sube al alcanzar techo de reps
             const r1=parseInt(reps.r1)||0;
             if(r1<ex.hi)return;
             if(!newSK[sessId])newSK[sessId]={};
-            newSK[sessId][exId]=rKg(curKg*1.05);
+            newSK[sessId][exIdInt]=rKg(curKg*1.05);
           }
         });
       });
       setSessionKg(newSK);
-      localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(newSK));
-      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,sk:newSK,e:exes,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
+      // Guardar con claves normalizadas como enteros
+      const normSK={};
+      Object.entries(newSK).forEach(([sess,exMap])=>{normSK[sess]={};Object.entries(exMap||{}).forEach(([exId,kg])=>{normSK[sess][parseInt(exId)]=kg;});});
+      localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(normSK));
+      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,skUsed,sk:newSK,e:exes,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
       localStorage.setItem(SK(wk.id,user),JSON.stringify(d));
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
       if(!list.includes(wk.id)){list.push(wk.id);localStorage.setItem(HK(user),JSON.stringify(list));}
