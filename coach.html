@@ -66,10 +66,11 @@ function DualBarChart({data}){
 }
 
 // ── ALERTAS (framework del coach) ─────────────────────────────────────
-function getAlerts(weeks){
+function getAlerts(weeks,objetivo){
   const A=[];
   if(!weeks.length)return A;
   const lat=weeks[weeks.length-1];
+  const obj=String(objetivo||'mantenimiento').toLowerCase().trim()||'mantenimiento';
   const compPct=parsePct(lat['%Comidas']);
   const estres=String(lat.Estres||lat.Estrés||'');
   const energia=String(lat.Energia||lat.Energía||'');
@@ -90,30 +91,60 @@ function getAlerts(weeks){
   // Tóxicos
   if(tox>=4)A.push({lvl:'yellow',txt:'Semana con muchos permitidos — considerar en el análisis'});
 
-  // Tendencias peso y cintura (últimas 2-3 semanas)
+  // Tendencias peso y cintura — últimas 2 semanas con datos
   if(weeks.length>=2){
+    const objetivo=obj;
     const ps=weeks.slice(-3).map(w=>parseFloat(w.Peso)).filter(v=>!isNaN(v)&&v>0);
     const cs=weeks.slice(-3).map(w=>parseFloat(w.Cintura)).filter(v=>!isNaN(v)&&v>0);
+    if(ps.length>=2&&cs.length>=2){
+      const diffP=parseFloat((ps[ps.length-1]-ps[0]).toFixed(1));
+      const diffC=parseFloat((cs[cs.length-1]-cs[0]).toFixed(1));
+      const pesoSubio=diffP>=0.5;
+      const pesoBajoRapido=diffP<=-0.5;
+      const pesoBajoLento=diffP>-0.5&&diffP<0;
+      const pesoEstable=Math.abs(diffP)<0.5;
+      const cinturaSubio=diffC>=0.5;
+      const cinturaBajoRapido=diffC<=-0.5;
+      const cinturaEstable=Math.abs(diffC)<0.5;
+      const sfx=' ('+( diffP>0?'+':'')+diffP+'kg / '+(diffC>0?'+':'')+diffC+'cm)';
 
-    if(ps.length>=2){
-      const diffP=ps[ps.length-1]-ps[0];
-      const nSem=ps.length-1;
-      if(diffP<=-0.5)A.push({lvl:'info',txt:'Peso en descenso ✓ ('+diffP.toFixed(1)+'kg en '+nSem+' sem)'});
-      else if(diffP>-0.5&&diffP<=0&&nSem>=2)A.push({lvl:'yellow',txt:'Posible estancamiento en peso ('+diffP.toFixed(1)+'kg en '+nSem+' sem)'});
-    }
-
-    if(cs.length>=2){
-      const diffC=cs[cs.length-1]-cs[0];
-      const nSem=cs.length-1;
-      if(diffC<=-0.5)A.push({lvl:'info',txt:'Cintura en descenso ✓ ('+diffC.toFixed(1)+'cm en '+nSem+' sem)'});
-      else if(diffC>-0.5&&diffC<=0&&nSem>=2)A.push({lvl:'yellow',txt:'Posible estancamiento en cintura ('+diffC.toFixed(1)+'cm en '+nSem+' sem)'});
-      else if(diffC>=0.5)A.push({lvl:'red',txt:'Cintura en aumento — revisar ('+'+'+diffC.toFixed(1)+'cm en '+nSem+' sem)'});
+      if(objetivo==='deficit'){
+        if((pesoBajoRapido||pesoBajoLento)&&(cinturaBajoRapido||!cinturaSubio))
+          A.push({lvl:'info',txt:'Tendencia esperada — peso y cintura en descenso'+sfx});
+        else if(pesoEstable&&cinturaBajoRapido)
+          A.push({lvl:'info',txt:'Cintura en descenso, peso estable — posible recomposición'+sfx});
+        else if(pesoEstable&&cinturaEstable)
+          A.push({lvl:'yellow',txt:'Estancamiento — revisá adherencia y variables'+sfx});
+        else if(pesoSubio||cinturaSubio)
+          A.push({lvl:'red',txt:'Tendencia contraria al objetivo — revisá el plan'+sfx});
+        else
+          A.push({lvl:'yellow',txt:'Progreso lento — revisá adherencia'+sfx});
+      }else if(objetivo==='superavit'){
+        if(pesoSubio&&!cinturaSubio)
+          A.push({lvl:'info',txt:'Tendencia esperada — peso en suba, cintura controlada'+sfx});
+        else if(pesoSubio&&cinturaSubio)
+          A.push({lvl:'yellow',txt:'Peso sube pero también cintura — monitorear'+sfx});
+        else if(pesoEstable||pesoBajoLento)
+          A.push({lvl:'yellow',txt:'Peso sin cambios significativos — revisá el plan'+sfx});
+        else if(pesoBajoRapido)
+          A.push({lvl:'red',txt:'Tendencia contraria al objetivo — peso en baja'+sfx});
+        if(cinturaSubio&&diffC>=0.5)
+          A.push({lvl:'red',txt:'Cintura en aumento — revisá calidad del superávit'+sfx});
+      }else{
+        // mantenimiento
+        if(pesoEstable&&cinturaEstable)
+          A.push({lvl:'info',txt:'Variables estables — mantenimiento en curso'+sfx});
+        else if((pesoSubio&&diffP>=0.5)||(cinturaSubio&&diffC>=0.5))
+          A.push({lvl:'red',txt:'Tendencia contraria al objetivo — revisá el plan'+sfx});
+        else
+          A.push({lvl:'yellow',txt:'Leve variación — monitorear próximas semanas'+sfx});
+      }
     }
   }
   return A;
 }
-function getStatus(weeks){
-  const A=getAlerts(weeks);
+function getStatus(weeks,objetivo){
+  const A=getAlerts(weeks,objetivo);
   if(A.some(a=>a.lvl==='red'))return'red';
   if(A.some(a=>a.lvl==='yellow'))return'yellow';
   if(weeks.length>0)return'green';
@@ -190,15 +221,16 @@ function PinScreen({onUnlock}){
 // ── CLIENT LIST ───────────────────────────────────────────────────────
 function ClientList({data,rutinas,onSelect,onRefresh}){
   const statusOrder={red:0,yellow:1,green:2,grey:3};
+  const getObj=name=>{const r=rutinas.find(rt=>String(rt.Asesorado||'').trim().toLowerCase()===name.toLowerCase());return String(r?.Objetivo||'mantenimiento').toLowerCase().trim()||'mantenimiento';};
   const clients=Object.keys(data).sort((a,b)=>{
-    const sa=getStatus(data[a]),sb=getStatus(data[b]);
+    const sa=getStatus(data[a],getObj(a)),sb=getStatus(data[b],getObj(b));
     if(statusOrder[sa]!==statusOrder[sb])return statusOrder[sa]-statusOrder[sb];
     const la=data[a],lb=data[b];
     return String(lb[lb.length-1]?.SemanID||'').localeCompare(String(la[la.length-1]?.SemanID||''));
   });
   const statusBg={red:'#FEF2F2',yellow:'#FFFBEB',green:'#F0FDF4',grey:'#F9F9F9'};
   const counts={red:0,yellow:0,green:0};
-  clients.forEach(c=>{const s=getStatus(data[c]);if(counts[s]!==undefined)counts[s]++;});
+  clients.forEach(c=>{const s=getStatus(data[c],getObj(c));if(counts[s]!==undefined)counts[s]++;});
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
     h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'16px 18px',position:'sticky',top:0,zIndex:10}},
@@ -226,7 +258,8 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
       ),
       clients.map(name=>{
         const weeks=data[name];const lat=weeks[weeks.length-1];
-        const status=getStatus(weeks);const alerts=getAlerts(weeks);
+        const obj=getObj(name);
+        const status=getStatus(weeks,obj);const alerts=getAlerts(weeks,obj);
         const rutina=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===name.toLowerCase());
         const tmpl=rutina?.Template?String(rutina.Template)+'kcal':'—';
         const redAlerts=alerts.filter(a=>a.lvl==='red').length;
@@ -265,7 +298,7 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
 function ClientDetail({name,weeks,rutina,onBack}){
   const [tab,setTab]=useState('med');
   const [selEx,setSelEx]=useState(0);
-  const alerts=getAlerts(weeks);
+  const alerts=getAlerts(weeks,String(rutina?.Objetivo||'mantenimiento'));
   const lat=weeks[weeks.length-1]||{};
 
   const labels=weeks.map(w=>String(w.SemanID||'').slice(5)||'');
@@ -312,7 +345,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
         h('button',{onClick:onBack,style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',color:'#111',padding:0}},'←'),
         h('div',{style:{fontSize:'18px',fontWeight:'800'}},name)
       ),
-      h('div',{style:{fontSize:'11px',color:'#999',marginLeft:'30px'}},tmpl,' · ',numSes,' sesiones · Semana ',currentWkNum,' · Bloque: ',h('span',{style:{fontWeight:'700',color:'#111'}},bloqueActual))
+      h('div',{style:{fontSize:'11px',color:'#999',marginLeft:'30px'}},tmpl,' · ',numSes,' sesiones · Semana ',currentWkNum,' · Bloque: ',h('span',{style:{fontWeight:'700',color:'#111'}},bloqueActual),' · Obj: ',h('span',{style:{fontWeight:'700',color:String(rutina?.Objetivo||'').toLowerCase()==='deficit'?B:String(rutina?.Objetivo||'').toLowerCase()==='superavit'?G:O}},String(rutina?.Objetivo||'mantenimiento')))
     ),
     h('div',{style:{padding:'12px',paddingBottom:'20px'}},
       // Alertas
