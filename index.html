@@ -1329,7 +1329,7 @@ function App(){
     localStorage.removeItem(`ase_${user}_draft_${wk.id}`);
   }
   function newWeek(){
-    const curNum=parseInt(localStorage.getItem(`ase_${user}_wknum`))||1;
+    const curNum=wk.num||1;
     if(curNum>=realWkNum&&!wkFinished)return;
     if(!saved&&!isViewingPast)save();
     const nextNum=curNum+1;
@@ -1340,15 +1340,15 @@ function App(){
     setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
   }
   function prevWeek(){
-    const curNum=parseInt(localStorage.getItem(`ase_${user}_wknum`))||1;
+    const curNum=wk.num||1;
     if(curNum<=1)return;
     const prevNum=curNum-1;
     localStorage.setItem(`ase_${user}_wknum`,String(prevNum));
     setWk(getWkForNum(user,prevNum));
-    // Cargar datos de esa semana si existen
     setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
     draftReady.current=false;
     load(`sem_${prevNum}`);
+    setTimeout(()=>{draftReady.current=true;},100);
   }
   const draftReady=useRef(false);
 
@@ -1616,11 +1616,10 @@ function App(){
           h('button',{onClick:prevWeek,disabled:(wk.num||1)<=1,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:(wk.num||1)<=1?'default':'pointer',border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',color:(wk.num||1)<=1?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.6)'}},'← Anterior'),
           isViewingPast
             ?h('button',{onClick:()=>{
-                const cur=parseInt(localStorage.getItem(`ase_${user}_wknum`))||1;
-                const real=getRealWkNum(user);
-                localStorage.setItem(`ase_${user}_wknum`,String(real));
-                setWk(getWkForNum(user,real));
-                load(`sem_${real}`);
+                localStorage.setItem(`ase_${user}_wknum`,String(realWkNum));
+                setWk(getWkForNum(user,realWkNum));
+                load(`sem_${realWkNum}`);
+                setTimeout(()=>{draftReady.current=true;},100);
               },style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'700',cursor:'pointer',border:`1px solid ${AC}`,background:AC+'22',color:AC}},'Sem actual →')
             :h('button',{onClick:newWeek,disabled:wk.num>=realWkNum&&!wkFinished,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:wk.num>=realWkNum&&!wkFinished?'default':'pointer',border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',color:wk.num>=realWkNum&&!wkFinished?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.6)'}},'Nueva →'),
           h('button',{onClick:resetWeek,disabled:weekLocked,title:'Resetear semana',style:{borderRadius:'8px',padding:'6px 8px',fontSize:'10px',fontWeight:'600',cursor:weekLocked?'default':'pointer',border:'1px solid rgba(239,68,68,0.3)',background:weekLocked?'transparent':'rgba(239,68,68,0.1)',color:weekLocked?'rgba(239,68,68,0.3)':'#EF4444'}},'↺')
