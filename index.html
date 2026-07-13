@@ -1042,13 +1042,14 @@ function App(){
       localStorage.setItem(`ase_${user}_hadAdvanced`,'1');
     }
     setWk(getWkForNum(user,wkNum));
-    // Restaurar borrador inmediatamente antes del fetch para no sobreescribir
+    // Restaurar borrador — usar wkNum correcto (no correctedNum)
     try{
       const wkId=`sem_${wkNum}`;
       const draftStr=localStorage.getItem(`ase_${user}_draft_${wkId}`);
       const savedStr=localStorage.getItem(SK(wkId,user));
       const d=draftStr?JSON.parse(draftStr):(savedStr?JSON.parse(savedStr):null);
       if(d){if(d.sr)setSessionReps(d.sr);if(d.n)setNut(migrateNut(d.n));if(d.h)setHab(migrateHab(d.h));if(d.hiit)setHiitData(d.hiit);setSaved(!!savedStr);}
+      else{setNut(iN());setHab(iH());setSessionReps({});setSaved(false);}
     }catch(e){}
     setCfg(()=>{try{return JSON.parse(localStorage.getItem(CFG_KEY(user)))||defCfg;}catch(e){return defCfg;}});
     try{
@@ -1080,8 +1081,6 @@ function App(){
       }).catch(()=>{}).finally(()=>{
         setLoadingExes(false);
         setExesReady(true);
-        // Cargar draft ANTES de activar draftReady para evitar sobreescritura con estado vacío
-        load(`sem_${wkNum}`);
         setTimeout(()=>{draftReady.current=true;},200);
       });
   },[user]);
