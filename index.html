@@ -242,18 +242,16 @@ function AjustarSemana({onClose}){
   function limpiarDrafts(){
     const u=nombre.trim();if(!u)return;
     const num=parseInt(wkNum)||1;
-    // Borrar drafts de todas las sems para que la app arranque limpia
     for(let i=1;i<=20;i++){
       localStorage.removeItem(`ase_${u}_draft_sem_${i}`);
-    }
-    // Borrar flags de reporte enviado
-    for(let i=1;i<=20;i++){
       localStorage.removeItem(`ase_${u}_reporteSent_sem_${i}`);
     }
     localStorage.setItem(`ase_${u}_wknum`,String(num));
     localStorage.setItem(`ase_${u}_maxWkNum`,String(num));
     localStorage.removeItem(`ase_${u}_hadAdvanced`);
-    setMsg('✅ Drafts limpiados. Cerrá y volvé a abrir la app.');
+    // También guardar la fecha de inicio — crítico para fechas correctas
+    if(startDate)localStorage.setItem(`ase_${u}_startdate`,startDate);
+    setMsg('✅ Listo. Cerrá y volvé a abrir la app.');
   }
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#0A0A0A',minHeight:'100vh',padding:'24px'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'24px'}},
