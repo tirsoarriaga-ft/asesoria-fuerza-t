@@ -225,38 +225,59 @@ function AjustarSemana({onClose}){
   const [msg,setMsg]=useState('');
   function cargar(){
     if(!nombre.trim())return;
-    const wn=localStorage.getItem(`ase_${nombre.trim()}_wknum`)||'1';
-    const sd=localStorage.getItem(`ase_${nombre.trim()}_startdate`)||'';
+    const u=nombre.trim();
+    const wn=localStorage.getItem(`ase_${u}_wknum`)||'1';
+    const sd=localStorage.getItem(`ase_${u}_startdate`)||'';
     setWkNum(wn);setStartDate(sd);setMsg('');
   }
   function guardar(){
     const u=nombre.trim();if(!u)return;
-    if(wkNum)localStorage.setItem(`ase_${u}_wknum`,String(parseInt(wkNum)||1));
+    const num=parseInt(wkNum)||1;
+    localStorage.setItem(`ase_${u}_wknum`,String(num));
+    localStorage.setItem(`ase_${u}_maxWkNum`,String(num));
+    localStorage.removeItem(`ase_${u}_hadAdvanced`);
     if(startDate)localStorage.setItem(`ase_${u}_startdate`,startDate);
-    setMsg('✅ Guardado. Pedile a '+u+' que cierre y vuelva a abrir la app.');
+    setMsg('✅ Guardado. Ahora limpiá los drafts si es necesario.');
   }
-  return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#fff',minHeight:'100vh',padding:'24px'}},
+  function limpiarDrafts(){
+    const u=nombre.trim();if(!u)return;
+    const num=parseInt(wkNum)||1;
+    // Borrar drafts de todas las sems para que la app arranque limpia
+    for(let i=1;i<=20;i++){
+      localStorage.removeItem(`ase_${u}_draft_sem_${i}`);
+    }
+    // Borrar flags de reporte enviado
+    for(let i=1;i<=20;i++){
+      localStorage.removeItem(`ase_${u}_reporteSent_sem_${i}`);
+    }
+    localStorage.setItem(`ase_${u}_wknum`,String(num));
+    localStorage.setItem(`ase_${u}_maxWkNum`,String(num));
+    localStorage.removeItem(`ase_${u}_hadAdvanced`);
+    setMsg('✅ Drafts limpiados. Cerrá y volvé a abrir la app.');
+  }
+  return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#0A0A0A',minHeight:'100vh',padding:'24px'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'24px'}},
-      h('button',{onClick:onClose,style:{background:'none',border:'none',fontSize:'22px',cursor:'pointer'}},'←'),
-      h('div',{style:{fontSize:'18px',fontWeight:'800'}},'Ajustar semana')
+      h('button',{onClick:onClose,style:{background:'none',border:'none',fontSize:'22px',cursor:'pointer',color:'#fff'}},'←'),
+      h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#fff'}},'Ajustar semana')
     ),
     !auth?h('div',null,
-      h('div',{style:{...lbl,marginBottom:'8px'}},'PIN del coach'),
-      h('input',{type:'password',value:pin,onChange:e=>setPin(e.target.value),style:{...inp,marginBottom:'12px'}}),
-      h('button',{onClick:()=>pin===COACH_PIN?setAuth(true):setMsg('PIN incorrecto'),style:{width:'100%',background:'#111',color:'#fff',border:'none',borderRadius:'10px',padding:'14px',fontSize:'15px',fontWeight:'700',cursor:'pointer'}},'Ingresar'),
+      h('div',{style:{...lbl,color:'rgba(255,255,255,0.5)',marginBottom:'8px'}},'PIN del coach'),
+      h('input',{type:'password',value:pin,onChange:e=>setPin(e.target.value),style:{...inp,marginBottom:'12px',background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff'}}),
+      h('button',{onClick:()=>pin===COACH_PIN?setAuth(true):setMsg('PIN incorrecto'),style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'10px',padding:'14px',fontSize:'15px',fontWeight:'700',cursor:'pointer'}},'Ingresar'),
       msg&&h('div',{style:{color:R,marginTop:'8px',fontSize:'13px'}},msg)
     ):h('div',null,
-      h('div',{style:{...lbl,marginBottom:'8px'}},'Nombre del asesorado'),
+      h('div',{style:{...lbl,color:'rgba(255,255,255,0.5)',marginBottom:'8px'}},'Nombre del asesorado'),
       h('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},
-        h('input',{value:nombre,onChange:e=>setNombre(e.target.value),placeholder:'Exactamente como entra a la app',style:{...inp,flex:1}}),
+        h('input',{value:nombre,onChange:e=>setNombre(e.target.value),placeholder:'Exactamente como entra a la app',style:{...inp,flex:1,background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff'}}),
         h('button',{onClick:cargar,style:{background:B,color:'#fff',border:'none',borderRadius:'8px',padding:'10px 16px',cursor:'pointer',fontWeight:'700'}},'Cargar')
       ),
       wkNum&&h('div',null,
-        h('div',{style:{...lbl,marginBottom:'6px'}},'Semana actual'),
-        h('input',{type:'number',value:wkNum,onChange:e=>setWkNum(e.target.value),style:{...inp,marginBottom:'12px'}}),
-        h('div',{style:{...lbl,marginBottom:'6px'}},'Fecha de inicio (YYYY-MM-DD)'),
-        h('input',{type:'date',value:startDate,onChange:e=>setStartDate(e.target.value),style:{...inp,marginBottom:'16px'}}),
-        h('button',{onClick:guardar,style:{width:'100%',background:G,color:'#fff',border:'none',borderRadius:'10px',padding:'14px',fontSize:'15px',fontWeight:'700',cursor:'pointer'}},'Guardar corrección')
+        h('div',{style:{...lbl,color:'rgba(255,255,255,0.5)',marginBottom:'6px'}},'Semana actual'),
+        h('input',{type:'number',value:wkNum,onChange:e=>setWkNum(e.target.value),style:{...inp,marginBottom:'12px',background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff'}}),
+        h('div',{style:{...lbl,color:'rgba(255,255,255,0.5)',marginBottom:'6px'}},'Fecha de inicio (YYYY-MM-DD)'),
+        h('input',{type:'date',value:startDate,onChange:e=>setStartDate(e.target.value),style:{...inp,marginBottom:'16px',background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff'}}),
+        h('button',{onClick:guardar,style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'10px',padding:'14px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginBottom:'10px'}},'Guardar corrección'),
+        h('button',{onClick:limpiarDrafts,style:{width:'100%',background:'rgba(255,255,255,0.08)',color:'rgba(255,255,255,0.7)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:'10px',padding:'14px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}},'🗑 Limpiar drafts y reiniciar sem')
       ),
       msg&&h('div',{style:{marginTop:'12px',fontSize:'13px',color:G,fontWeight:'600'}},msg)
     )
@@ -1593,7 +1614,15 @@ function App(){
         ),
         h('div',{style:{display:'flex',gap:'4px',width:'100%',marginTop:'2px'}},
           h('button',{onClick:prevWeek,disabled:(wk.num||1)<=1,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:(wk.num||1)<=1?'default':'pointer',border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',color:(wk.num||1)<=1?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.6)'}},'← Anterior'),
-          h('button',{onClick:newWeek,disabled:wk.num>=realWkNum&&!wkFinished,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:wk.num>=realWkNum&&!wkFinished?'default':'pointer',border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',color:wk.num>=realWkNum&&!wkFinished?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.6)'}},'Nueva →'),
+          isViewingPast
+            ?h('button',{onClick:()=>{
+                const cur=parseInt(localStorage.getItem(`ase_${user}_wknum`))||1;
+                const real=getRealWkNum(user);
+                localStorage.setItem(`ase_${user}_wknum`,String(real));
+                setWk(getWkForNum(user,real));
+                load(`sem_${real}`);
+              },style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'700',cursor:'pointer',border:`1px solid ${AC}`,background:AC+'22',color:AC}},'Sem actual →')
+            :h('button',{onClick:newWeek,disabled:wk.num>=realWkNum&&!wkFinished,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:wk.num>=realWkNum&&!wkFinished?'default':'pointer',border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',color:wk.num>=realWkNum&&!wkFinished?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.6)'}},'Nueva →'),
           h('button',{onClick:resetWeek,disabled:weekLocked,title:'Resetear semana',style:{borderRadius:'8px',padding:'6px 8px',fontSize:'10px',fontWeight:'600',cursor:weekLocked?'default':'pointer',border:'1px solid rgba(239,68,68,0.3)',background:weekLocked?'transparent':'rgba(239,68,68,0.1)',color:weekLocked?'rgba(239,68,68,0.3)':'#EF4444'}},'↺')
         )
       )
