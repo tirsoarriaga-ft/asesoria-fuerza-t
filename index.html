@@ -1066,7 +1066,13 @@ function App(){
           });
           setExes(exData);exesRef.current=exData;
         }
-      }).catch(()=>{}).finally(()=>{setLoadingExes(false);setExesReady(true);draftReady.current=true;load(`sem_${wkNum}`);});
+      }).catch(()=>{}).finally(()=>{
+        setLoadingExes(false);
+        setExesReady(true);
+        // Cargar draft ANTES de activar draftReady para evitar sobreescritura con estado vacío
+        load(`sem_${wkNum}`);
+        setTimeout(()=>{draftReady.current=true;},200);
+      });
   },[user]);
 
   // Efecto 2: cargar rutinas y menús después de ejercicios
@@ -1250,7 +1256,8 @@ function App(){
   const isViewingPast=wk.num<realWkNum;
   const isViewingFuture=wk.num>realWkNum;
   const wkSat=user?getWkSat(user,wk.num):new Date();
-  const wkFinished=new Date()>wkSat;
+  const now=new Date();
+  const wkFinished=now>wkSat||now.getDay()===0; // sábado pasado O domingo = semana terminada
   const canSaveWeek=wk.num===realWkNum&&wkFinished; // solo sem actual y ya terminó
   const weekLocked=isViewingPast||isViewingFuture; // pasado=solo lectura, futuro no debería existir
 
@@ -1494,7 +1501,16 @@ function App(){
             )
       ),
       hist.length>0&&h('div',{style:card},
-        h('div',{style:lbl},'Semanas guardadas'),
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+          h('div',{style:lbl},'Semanas guardadas'),
+          h('button',{onClick:()=>{
+            if(!confirm('¿Limpiar el historial local? Solo se borran las semanas de tu dispositivo. Los datos enviados a tu coach no se borran.'))return;
+            const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
+            list.forEach(id=>localStorage.removeItem(SK(id,user)));
+            localStorage.removeItem(HK(user));
+            setHist([]);
+          },style:{fontSize:'10px',color:'#bbb',background:'none',border:'1px solid rgba(0,0,0,0.08)',borderRadius:'6px',padding:'4px 8px',cursor:'pointer'}},'Limpiar historial')
+        ),
         hist.slice().reverse().map((w,i)=>{
           const sc=calcScore(w);
           const scl=sc?getScoreLabel(sc.total):null;
