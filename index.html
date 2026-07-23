@@ -216,69 +216,171 @@ function DualBarChart({data,key2='toxics',color2=R}){
 
 // ── LOGIN ─────────────────────────────────────────────────────────────
 function AjustarSemana({onClose}){
-  const COACH_PIN='1234';
-  const [pin,setPin]=useState('');
-  const [auth,setAuth]=useState(false);
-  const [nombre,setNombre]=useState('');
-  const [wkNum,setWkNum]=useState('');
-  const [startDate,setStartDate]=useState('');
-  const [msg,setMsg]=useState('');
+  var COACH_PIN='1234';
+  var [pin,setPin]=useState('');
+  var [auth,setAuth]=useState(false);
+  var [nombre,setNombre]=useState('');
+  var [wkNum,setWkNum]=useState('');
+  var [startDate,setStartDate]=useState('');
+  var [msg,setMsg]=useState('');
+  var [datos,setDatos]=useState(null);
+  var [seccion,setSeccion]=useState('config');
+  var dark={background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff',borderRadius:'10px',padding:'11px 12px',width:'100%',fontSize:'14px',fontFamily:'inherit',outline:'none'};
+  var box={background:'rgba(255,255,255,0.06)',borderRadius:'10px',padding:'12px',marginBottom:'10px'};
+  var tag={fontSize:'10px',fontWeight:'700',color:'rgba(255,255,255,0.4)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'6px'};
+  function pref(u){return 'ase_'+u+'_';}
+  function ls(k){try{return localStorage.getItem(k);}catch(e){return null;}}
+  function lsj(k,def){try{return JSON.parse(ls(k)||def);}catch(e){return JSON.parse(def);}}
+  function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+  function lsRm(k){try{localStorage.removeItem(k);}catch(e){}}
+
   function cargar(){
-    if(!nombre.trim())return;
-    const u=nombre.trim();
-    const wn=localStorage.getItem(`ase_${u}_wknum`)||'1';
-    const sd=localStorage.getItem(`ase_${u}_startdate`)||'';
-    setWkNum(wn);setStartDate(sd);setMsg('');
+    var u=nombre.trim();if(!u)return;
+    var p=pref(u);
+    setWkNum(ls(p+'wknum')||'1');
+    setStartDate(ls(p+'startdate')||'');
+    setMsg('');
+    var kg=lsj(p+'sessKg','{}');
+    var histIds=lsj(p+'hist','[]');
+    var sems=histIds.map(function(id){
+      var raw=ls(p+id)||'{}';
+      try{var d=JSON.parse(raw);d.id=id;return d;}catch(e){return {id:id};}
+    });
+    var wkId='sem_'+(ls(p+'wknum')||'1');
+    var draft=lsj(p+'draft_'+wkId,'null');
+    setDatos({kg:kg,sems:sems,draft:draft,draftId:wkId});
   }
-  function guardar(){
-    const u=nombre.trim();if(!u)return;
-    const num=parseInt(wkNum)||1;
-    localStorage.setItem(`ase_${u}_wknum`,String(num));
-    localStorage.setItem(`ase_${u}_maxWkNum`,String(num));
-    localStorage.removeItem(`ase_${u}_hadAdvanced`);
-    if(startDate)localStorage.setItem(`ase_${u}_startdate`,startDate);
-    setMsg('✅ Guardado. Ahora limpiá los drafts si es necesario.');
-  }
-  function limpiarDrafts(){
-    const u=nombre.trim();if(!u)return;
-    const num=parseInt(wkNum)||1;
-    for(let i=1;i<=20;i++){
-      localStorage.removeItem(`ase_${u}_draft_sem_${i}`);
-      localStorage.removeItem(`ase_${u}_reporteSent_sem_${i}`);
+
+  function restaurar(sem){
+    var u=nombre.trim();if(!u||!sem)return;
+    var p=pref(u);
+    var key=p+sem.id;
+    var existing=lsj(key,'null');
+    var merged=Object.assign({},sem);
+    if(existing){
+      if(sem.sr&&existing.sr){
+        Object.keys(sem.sr).forEach(function(sess){
+          if(!existing.sr[sess])existing.sr[sess]={};
+          Object.keys(sem.sr[sess]||{}).forEach(function(exId){
+            if(!existing.sr[sess][exId])existing.sr[sess][exId]=sem.sr[sess][exId];
+          });
+        });
+        merged.sr=existing.sr;
+      }
+      if(sem.sk&&existing.sk)merged.sk=Object.assign({},sem.sk,existing.sk);
+      if(sem.h&&existing.h){
+        var meds=(existing.h.meds||[]).map(function(m,i){
+          var sm=(sem.h.meds||[])[i]||{};
+          return {p:m.p||sm.p||'',c:m.c||sm.c||''};
+        });
+        var sens=Object.assign({},sem.h.sens||{});
+        Object.keys(existing.h.sens||{}).forEach(function(k){if(existing.h.sens[k])sens[k]=existing.h.sens[k];});
+        merged.h=Object.assign({},sem.h,existing.h,{meds:meds,sens:sens});
+      }
     }
-    localStorage.setItem(`ase_${u}_wknum`,String(num));
-    localStorage.setItem(`ase_${u}_maxWkNum`,String(num));
-    localStorage.removeItem(`ase_${u}_hadAdvanced`);
-    // También guardar la fecha de inicio — crítico para fechas correctas
-    if(startDate)localStorage.setItem(`ase_${u}_startdate`,startDate);
-    setMsg('✅ Listo. Cerrá y volvé a abrir la app.');
+    lsSet(key,JSON.stringify(merged));
+    lsSet(p+'draft_'+sem.id,JSON.stringify({sr:merged.sr,n:merged.n,h:merged.h,hiit:merged.hiit}));
+    setMsg('✅ Sem '+sem.id+' restaurada. Navegá a esa semana para ver los datos.');
   }
-  return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#0A0A0A',minHeight:'100vh',padding:'24px'}},
+
+  function guardar(){
+    var u=nombre.trim();if(!u)return;
+    var p=pref(u);var num=parseInt(wkNum)||1;
+    lsSet(p+'wknum',String(num));lsSet(p+'maxWkNum',String(num));lsRm(p+'hadAdvanced');
+    if(startDate)lsSet(p+'startdate',startDate);
+    setMsg('✅ Guardado.');
+  }
+
+  function limpiarDrafts(){
+    var u=nombre.trim();if(!u)return;
+    var p=pref(u);var num=parseInt(wkNum)||1;
+    for(var i=1;i<=20;i++){lsRm(p+'draft_sem_'+i);lsRm(p+'reporteSent_sem_'+i);}
+    lsSet(p+'wknum',String(num));lsSet(p+'maxWkNum',String(num));lsRm(p+'hadAdvanced');
+    if(startDate)lsSet(p+'startdate',startDate);
+    setMsg('✅ Drafts limpiados. Cerrá y volvé a abrir la app.');
+  }
+
+  return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#0A0A0A',minHeight:'100vh',padding:'24px',overflowY:'auto'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'24px'}},
       h('button',{onClick:onClose,style:{background:'none',border:'none',fontSize:'22px',cursor:'pointer',color:'#fff'}},'←'),
-      h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#fff'}},'Ajustar semana')
+      h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#fff'}},'Panel de diagnóstico')
     ),
-    !auth?h('div',null,
-      h('div',{style:{...lbl,color:'rgba(255,255,255,0.5)',marginBottom:'8px'}},'PIN del coach'),
-      h('input',{type:'password',value:pin,onChange:e=>setPin(e.target.value),style:{...inp,marginBottom:'12px',background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff'}}),
-      h('button',{onClick:()=>pin===COACH_PIN?setAuth(true):setMsg('PIN incorrecto'),style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'10px',padding:'14px',fontSize:'15px',fontWeight:'700',cursor:'pointer'}},'Ingresar'),
-      msg&&h('div',{style:{color:R,marginTop:'8px',fontSize:'13px'}},msg)
-    ):h('div',null,
-      h('div',{style:{...lbl,color:'rgba(255,255,255,0.5)',marginBottom:'8px'}},'Nombre del asesorado'),
-      h('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},
-        h('input',{value:nombre,onChange:e=>setNombre(e.target.value),placeholder:'Exactamente como entra a la app',style:{...inp,flex:1,background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff'}}),
-        h('button',{onClick:cargar,style:{background:B,color:'#fff',border:'none',borderRadius:'8px',padding:'10px 16px',cursor:'pointer',fontWeight:'700'}},'Cargar')
-      ),
-      wkNum&&h('div',null,
-        h('div',{style:{...lbl,color:'rgba(255,255,255,0.5)',marginBottom:'6px'}},'Semana actual'),
-        h('input',{type:'number',value:wkNum,onChange:e=>setWkNum(e.target.value),style:{...inp,marginBottom:'12px',background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff'}}),
-        h('div',{style:{...lbl,color:'rgba(255,255,255,0.5)',marginBottom:'6px'}},'Fecha de inicio (YYYY-MM-DD)'),
-        h('input',{type:'date',value:startDate,onChange:e=>setStartDate(e.target.value),style:{...inp,marginBottom:'16px',background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff'}}),
-        h('button',{onClick:guardar,style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'10px',padding:'14px',fontSize:'15px',fontWeight:'700',cursor:'pointer',marginBottom:'10px'}},'Guardar corrección'),
-        h('button',{onClick:limpiarDrafts,style:{width:'100%',background:'rgba(255,255,255,0.08)',color:'rgba(255,255,255,0.7)',border:'1px solid rgba(255,255,255,0.15)',borderRadius:'10px',padding:'14px',fontSize:'14px',fontWeight:'600',cursor:'pointer'}},'🗑 Limpiar drafts y reiniciar sem')
-      ),
-      msg&&h('div',{style:{marginTop:'12px',fontSize:'13px',color:G,fontWeight:'600'}},msg)
-    )
+    !auth
+      ?h('div',null,
+          h('div',{style:tag},'PIN del coach'),
+          h('input',{type:'password',value:pin,onChange:function(e){setPin(e.target.value);},style:Object.assign({},dark,{marginBottom:'12px'})}),
+          h('button',{onClick:function(){pin===COACH_PIN?setAuth(true):setMsg('PIN incorrecto');},style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'10px',padding:'14px',fontSize:'15px',fontWeight:'700',cursor:'pointer'}},'Ingresar'),
+          msg&&h('div',{style:{color:R,marginTop:'8px',fontSize:'13px'}},msg)
+        )
+      :h('div',null,
+          h('div',{style:tag},'Nombre del asesorado'),
+          h('div',{style:{display:'flex',gap:'8px',marginBottom:'16px'}},
+            h('input',{value:nombre,onChange:function(e){setNombre(e.target.value);},placeholder:'Exactamente como entra a la app',style:Object.assign({},dark,{flex:1})}),
+            h('button',{onClick:cargar,style:{background:B,color:'#fff',border:'none',borderRadius:'8px',padding:'10px 16px',cursor:'pointer',fontWeight:'700'}},'Cargar')
+          ),
+          datos&&h('div',null,
+            h('div',{style:{display:'flex',gap:'6px',marginBottom:'14px'}},
+              h('button',{onClick:function(){setSeccion('config');},style:{flex:1,padding:'8px',borderRadius:'8px',border:'none',fontWeight:'700',fontSize:'12px',cursor:'pointer',background:seccion==='config'?AC:'rgba(255,255,255,0.08)',color:'#fff'}},'⚙️ Config'),
+              h('button',{onClick:function(){setSeccion('datos');},style:{flex:1,padding:'8px',borderRadius:'8px',border:'none',fontWeight:'700',fontSize:'12px',cursor:'pointer',background:seccion==='datos'?AC:'rgba(255,255,255,0.08)',color:'#fff'}},'📊 Datos')
+            ),
+            seccion==='config'&&h('div',{style:box},
+              h('div',{style:tag},'Semana actual'),
+              h('input',{type:'number',value:wkNum,onChange:function(e){setWkNum(e.target.value);},style:Object.assign({},dark,{marginBottom:'10px'})}),
+              h('div',{style:Object.assign({},tag,{marginTop:'8px'})},'Fecha de inicio (YYYY-MM-DD)'),
+              h('input',{type:'date',value:startDate,onChange:function(e){setStartDate(e.target.value);},style:Object.assign({},dark,{marginBottom:'12px'})}),
+              h('button',{onClick:guardar,style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'14px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}},'Guardar corrección'),
+              h('button',{onClick:limpiarDrafts,style:{width:'100%',background:'rgba(255,255,255,0.06)',color:'rgba(255,255,255,0.6)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}},'🗑 Limpiar drafts y reiniciar sem')
+            ),
+            seccion==='datos'&&h('div',null,
+              h('div',{style:box},
+                h('div',{style:tag},'Kg guardados'),
+                Object.keys(datos.kg).length===0
+                  ?h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.3)'}},'Sin kg guardados')
+                  :Object.entries(datos.kg).map(function(entry){
+                      return Object.entries(entry[1]||{}).map(function(e2){
+                        return h('div',{key:entry[0]+e2[0],style:{display:'flex',justifyContent:'space-between',padding:'4px 0',borderBottom:'1px solid rgba(255,255,255,0.06)',fontSize:'12px'}},
+                          h('span',{style:{color:'rgba(255,255,255,0.6)'}},'Ses.'+entry[0]+' · '+e2[0]),
+                          h('span',{style:{color:'#fff',fontWeight:'700'}},e2[1]+' kg')
+                        );
+                      });
+                    })
+              ),
+              datos.draft&&h('div',{style:box},
+                h('div',{style:tag},'Draft actual ('+datos.draftId+')'),
+                h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginBottom:'6px'}},'Último Guardar progreso'),
+                datos.draft.h&&datos.draft.h.meds&&datos.draft.h.meds.some(function(m){return m.p;})
+                  &&h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.6)',marginBottom:'4px'}},'Peso: '+datos.draft.h.meds.filter(function(m){return m.p;}).map(function(m){return m.p;}).join(' / ')+' kg'),
+                datos.draft.h&&datos.draft.h.meds&&datos.draft.h.meds.some(function(m){return m.c;})
+                  &&h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.6)',marginBottom:'4px'}},'Cintura: '+datos.draft.h.meds.filter(function(m){return m.c;}).map(function(m){return m.c;}).join(' / ')+' cm'),
+                datos.draft.h&&datos.draft.h.sens&&datos.draft.h.sens.energia
+                  &&h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.6)'}},'Energía: '+datos.draft.h.sens.energia)
+              ),
+              h('div',{style:box},
+                h('div',{style:tag},'Semanas en historial'),
+                datos.sems.length===0
+                  ?h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.3)'}},'Sin semanas guardadas')
+                  :datos.sems.map(function(sem,i){
+                      var reps=Object.values(sem.sr||{}).reduce(function(a,s){return a+Object.keys(s||{}).length;},0);
+                      var tags=[];
+                      if(reps>0)tags.push(reps+' ejerc.');
+                      if(sem.h&&sem.h.meds&&sem.h.meds.some(function(m){return m.p;}))tags.push('peso ✓');
+                      if(sem.h&&sem.h.meds&&sem.h.meds.some(function(m){return m.c;}))tags.push('cintura ✓');
+                      if(sem.h&&sem.h.sens&&sem.h.sens.energia)tags.push('sens ✓');
+                      return h('div',{key:i,style:{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.06)'}},
+                        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                          h('div',null,
+                            h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#fff'}},sem.id),
+                            h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'2px'}},tags.join(' · ')||'sin datos')
+                          ),
+                          h('button',{onClick:function(){restaurar(sem);},style:{background:AC,color:'#fff',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Restaurar')
+                        )
+                      );
+                    })
+              )
+            ),
+            msg&&h('div',{style:{marginTop:'12px',fontSize:'13px',color:G,fontWeight:'600',padding:'10px',background:'rgba(29,158,117,0.15)',borderRadius:'8px'}},msg)
+          )
+        )
   );
 }
 
