@@ -384,6 +384,162 @@ function AjustarSemana({onClose}){
   );
 }
 
+// ── MI BLOQUE ─────────────────────────────────────────────────────────
+const BLOQUE_INFO={
+  'volumen':{titulo:'Bloque Triple Progresión',sub:'rep → kg → series',texto:'Estás en la etapa de construcción. El músculo se construye con trabajo acumulado, proteína consistente y descanso real. Cada semana que subís reps, kg o series — y llegás a las comidas y al sueño — estás generando el estímulo que cambia tu cuerpo.'},
+  'fuerza':{titulo:'Bloque Fuerza',sub:'tensión máxima',texto:'Estás en la etapa de fuerza. El sistema nervioso necesita cargas altas, recuperación completa y energía disponible para adaptarse. Si el entrenamiento, la nutrición y el descanso están alineados, los números suben.'},
+  'intensidad':{titulo:'Bloque Intensidad',sub:'eficiencia neuromuscular',texto:'Estás en una etapa de transición y eficiencia. El cuerpo necesita velocidad de ejecución, no volumen. La nutrición sostiene sin exceder, el descanso permite recuperar. Es una etapa para consolidar, no para forzar.'},
+  'man':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Estás sosteniendo lo construido. El contexto de vida tiene prioridad ahora. El objetivo es mantener la adherencia al entrenamiento, a las comidas y al descanso sin perder lo ganado. Cuando el espacio aparezca, retomamos la progresión.'},
+  'mantenimiento':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Estás sosteniendo lo construido. El contexto de vida tiene prioridad ahora. El objetivo es mantener la adherencia al entrenamiento, a las comidas y al descanso sin perder lo ganado. Cuando el espacio aparezca, retomamos la progresión.'},
+  'base':{titulo:'Bloque Base',sub:'calibración del esfuerzo',texto:'Estás en la etapa de calibración. El objetivo no es el peso ni las reps — es aprender a controlar el esfuerzo. En paralelo, establecer hábitos de alimentación y descanso que sostengan el entrenamiento. Todo lo que hagas bien acá hace posible lo que viene.'},
+  'conexion':{titulo:'Bloque Base',sub:'calibración del esfuerzo',texto:'Estás en la etapa de calibración. El objetivo no es el peso ni las reps — es aprender a controlar el esfuerzo. En paralelo, establecer hábitos de alimentación y descanso que sostengan el entrenamiento. Todo lo que hagas bien acá hace posible lo que viene.'},
+  'health':{titulo:'Bloque Restauración',sub:'recuperación activa',texto:'Estás en una etapa de restauración. El cuerpo necesita menos estímulo y más recuperación — en el entrenamiento, en la alimentación y en el descanso. No es un paso atrás: es lo que hace posible el próximo bloque.'},
+  'deporte':{titulo:'Bloque Deporte',sub:'rendimiento específico',texto:'Estás preparando tu rendimiento para un objetivo concreto. Cada sesión, cada comida y cada noche de descanso tiene un propósito específico. La fecha del evento define el plan.'},
+};
+
+const FOCO_MSGS={
+  entreno:{
+    'volumen':'Completá todas las series pautadas. Sin el volumen de entrenamiento, el músculo no tiene estímulo para crecer.',
+    'fuerza':'Completá todas las series. La progresión de carga necesita estímulo consistente.',
+    'intensidad':'Asegurate de hacer cada sesión con velocidad y calidad. La eficiencia se construye con práctica.',
+    'man':'Mantené la frecuencia de entrenamiento. Es lo que sostiene lo que construiste.',
+    'base':'Priorizá la técnica en cada rep. El control del esfuerzo es el objetivo ahora.',
+    'health':'Realizá las sesiones pautadas sin forzar. El movimiento ayuda a la recuperación.',
+    'deporte':'No saltees sesiones. Cada una tiene un propósito específico para la fecha que se viene.',
+  },
+  nutricion:{
+    'volumen':'Llegá a las 4 comidas diarias. Sin energía, el músculo no se construye.',
+    'fuerza':'Mantené las comidas. La fuerza necesita energía disponible para progresar.',
+    'intensidad':'Sostené la alimentación. La transición no requiere más pero sí constancia.',
+    'man':'Priorizá llegar a las comidas. Es lo que evita perder lo ganado.',
+    'base':'Establecé el hábito de las 4 comidas. Es la base de todo lo que viene.',
+    'health':'Comé regular y consistente. La recuperación empieza en la nutrición.',
+    'deporte':'Seguí el plan de alimentación. El rendimiento depende directamente de esto.',
+  },
+  habitos:{
+    'volumen':'Priorizá el sueño. Con menos de 7hs la construcción muscular se frena.',
+    'fuerza':'Descansá bien. La fuerza se construye mientras dormís, no mientras entrenás.',
+    'intensidad':'El descanso es parte del bloque. Sin él la eficiencia no mejora.',
+    'man':'Priorizá el sueño. Es lo que sostiene la recuperación sin perder lo ganado.',
+    'base':'Establecé una rutina de sueño. Todo el proceso depende de eso.',
+    'health':'El descanso ES el objetivo de este bloque. Priorizalo por encima de todo.',
+    'deporte':'Dormí bien. El rendimiento en competencia depende del descanso previo.',
+  },
+};
+
+function MiBloque({hist,wk,cfg,nut,hab,pC,pS,sC,actExtraC,toxC,sessionReps,exes}){
+  const bloque=(cfg?.bloque||'volumen').toLowerCase().replace(' phase','').replace('conexion nm','conexion').replace('conexión nm','conexion');
+  const bloqueKey=Object.keys(BLOQUE_INFO).find(k=>bloque.includes(k))||'volumen';
+  const info=BLOQUE_INFO[bloqueKey];
+  const bloqueInicio=parseInt(cfg?.bloqueInicio)||1;
+  const semanasEnBloque=Math.max(1,wk.num-bloqueInicio+1);
+
+  // Nivel de la última sem guardada
+  const lastSem=hist.length>0?hist[hist.length-1]:null;
+  function calcLastScore(sem){
+    if(!sem)return null;
+    var sr=sem.sr||{};
+    var nsp=parseInt(cfg&&cfg.numSesiones)||3;
+    var scd=Object.values(sr).filter(function(s){return Object.values(s).some(function(ex){return parseInt((Object.values(ex||{})[0])||0)>0;});}).length;
+    var se=(scd/Math.max(nsp,1))*33;
+    var nutr=sem.n||[];
+    var tc=Math.min(24,nutr.slice(0,6).reduce(function(a,d){return a+Object.values(d.m||{}).filter(Boolean).length;},0));
+    var sn=(tc/24)*25+((nutr.filter(function(d){return d.ak;}).length)/6)*8;
+    var h2=sem.h||{};
+    var sk=['energia','hambre','digestion','estres'];
+    var sc=sk.filter(function(k){return (h2.sens||{})[k];}).length;
+    var hp=(h2.meds||[]).some(function(m){return parseFloat(m.p)>0;})||(parseFloat(sem.pp||0)>0);
+    var hc=(h2.meds||[]).some(function(m){return parseFloat(m.c)>0;})||(parseFloat(sem.pc||0)>0);
+    return Math.round(se+sn+(sc/4)*18+(hp?8:0)+(hc?7:0));
+  }
+  const lastScore=calcLastScore(lastSem);
+
+  // Nivel actual (sem en curso)
+  const numSessPaut=parseInt(cfg?.numSesiones)||3;
+  const sessConDatos=Object.values(sessionReps||{}).filter(s=>Object.values(s||{}).some(ex=>Object.values(ex||{}).some(v=>v))).length;
+  const scoreEntrenoActual=(sessConDatos/Math.max(numSessPaut,1))*33;
+  const totalCActual=Math.min(24,nut.slice(0,6).reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0));
+  const scoreNutActual=(totalCActual/24)*25+((nut.filter(d=>d.ak).length)/6)*8;
+  const sensKeysA=['energia','hambre','digestion','estres'];
+  const sensCountA=sensKeysA.filter(k=>(hab.sens||{})[k]).length;
+  const hasPesoA=(hab.meds||[]).some(m=>parseFloat(m.p)>0);
+  const hasCinA=(hab.meds||[]).some(m=>parseFloat(m.c)>0);
+  const scoreActual=Math.round(scoreEntrenoActual+scoreNutActual+(sensCountA/4)*18+(hasPesoA?8:0)+(hasCinA?7:0));
+
+  function getNivel(score){
+    if(score>=90)return{l:'⭐ MÁXIMO',sub:'Ejecución optimizada. Tu coach tiene todo para trabajar.',c:G};
+    if(score>=70)return{l:'✅ MÍNIMO',sub:'Ejecución eficiente. Alcanza para generar adaptación.',c:B};
+    return{l:'⚠️ INSUFICIENTE',sub:'Por debajo del piso necesario. Hay que ajustar antes de progresar.',c:R};
+  }
+
+  // Foco: pilar más alejado del mínimo en última sem
+  function getFoco(){
+    if(!lastSem)return null;
+    const sr=lastSem.sr||{};
+    const sessConDatosL=Object.values(sr).filter(s=>Object.values(s).some(ex=>parseInt((Object.values(ex||{})[0])||0)>0)).length;
+    const pctEntreno=sessConDatosL/Math.max(numSessPaut,1);
+    const nutr=lastSem.n||[];
+    const totalCL=Math.min(24,nutr.slice(0,6).reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0));
+    const pctNut=totalCL/24;
+    const h2=lastSem.h||{};
+    const suenoOk=(h2.sleep||[]).filter(Boolean).length;
+    const pctHab=suenoOk/6;
+    const min=Math.min(pctEntreno,pctNut,pctHab);
+    const focoKey=min===pctEntreno?'entreno':min===pctNut?'nutricion':'habitos';
+    const bk=bloqueKey==='man'?'man':bloqueKey==='mantenimiento'?'man':bloqueKey;
+    const msg=(FOCO_MSGS[focoKey]||{})[bk]||(FOCO_MSGS[focoKey]||{})['volumen']||'Seguí igual. La consistencia es la variable más importante.';
+    if(min>=0.8)return{msg:'Seguí igual. La consistencia es la variable más importante.',pilar:null};
+    return{msg,pilar:focoKey};
+  }
+  const foco=getFoco();
+  const nivelUltima=lastScore!==null?getNivel(lastScore):null;
+
+  return h('div',null,
+    // Card bloque
+    h('div',{style:{...card,background:'#0A0A0A',border:'none'}},
+      h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:'6px'}},'Tu bloque actual'),
+      h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#fff',marginBottom:'2px'}},info.titulo),
+      h('div',{style:{fontSize:'12px',color:AC,fontWeight:'700',marginBottom:'12px'}},'Semana '+semanasEnBloque+' · '+info.sub),
+      h('div',{style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',lineHeight:'1.6',borderLeft:'3px solid '+AC,paddingLeft:'12px'}},info.texto)
+    ),
+    // Nivel última sem
+    nivelUltima&&lastSem&&h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'8px'}},'Última semana completa · '+(lastSem.wl||lastSem.wi||'')),
+      h('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px',background:nivelUltima.c+'12',borderRadius:'10px',border:'1px solid '+nivelUltima.c+'30',marginBottom:'8px'}},
+        h('div',{style:{fontSize:'32px',fontWeight:'900',color:nivelUltima.c}},lastScore+'%'),
+        h('div',null,
+          h('div',{style:{fontSize:'14px',fontWeight:'800',color:nivelUltima.c}},nivelUltima.l),
+          h('div',{style:{fontSize:'11px',color:'#666',marginTop:'2px',lineHeight:'1.4'}},nivelUltima.sub)
+        )
+      ),
+      foco&&h('div',{style:{background:'#F8F8F8',borderRadius:'10px',padding:'12px'}},
+        h('div',{style:{fontSize:'10px',fontWeight:'700',color:'#888',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:'6px'}},'Foco esta semana'),
+        h('div',{style:{fontSize:'13px',color:'#333',lineHeight:'1.5'}},foco.msg)
+      )
+    ),
+    // Score semana en curso
+    h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'8px'}},'Esta semana en curso · Sem '+wk.num),
+      h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'6px'}},
+        h('div',{style:{fontSize:'28px',fontWeight:'900',color:'#111'}},scoreActual+'%'),
+        h('div',{style:{fontSize:'12px',color:'#999'}},'registro parcial')
+      ),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px'}},
+        [{l:'Entreno',v:Math.round(scoreEntrenoActual),max:33},{l:'Nutrición',v:Math.round(scoreNutActual),max:33},{l:'Mediciones',v:Math.round((sensCountA/4)*18+(hasPesoA?8:0)+(hasCinA?7:0)),max:33}].map((p,i)=>
+          h('div',{key:i,style:{background:'#F8F8F8',borderRadius:'8px',padding:'8px',textAlign:'center'}},
+            h('div',{style:{fontSize:'13px',fontWeight:'800'}},(p.v)+'/'+p.max),
+            h('div',{style:{fontSize:'9px',color:'#999',marginTop:'2px',textTransform:'uppercase',letterSpacing:'0.05em'}},p.l)
+          )
+        )
+      )
+    ),
+    // Cierre
+    h('div',{style:{...card,background:'#0A0A0A',border:'none',textAlign:'center'}},
+      h('div',{style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',lineHeight:'1.6'}},'Tu parte: registrá y cumplí.'),
+      h('div',{style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',lineHeight:'1.6'}},'La mía: ajustar el plan con esos datos.')
+    )
+  );
+}
 function Login({onLogin}){
   const [name,setName]=useState('');
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',minHeight:'100vh',background:'#0A0A0A',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 24px'}},
@@ -1573,7 +1729,7 @@ function App(){
 
   const hiitSess=cfg?.hiit||[];
   const hasHiit=hiitSess.length>0;
-  const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'n',l:'Cumplimiento',ic:'✅'},{id:'hb',l:'Mediciones',ic:'📏'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
+  const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'mb',l:'Mi bloque',ic:'📋'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'n',l:'Cumplimiento',ic:'✅'},{id:'hb',l:'Mediciones',ic:'📏'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
 
   // ── SCORE DE CUMPLIMIENTO ─────────────────────────────────────────
   const calcScore=(w)=>{
@@ -1798,6 +1954,7 @@ function App(){
         )
       ),
       tab==='d'&&h(Dashboard,null),
+      tab==='mb'&&h(MiBloque,{hist,wk,cfg,nut,hab,pC,pS,sC,actExtraC,toxC,sessionReps,exes}),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
       tab==='n'&&h(Cumplimiento,{key:'cumplimiento',nut,toggleMeal,toggleAguaOk,hab,setHab,setSaved,metaAgua,metaSal,nivel,tC,tA,pC,pA}),
