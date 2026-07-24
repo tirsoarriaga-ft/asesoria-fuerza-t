@@ -274,8 +274,9 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
         const status=getStatus(weeks,obj);const alerts=getAlerts(weeks,obj);
         const rutina=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===name.toLowerCase());
         const tmpl=rutina?.Template?String(rutina.Template)+'kcal':'—';
+        const latSemanID2=lat?.SemanID||'';
         const bloqueInicio2=parseInt(rutina?.BloqueInicio)||1;
-        const latWkNum=latSemanID?parseInt(latSemanID.replace('sem_',''))||1:1;
+        const latWkNum=latSemanID2?parseInt(latSemanID2.replace('sem_',''))||1:1;
         const semsEnBloque=Math.max(1,latWkNum-bloqueInicio2+1);
         const cpFreq=({'health phase':1,'mantenimiento':4,'deporte':4})[String(rutina?.Bloque||'').toLowerCase()]||2;
         const esCP=semsEnBloque%cpFreq===0;
