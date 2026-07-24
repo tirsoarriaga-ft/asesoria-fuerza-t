@@ -427,118 +427,46 @@ const FOCO_MSGS={
   },
 };
 
-function MiBloque({hist,wk,cfg,nut,hab,pC,pS,sC,actExtraC,toxC,sessionReps,exes}){
-  const bloque=(cfg?.bloque||'volumen').toLowerCase().replace(' phase','').replace('conexion nm','conexion').replace('conexión nm','conexion');
-  const bloqueKey=Object.keys(BLOQUE_INFO).find(k=>bloque.includes(k))||'volumen';
-  const info=BLOQUE_INFO[bloqueKey];
-  const bloqueInicio=parseInt(cfg?.bloqueInicio)||1;
-  const semanasEnBloque=Math.max(1,wk.num-bloqueInicio+1);
+function getNivel(score){
+  if(score>=90)return{l:'⭐ MÁXIMO',sub:'Ejecución optimizada. Tu coach tiene todo para trabajar.',c:G};
+  if(score>=70)return{l:'✅ MÍNIMO',sub:'Ejecución eficiente. Alcanza para generar adaptación.',c:B};
+  return{l:'⚠️ INSUFICIENTE',sub:'Por debajo del piso necesario. Hay que ajustar antes de progresar.',c:R};
+}
 
-  // Nivel de la última sem guardada
-  const lastSem=hist.length>0?hist[hist.length-1]:null;
-  function calcLastScore(sem){
-    if(!sem)return null;
-    var sr=sem.sr||{};
-    var nsp=parseInt(cfg&&cfg.numSesiones)||3;
-    var scd=Object.values(sr).filter(function(s){return Object.values(s).some(function(ex){return parseInt((Object.values(ex||{})[0])||0)>0;});}).length;
-    var se=(scd/Math.max(nsp,1))*33;
-    var nutr=sem.n||[];
-    var tc=Math.min(24,nutr.slice(0,6).reduce(function(a,d){return a+Object.values(d.m||{}).filter(Boolean).length;},0));
-    var sn=(tc/24)*25+((nutr.filter(function(d){return d.ak;}).length)/6)*8;
-    var h2=sem.h||{};
-    var sk=['energia','hambre','digestion','estres'];
-    var sc=sk.filter(function(k){return (h2.sens||{})[k];}).length;
-    var hp=(h2.meds||[]).some(function(m){return parseFloat(m.p)>0;})||(parseFloat(sem.pp||0)>0);
-    var hc=(h2.meds||[]).some(function(m){return parseFloat(m.c)>0;})||(parseFloat(sem.pc||0)>0);
-    return Math.round(se+sn+(sc/4)*18+(hp?8:0)+(hc?7:0));
-  }
-  const lastScore=calcLastScore(lastSem);
+function getFoco(lastSem,bloqueKey,numSessPaut){
+  if(!lastSem)return null;
+  var sr=lastSem.sr||{};
+  var scd=Object.values(sr).filter(function(s){return Object.values(s).some(function(ex){return parseInt((Object.values(ex||{})[0])||0)>0;});}).length;
+  var pctE=scd/Math.max(numSessPaut,1);
+  var nutr=lastSem.n||[];
+  var tc=Math.min(24,nutr.slice(0,6).reduce(function(a,d){return a+Object.values(d.m||{}).filter(Boolean).length;},0));
+  var pctN=tc/24;
+  var h2=lastSem.h||{};
+  var suenoOk=(h2.sleep||[]).filter(Boolean).length;
+  var pctH=suenoOk/6;
+  var mn=Math.min(pctE,pctN,pctH);
+  var focoKey=mn===pctE?'entreno':mn===pctN?'nutricion':'habitos';
+  var bk=bloqueKey==='man'||bloqueKey==='mantenimiento'?'man':bloqueKey;
+  var msg=(FOCO_MSGS[focoKey]||{})[bk]||(FOCO_MSGS[focoKey]||{})['volumen']||'Seguí igual. La consistencia es la variable más importante.';
+  if(mn>=0.8)return{msg:'Seguí igual. La consistencia es la variable más importante.',pilar:null};
+  return{msg:msg,pilar:focoKey};
+}
 
-  // Nivel actual (sem en curso)
-  const numSessPaut=parseInt(cfg?.numSesiones)||3;
-  const sessConDatos=Object.values(sessionReps||{}).filter(s=>Object.values(s||{}).some(ex=>Object.values(ex||{}).some(v=>v))).length;
-  const scoreEntrenoActual=(sessConDatos/Math.max(numSessPaut,1))*33;
-  const totalCActual=Math.min(24,nut.slice(0,6).reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0));
-  const scoreNutActual=(totalCActual/24)*25+((nut.filter(d=>d.ak).length)/6)*8;
-  const sensKeysA=['energia','hambre','digestion','estres'];
-  const sensCountA=sensKeysA.filter(k=>(hab.sens||{})[k]).length;
-  const hasPesoA=(hab.meds||[]).some(m=>parseFloat(m.p)>0);
-  const hasCinA=(hab.meds||[]).some(m=>parseFloat(m.c)>0);
-  const scoreActual=Math.round(scoreEntrenoActual+scoreNutActual+(sensCountA/4)*18+(hasPesoA?8:0)+(hasCinA?7:0));
-
-  function getNivel(score){
-    if(score>=90)return{l:'⭐ MÁXIMO',sub:'Ejecución optimizada. Tu coach tiene todo para trabajar.',c:G};
-    if(score>=70)return{l:'✅ MÍNIMO',sub:'Ejecución eficiente. Alcanza para generar adaptación.',c:B};
-    return{l:'⚠️ INSUFICIENTE',sub:'Por debajo del piso necesario. Hay que ajustar antes de progresar.',c:R};
-  }
-
-  // Foco: pilar más alejado del mínimo en última sem
-  function getFoco(){
-    if(!lastSem)return null;
-    const sr=lastSem.sr||{};
-    const sessConDatosL=Object.values(sr).filter(s=>Object.values(s).some(ex=>parseInt((Object.values(ex||{})[0])||0)>0)).length;
-    const pctEntreno=sessConDatosL/Math.max(numSessPaut,1);
-    const nutr=lastSem.n||[];
-    const totalCL=Math.min(24,nutr.slice(0,6).reduce((a,d)=>a+Object.values(d.m||{}).filter(Boolean).length,0));
-    const pctNut=totalCL/24;
-    const h2=lastSem.h||{};
-    const suenoOk=(h2.sleep||[]).filter(Boolean).length;
-    const pctHab=suenoOk/6;
-    const min=Math.min(pctEntreno,pctNut,pctHab);
-    const focoKey=min===pctEntreno?'entreno':min===pctNut?'nutricion':'habitos';
-    const bk=bloqueKey==='man'?'man':bloqueKey==='mantenimiento'?'man':bloqueKey;
-    const msg=(FOCO_MSGS[focoKey]||{})[bk]||(FOCO_MSGS[focoKey]||{})['volumen']||'Seguí igual. La consistencia es la variable más importante.';
-    if(min>=0.8)return{msg:'Seguí igual. La consistencia es la variable más importante.',pilar:null};
-    return{msg,pilar:focoKey};
-  }
-  const foco=getFoco();
-  const nivelUltima=lastScore!==null?getNivel(lastScore):null;
-
-  return h('div',null,
-    // Card bloque
-    h('div',{style:{...card,background:'#0A0A0A',border:'none'}},
-      h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:'6px'}},'Tu bloque actual'),
-      h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#fff',marginBottom:'2px'}},info.titulo),
-      h('div',{style:{fontSize:'12px',color:AC,fontWeight:'700',marginBottom:'12px'}},'Semana '+semanasEnBloque+' · '+info.sub),
-      h('div',{style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',lineHeight:'1.6',borderLeft:'3px solid '+AC,paddingLeft:'12px'}},info.texto)
-    ),
-    // Nivel última sem
-    nivelUltima&&lastSem&&h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'8px'}},'Última semana completa · '+(lastSem.wl||lastSem.wi||'')),
-      h('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'12px',background:nivelUltima.c+'12',borderRadius:'10px',border:'1px solid '+nivelUltima.c+'30',marginBottom:'8px'}},
-        h('div',{style:{fontSize:'32px',fontWeight:'900',color:nivelUltima.c}},lastScore+'%'),
-        h('div',null,
-          h('div',{style:{fontSize:'14px',fontWeight:'800',color:nivelUltima.c}},nivelUltima.l),
-          h('div',{style:{fontSize:'11px',color:'#666',marginTop:'2px',lineHeight:'1.4'}},nivelUltima.sub)
-        )
-      ),
-      foco&&h('div',{style:{background:'#F8F8F8',borderRadius:'10px',padding:'12px'}},
-        h('div',{style:{fontSize:'10px',fontWeight:'700',color:'#888',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:'6px'}},'Foco esta semana'),
-        h('div',{style:{fontSize:'13px',color:'#333',lineHeight:'1.5'}},foco.msg)
-      )
-    ),
-    // Score semana en curso
-    h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'8px'}},'Esta semana en curso · Sem '+wk.num),
-      h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'6px'}},
-        h('div',{style:{fontSize:'28px',fontWeight:'900',color:'#111'}},scoreActual+'%'),
-        h('div',{style:{fontSize:'12px',color:'#999'}},'registro parcial')
-      ),
-      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px'}},
-        [{l:'Entreno',v:Math.round(scoreEntrenoActual),max:33},{l:'Nutrición',v:Math.round(scoreNutActual),max:33},{l:'Mediciones',v:Math.round((sensCountA/4)*18+(hasPesoA?8:0)+(hasCinA?7:0)),max:33}].map((p,i)=>
-          h('div',{key:i,style:{background:'#F8F8F8',borderRadius:'8px',padding:'8px',textAlign:'center'}},
-            h('div',{style:{fontSize:'13px',fontWeight:'800'}},(p.v)+'/'+p.max),
-            h('div',{style:{fontSize:'9px',color:'#999',marginTop:'2px',textTransform:'uppercase',letterSpacing:'0.05em'}},p.l)
-          )
-        )
-      )
-    ),
-    // Cierre
-    h('div',{style:{...card,background:'#0A0A0A',border:'none',textAlign:'center'}},
-      h('div',{style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',lineHeight:'1.6'}},'Tu parte: registrá y cumplí.'),
-      h('div',{style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',lineHeight:'1.6'}},'La mía: ajustar el plan con esos datos.')
-    )
-  );
+function calcLastScore(sem){
+  if(!sem)return null;
+  var sr=sem.sr||{};
+  var nsp=3;
+  var scd=Object.values(sr).filter(function(s){return Object.values(s).some(function(ex){return parseInt((Object.values(ex||{})[0])||0)>0;});}).length;
+  var se=(scd/Math.max(nsp,1))*33;
+  var nutr=sem.n||[];
+  var tc=Math.min(24,nutr.slice(0,6).reduce(function(a,d){return a+Object.values(d.m||{}).filter(Boolean).length;},0));
+  var sn=(tc/24)*25+((nutr.filter(function(d){return d.ak;}).length)/6)*8;
+  var h2=sem.h||{};
+  var sk=['energia','hambre','digestion','estres'];
+  var sc=sk.filter(function(k){return (h2.sens||{})[k];}).length;
+  var hp=(h2.meds||[]).some(function(m){return parseFloat(m.p)>0;})||(parseFloat(sem.pp||0)>0);
+  var hc=(h2.meds||[]).some(function(m){return parseFloat(m.c)>0;})||(parseFloat(sem.pc||0)>0);
+  return Math.round(se+sn+(sc/4)*18+(hp?8:0)+(hc?7:0));
 }
 function Login({onLogin}){
   const [name,setName]=useState('');
@@ -1729,7 +1657,7 @@ function App(){
 
   const hiitSess=cfg?.hiit||[];
   const hasHiit=hiitSess.length>0;
-  const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'mb',l:'Mi bloque',ic:'📋'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'n',l:'Cumplimiento',ic:'✅'},{id:'hb',l:'Mediciones',ic:'📏'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
+  const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'n',l:'Cumplimiento',ic:'✅'},{id:'hb',l:'Mediciones',ic:'📏'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
 
   // ── SCORE DE CUMPLIMIENTO ─────────────────────────────────────────
   const calcScore=(w)=>{
@@ -1775,46 +1703,80 @@ function App(){
 
   function Dashboard(){
     const sl=currentScore?getScoreLabel(currentScore.total):null;
+    // MiBloque data
+    const bloque=(cfg?.bloque||'volumen').toLowerCase().replace(' phase','').replace('conexion nm','conexion').replace('conexión nm','conexion');
+    const bloqueKey=Object.keys(BLOQUE_INFO).find(function(k){return bloque.includes(k);})||'volumen';
+    const bloqueInfo2=BLOQUE_INFO[bloqueKey];
+    const bloqueInicio2=parseInt(cfg?.bloqueInicio)||1;
+    const semanasEnBloque2=Math.max(1,wk.num-bloqueInicio2+1);
+    const lastSem2=hist.length>0?hist[hist.length-1]:null;
+    const lastScore2=calcLastScore(lastSem2);
+    const nivelUltima2=lastScore2!==null?getNivel(lastScore2):null;
+    const foco2=getFoco(lastSem2,bloqueKey,parseInt(cfg?.numSesiones)||3);
     return h('div',null,
-      // Score de cumplimiento
+      // 1. Bloque actual
+      bloqueInfo2&&h('div',{style:{...card,background:'#0A0A0A',border:'none',marginBottom:'10px'}},
+        h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:'6px'}},'Tu bloque actual · Semana '+semanasEnBloque2),
+        h('div',{style:{fontSize:'18px',fontWeight:'900',color:'#fff',marginBottom:'2px'}},bloqueInfo2.titulo),
+        h('div',{style:{fontSize:'11px',color:AC,fontWeight:'700',marginBottom:'10px'}},bloqueInfo2.sub),
+        h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.65)',lineHeight:'1.6',borderLeft:'3px solid '+AC,paddingLeft:'10px'}},bloqueInfo2.texto)
+      ),
+      // 2. Nivel última sem + foco
+      nivelUltima2&&lastSem2&&h('div',{style:card},
+        h('div',{style:{...lbl,marginBottom:'8px'}},'Última semana · '+(lastSem2.wl||lastSem2.wi||'')),
+        h('div',{style:{display:'flex',alignItems:'center',gap:'12px',padding:'10px',background:nivelUltima2.c+'12',borderRadius:'10px',border:'1px solid '+nivelUltima2.c+'30',marginBottom:foco2?'10px':'0'}},
+          h('div',{style:{fontSize:'28px',fontWeight:'900',color:nivelUltima2.c}},lastScore2+'%'),
+          h('div',null,
+            h('div',{style:{fontSize:'13px',fontWeight:'800',color:nivelUltima2.c}},nivelUltima2.l),
+            h('div',{style:{fontSize:'11px',color:'#666',marginTop:'2px',lineHeight:'1.4'}},nivelUltima2.sub)
+          )
+        ),
+        foco2&&h('div',{style:{background:'#F8F8F8',borderRadius:'10px',padding:'10px 12px'}},
+          h('div',{style:{fontSize:'10px',fontWeight:'700',color:'#888',letterSpacing:'0.08em',textTransform:'uppercase',marginBottom:'4px'}},'Foco esta semana'),
+          h('div',{style:{fontSize:'12px',color:'#333',lineHeight:'1.5'}},foco2.msg)
+        )
+      ),
+      // 3. Score semana en curso
       currentScore&&h('div',{style:{...card,background:'#0A0A0A',border:'none',marginBottom:'10px'}},
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'10px'}},
           h('div',null,
-            h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Cumplimiento esta semana'),
-            h('div',{style:{fontSize:'42px',fontWeight:'900',color:sl?.c||'#fff',lineHeight:1}},currentScore.total,h('span',{style:{fontSize:'16px',color:'rgba(255,255,255,0.4)'}},'%'))
+            h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Esta semana en curso'),
+            h('div',{style:{fontSize:'40px',fontWeight:'900',color:sl?.c||'#fff',lineHeight:1}},currentScore.total,h('span',{style:{fontSize:'14px',color:'rgba(255,255,255,0.4)'}},'%'))
           ),
           h('div',{style:{textAlign:'right'}},
-            h('div',{style:{fontSize:'18px',marginBottom:'4px'}},sl?.ic),
+            h('div',{style:{fontSize:'16px',marginBottom:'4px'}},sl?.ic),
             h('div',{style:{fontSize:'11px',fontWeight:'700',color:sl?.c||'#fff'}},sl?.l)
           )
         ),
-        h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)',marginBottom:'12px',lineHeight:'1.4'}},sl?.sub),
+        h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)',marginBottom:'10px',lineHeight:'1.4'}},sl?.sub),
         h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px'}},
           [{l:'Entreno',v:currentScore.entreno,max:33},{l:'Nutrición',v:currentScore.nutricion,max:33},{l:'Mediciones',v:currentScore.mediciones,max:33}].map((p,i)=>
             h('div',{key:i,style:{background:'rgba(255,255,255,0.06)',borderRadius:'8px',padding:'8px',textAlign:'center'}},
-              h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#fff'}},p.v,h('span',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)'}},'/',p.max)),
+              h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#fff'}},p.v,h('span',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)'}},'/',p.max)),
               h('div',{style:{fontSize:'9px',color:'rgba(255,255,255,0.4)',marginTop:'2px',textTransform:'uppercase',letterSpacing:'0.06em'}},p.l)
             )
           )
         ),
-        scoreHist.length>=2&&h('div',{style:{marginTop:'12px'}},
-          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.35)',marginBottom:'6px'}},'Evolución del cumplimiento'),
-          h(LineChart,{data:scoreHist.map(s=>s.score),color:AC,h:70,labels:scoreHist.map(s=>s.label)})
+        scoreHist.length>=2&&h('div',{style:{marginTop:'10px'}},
+          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.35)',marginBottom:'4px'}},'Evolución'),
+          h(LineChart,{data:scoreHist.map(s=>s.score),color:AC,h:60,labels:scoreHist.map(s=>s.label)})
         )
       ),
+      // 4. Peso y cintura
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}},
         [{l:'Peso',u:'kg',k:'pp'},{l:'Cintura',u:'cm',k:'pc'}].map((m,i)=>{
           const hPW2=hist3.filter(w=>w[m.k]&&w[m.k]!=='—');
           const lastV=hPW2.length?hPW2[hPW2.length-1][m.k]:'—';
           const prevV=hPW2.length>1?hPW2[hPW2.length-2][m.k]:null;
           const diff=prevV&&lastV!=='—'?(parseFloat(lastV)-parseFloat(prevV)).toFixed(1):null;
-          const color=m.k==='pp'?G:B;
           return h('div',{key:i,style:{...card,marginBottom:0}},
-            h('div',{style:lbl},m.l),h('div',{style:{fontSize:'24px',fontWeight:'800'}},lastV,' ',h('span',{style:{fontSize:'13px',color:'#999'}},m.u)),
+            h('div',{style:lbl},m.l),
+            h('div',{style:{fontSize:'24px',fontWeight:'800'}},lastV,' ',h('span',{style:{fontSize:'13px',color:'#999'}},m.u)),
             diff?h('div',{style:{fontSize:'12px',color:parseFloat(diff)<0?G:O,marginTop:'4px'}},(parseFloat(diff)<0?'↓':'↑')+' '+Math.abs(diff)+' vs sem. ant.'):null
           );
         })
       ),
+      // 5. Tendencia peso y cintura
       h('div',{style:card},
         h('div',{style:{...lbl,marginBottom:'10px'}},'Tendencia — peso y cintura',useDemo?' (datos de ejemplo)':''),
         h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
@@ -1822,14 +1784,7 @@ function App(){
           h('div',null,h('div',{style:{fontSize:'11px',color:B,fontWeight:'700',marginBottom:'4px'}},'Cintura (cm)'),h(LineChart,{data:cC,color:B,h:120,labels:cL}))
         )
       ),
-      svtData.length>0&&h('div',{style:card},
-        h('div',{style:{...lbl,marginBottom:'4px'}},'Sueño vs Energía — sem. a sem.'),
-        h('div',{style:{display:'flex',gap:'12px',marginBottom:'8px'}},
-          h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'10px',height:'10px',background:'#111',borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Noches ≥7hs')),
-          h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'10px',height:'10px',background:O,borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Energía (1-3)'))
-        ),
-        h(DualBarChart,{data:svtData,key2:'energia',color2:O})
-      ),
+      // 6. e1RM
       h('div',{style:card},
         h('div',{style:{...lbl,marginBottom:'8px'}},'Progresión — e1RM por ejercicio'),
         exOptions.length===0
@@ -1856,6 +1811,16 @@ function App(){
                 :h('div',{style:{textAlign:'center',padding:'16px',color:'#bbb',fontSize:'13px'}},'Guardá al menos 2 semanas para ver la progresión')
             )
       ),
+      // 7. Sueño vs energía
+      svtData.length>0&&h('div',{style:card},
+        h('div',{style:{...lbl,marginBottom:'4px'}},'Sueño vs Energía'),
+        h('div',{style:{display:'flex',gap:'12px',marginBottom:'8px'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'10px',height:'10px',background:'#111',borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Noches ≥7hs')),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'10px',height:'10px',background:O,borderRadius:'2px'}}),h('span',{style:{fontSize:'10px',color:'#666'}},'Energía'))
+        ),
+        h(DualBarChart,{data:svtData,key2:'energia',color2:O})
+      ),
+      // 8. Semanas guardadas
       hist.length>0&&h('div',{style:card},
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
           h('div',{style:lbl},'Semanas guardadas'),
@@ -1879,6 +1844,11 @@ function App(){
             )
           );
         })
+      ),
+      // Cierre
+      h('div',{style:{...card,background:'#0A0A0A',border:'none',textAlign:'center'}},
+        h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.6)',lineHeight:'1.6'}},'Tu parte: registrá y cumplí.'),
+        h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.6)',lineHeight:'1.6'}},'La mía: ajustar el plan con esos datos.')
       )
     );
   }
@@ -1954,7 +1924,6 @@ function App(){
         )
       ),
       tab==='d'&&h(Dashboard,null),
-      tab==='mb'&&h(MiBloque,{hist,wk,cfg,nut,hab,pC,pS,sC,actExtraC,toxC,sessionReps,exes}),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
       tab==='n'&&h(Cumplimiento,{key:'cumplimiento',nut,toggleMeal,toggleAguaOk,hab,setHab,setSaved,metaAgua,metaSal,nivel,tC,tA,pC,pA}),
