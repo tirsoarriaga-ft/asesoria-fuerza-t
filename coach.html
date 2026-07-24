@@ -350,14 +350,14 @@ function ClientDetail({name,weeks,rutina,onBack}){
 
   const tmpl=rutina?.Template?String(rutina.Template)+' kcal':'—';
   const numSes=rutina?.NumSesiones||'—';
+  const latSemanID=lat?.SemanID||'';
+  const currentWkNum=latSemanID?parseInt(latSemanID.replace('sem_',''))||'—':'—';
   const bloqueActual=String(rutina?.Bloque||'—');
   const bloqueInicio=parseInt(rutina?.BloqueInicio)||1;
-  const semanasEnBloque=Math.max(1,currentWkNum-bloqueInicio+1);
+  const semanasEnBloque=Math.max(1,(typeof currentWkNum==='number'?currentWkNum:1)-bloqueInicio+1);
   const CHECKPOINT_FREQ={'health phase':1,'mantenimiento':4,'deporte':4};
   const checkpointFreq=CHECKPOINT_FREQ[bloqueActual.toLowerCase()]||2;
   const esCheckpoint=semanasEnBloque>0&&semanasEnBloque%checkpointFreq===0;
-  const latSemanID=lat?.SemanID||'';
-  const currentWkNum=latSemanID?parseInt(latSemanID.replace('sem_',''))||'—':'—';
 
   const DTABS=[{id:'med',l:'📈 Tendencias'},{id:'ent',l:'🏋️ Entreno'},{id:'hab',l:'💭 Sensaciones'}];
 
