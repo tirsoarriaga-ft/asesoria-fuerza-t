@@ -94,9 +94,9 @@ function getAlerts(weeks,objetivo){
   // Dolor articular
   const dolor=String(lat.Dolor||'');
   const dolorInt=String(lat.DolorIntensidad||'');
-  if(dolor==='si'&&dolorInt==='Dolor en reposo')A.push({lvl:'red',txt:'🦴 Dolor en reposo — revisar antes de cualquier ajuste de carga'});
-  else if(dolor==='si'&&dolorInt==='Limita el movimiento')A.push({lvl:'yellow',txt:'🦴 Dolor que limita el movimiento — monitorear'});
-  else if(dolor==='si')A.push({lvl:'info',txt:'🦴 Molestia articular leve — '+(lat.DolorZona||'zona no especificada')});
+  if(dolor==='si'&&dolorInt==='Dolor en reposo')A.push({lvl:'red',txt:' Dolor en reposo — revisar antes de cualquier ajuste de carga'});
+  else if(dolor==='si'&&dolorInt==='Limita el movimiento')A.push({lvl:'yellow',txt:' Dolor que limita el movimiento — monitorear'});
+  else if(dolor==='si')A.push({lvl:'info',txt:' Molestia articular leve — '+(lat.DolorZona||'zona no especificada')});
 
   // Contexto de vida
   const ctx=String(lat.ContextoVida||'');
@@ -217,7 +217,7 @@ function PinScreen({onUnlock}){
   };
   const KEYS=['1','2','3','4','5','6','7','8','9','','0','⌫'];
   return h('div',{style:{maxWidth:'380px',margin:'0 auto',minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'40px 24px',background:'#fff'}},
-    h('div',{style:{fontSize:'36px',marginBottom:'12px'}},'🏆'),
+    h('div',{style:{fontSize:'36px',marginBottom:'12px'}},''),
     h('div',{style:{fontSize:'20px',fontWeight:'800',marginBottom:'4px'}},'Panel del Coach'),
     h('div',{style:{fontSize:'13px',color:'#999',marginBottom:'32px'}},'Ingresá tu PIN'),
     h('div',{style:{display:'flex',gap:'12px',marginBottom:'24px',transform:shake?'translateX(-8px)':'none',transition:'transform 0.1s'}},
@@ -264,7 +264,7 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
     ),
     h('div',{style:{padding:'12px'}},
       clients.length===0&&h('div',{style:{textAlign:'center',padding:'60px 20px',color:'#999'}},
-        h('div',{style:{fontSize:'40px',marginBottom:'12px'}},'📊'),
+        h('div',{style:{fontSize:'40px',marginBottom:'12px'}},''),
         h('div',{style:{fontSize:'14px',fontWeight:'600'}},'No hay datos todavía'),
         h('div',{style:{fontSize:'12px',marginTop:'4px'}},'Los asesorados deben guardar al menos una semana')
       ),
@@ -287,11 +287,11 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}},
             h('div',null,
               h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#111'}},name),
-              h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},lat?.Semana||'Sin datos',' · ',tmpl,esCP&&h('span',{style:{marginLeft:'6px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},'🔔 CP'))
+              h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},lat?.Semana||'Sin datos',' · ',tmpl,esCP&&h('span',{style:{marginLeft:'6px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},' CP'))
             ),
             h('div',{style:{textAlign:'right',display:'flex',gap:'4px',alignItems:'center'}},
-              redAlerts>0&&h('span',{style:{background:R,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 6px',borderRadius:'20px'}},redAlerts+'🔴'),
-              yelAlerts>0&&h('span',{style:{background:O,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 6px',borderRadius:'20px'}},yelAlerts+'🟡'),
+              redAlerts>0&&h('span',{style:{background:R,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 6px',borderRadius:'20px'}},redAlerts+''),
+              yelAlerts>0&&h('span',{style:{background:O,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 6px',borderRadius:'20px'}},yelAlerts+''),
               h('span',{style:{fontSize:'14px',color:'#999'}},'>>')
             )
           ),
@@ -299,7 +299,7 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
             [
               {l:'Peso',v:lat?.Peso?lat.Peso+' kg':'—'},
               {l:'Cintura',v:lat?.Cintura?lat.Cintura+' cm':'—'},
-              {l:'Comidas',v:fmtPct(lat?.['%Comidas'])},
+              {l:'Comidas',v:fmtPct((lat||{})['%Comidas'])},
               {l:'Sueño',v:lat?.DiasSueno!=null?lat.DiasSueno+'/7':'—'},
             ].map((m,i)=>h('div',{key:i,style:{background:'rgba(255,255,255,0.7)',borderRadius:'6px',padding:'6px 4px',textAlign:'center'}},
               h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#111'}},m.v),
@@ -359,7 +359,175 @@ function ClientDetail({name,weeks,rutina,onBack}){
   const checkpointFreq=CHECKPOINT_FREQ[bloqueActual.toLowerCase()]||2;
   const esCheckpoint=semanasEnBloque>0&&semanasEnBloque%checkpointFreq===0;
 
-  const DTABS=[{id:'med',l:'📈 Tendencias'},{id:'ent',l:'🏋️ Entreno'},{id:'hab',l:'💭 Sensaciones'}];
+  const [arbolStep,setArbolStep]=useState(0);
+  const [arbolResp,setArbolResp]=useState({});
+  const [arbolDone,setArbolDone]=useState(null);
+  const [arbolNota,setArbolNota]=useState('');
+  const [arbolSaving,setArbolSaving]=useState(false);
+
+  // Datos para el árbol
+  const ultE=lat?.Energia||'—';
+  const ultH=lat?.Hambre||'—';
+  const ultS=lat?.DiasSueno!=null?lat.DiasSueno+'/6 noches ≥7hs':'—';
+  const ultDolor=lat?.Dolor||'no';
+  const ultDolorZ=lat?.DolorZona||'';
+  const ultCtx=lat?.ContextoVida||'normal';
+  const pctComp=parsePct((lat||{})['%Comidas']||0);
+  const e1rmLat=weeks.length>=2?(()=>{
+    try{const e=JSON.parse(lat?.E1RM||'{}');const prev=JSON.parse(weeks[weeks.length-2]?.E1RM||'{}');const keys=Object.keys(e);if(!keys.length)return null;const k=keys[0];const d=parseFloat(e[k]||0)-parseFloat(prev[k]||0);return{ex:k,delta:d.toFixed(1)};}catch(e2){return null;}
+  })():null;
+
+  // Árboles por bloque
+  const ARBOLES={
+    volumen:[
+      {id:'dolor',q:'¿Hay dolor articular nuevo esta semana?',datos:[{l:'Dolor registrado',v:ultDolor==='si'?(ultDolorZ||'Sí'):'No',c:ultDolor==='si'?R:G}],criterio:'Cualquier dolor articular nuevo detiene la progresión de ese ejercicio.',ops:[{v:'no',l:'No hay dolor'},{ v:'si',l:'Sí hay dolor'}]},
+      {id:'sens',q:'¿Sensaciones dentro del innegociable?',datos:[{l:'Energía',v:ultE},{l:'Sueño',v:ultS},{l:'Hambre',v:ultH}],criterio:'Innegociable = energía OK + sueño ≥4 noches/sem + hambre no alterada. Si alguno falla → Health Phase.',ops:[{v:'si',l:'Sí, están OK'},{v:'no',l:'No, hay algo alterado'}]},
+      {id:'comp',q:'¿Compliance ≥ mínimo (70%)?',datos:[{l:'Comidas',v:pctComp+'%',c:pctComp>=70?G:R}],criterio:'Si el compliance es bajo → hablar antes de tocar el plan. No ajustar nada.',ops:[{v:'si',l:'Sí, ≥70%'},{v:'no',l:'No, <70%'}]},
+      {id:'e1rm',q:'¿e1RM subió en los últimos 14 días?',datos:e1rmLat?[{l:e1rmLat.ex,v:(parseFloat(e1rmLat.delta)>0?'+':'')+e1rmLat.delta+' kg',c:parseFloat(e1rmLat.delta)>0?G:R}]:[{l:'e1RM',v:'Sin datos suficientes'}],criterio:'Si no subió → evaluar semanas sin progresión. 1 sem: esperar. 2 sem: revisar DOMS y contexto. 3 sem: Fase 1.',ops:[{v:'si',l:'Sí, subió'},{v:'1sem',l:'No subió · 1 semana'},{v:'2sem',l:'No subió · 2 semanas'},{v:'3sem',l:'No subió · 3+ semanas'}]},
+    ],
+    fuerza:[
+      {id:'dolor',q:'¿Hay dolor articular nuevo?',datos:[{l:'Dolor',v:ultDolor==='si'?(ultDolorZ||'Sí'):'No',c:ultDolor==='si'?R:G}],criterio:'Dolor en ejercicio de fuerza → reducir % y revisar técnica. Si persiste → Fase 1.',ops:[{v:'no',l:'No'},{v:'si',l:'Sí'}]},
+      {id:'sens',q:'¿Sensaciones dentro del innegociable?',datos:[{l:'Energía',v:ultE},{l:'Sueño',v:ultS}],criterio:'Fuerza requiere sueño ≥7hs y energía. Sin recuperación el SNC no adapta.',ops:[{v:'si',l:'Sí, OK'},{v:'no',l:'No, alteradas'}]},
+      {id:'comp',q:'¿Ejecutó los pesos pautados exactos?',datos:[{l:'Comidas',v:pctComp+'%',c:pctComp>=70?G:R}],criterio:'Compliance del protocolo = ejecutó los pesos pautados sin improvisar.',ops:[{v:'si',l:'Sí'},{v:'no',l:'No'}]},
+      {id:'pesos',q:'¿Los pesos de trabajo subieron en 14 días?',datos:e1rmLat?[{l:e1rmLat.ex,v:(parseFloat(e1rmLat.delta)>0?'+':'')+e1rmLat.delta+' kg',c:parseFloat(e1rmLat.delta)>0?G:R}]:[{l:'e1RM',v:'Sin datos'}],criterio:'2 sem sin subir + contexto normal → bajar 5% y reiniciar. 3 sem → Fase 1.',ops:[{v:'si',l:'Sí, subieron'},{v:'2sem_ctx',l:'No · 2 sem + contexto exigente'},{v:'2sem',l:'No · 2 sem + contexto normal'},{v:'3sem',l:'No · 3+ semanas'}]},
+    ],
+    health:[
+      {id:'mejora',q:'¿Sensaciones mejoraron vs semana anterior?',datos:[{l:'Energía',v:ultE},{l:'Sueño',v:ultS},{l:'Hambre',v:ultH},{l:'Contexto',v:ultCtx}],criterio:'Criterio de salida: 2 semanas consecutivas con energía OK + sueño ≥7hs + hambre normal + sin dolor.',ops:[{v:'si2',l:'Sí · 2 semanas consecutivas OK'},{v:'si1',l:'Sí · pero solo esta semana'},{v:'no_ctx',l:'No · hay causa externa'},{v:'no_4sem',l:'No · lleva >4 semanas sin mejora'},{v:'no',l:'No · sin causa clara'}]},
+    ],
+    base:[
+      {id:'dolor',q:'¿Hay dolor articular?',datos:[{l:'Dolor',v:ultDolor==='si'?(ultDolorZ||'Sí'):'No',c:ultDolor==='si'?R:G}],criterio:'Dolor generalizado → Health Phase. Dolor puntual → revisar ejercicio específico.',ops:[{v:'no',l:'No'},{v:'puntual',l:'Sí, puntual'},{v:'generalizado',l:'Sí, generalizado'}]},
+      {id:'sens',q:'¿Sensaciones dentro del innegociable?',datos:[{l:'Energía',v:ultE},{l:'Sueño',v:ultS}],criterio:'Si sensaciones alteradas → Health Phase antes de continuar NM.',ops:[{v:'si',l:'Sí, OK'},{v:'no',l:'No, alteradas'}]},
+      {id:'rir',q:'¿Puede predecir su RIR con ±1-2 reps consistentemente?',datos:[{l:'Semanas en bloque',v:semanasEnBloque}],criterio:'<4 sem: temprano, continuar. 4-8 sem: evaluar instrucción. >8 sem: Fase 1.',ops:[{v:'si',l:'Sí, con precisión'},{v:'no_4',l:'No · <4 semanas en bloque'},{v:'no_48',l:'No · 4-8 semanas'},{v:'no_8',l:'No · >8 semanas'}]},
+    ],
+    man:[
+      {id:'ctx',q:'¿El contexto de vida mejoró? ¿Puede priorizar el entrenamiento?',datos:[{l:'Contexto',v:ultCtx==='normal'?'Normal':ultCtx==='exigente'?'Más exigente':'Muy difícil'}],criterio:'Si el contexto mejoró → Fase 1 y bloque activo.',ops:[{v:'si',l:'Sí, mejoró'},{v:'no',l:'No, sigue igual'}]},
+      {id:'e1rm',q:'¿e1RM estable (±5%)?',datos:e1rmLat?[{l:e1rmLat.ex,v:(parseFloat(e1rmLat.delta)>0?'+':'')+e1rmLat.delta+' kg',c:Math.abs(parseFloat(e1rmLat.delta))<5?G:R}]:[{l:'e1RM',v:'Sin datos'}],criterio:'e1RM que baja >5% indica pérdida de adaptación. Revisar compliance o sensaciones.',ops:[{v:'si',l:'Sí, estable'},{v:'no_sens',l:'No, bajó · sensaciones alteradas'},{v:'no_comp',l:'No, bajó · sensaciones OK'}]},
+      {id:'peso',q:'¿Peso y cintura estables?',datos:[{l:'Peso',v:lat?.Peso?lat.Peso+' kg':'—'},{l:'Cintura',v:lat?.Cintura?lat.Cintura+' cm':'—'}],criterio:'Estable = ±0.5 kg/sem. Cintura que sube → revisar calórico.',ops:[{v:'si',l:'Sí, estables'},{v:'cintura',l:'No, cintura sube'}]},
+    ],
+    deporte:[
+      {id:'sens',q:'¿Sensaciones dentro del innegociable?',datos:[{l:'Energía',v:ultE},{l:'Sueño',v:ultS}],criterio:'Si NO → Health Phase táctica: 1 semana de descarga. No cancela el plan.',ops:[{v:'si',l:'Sí, OK'},{v:'no',l:'No, alteradas'}]},
+      {id:'comp',q:'¿Compliance del protocolo OK?',datos:[{l:'Comidas',v:pctComp+'%',c:pctComp>=70?G:R}],criterio:'Sin entender el porqué del incumplimiento → no ajustar el protocolo.',ops:[{v:'si',l:'Sí'},{v:'no',l:'No'}]},
+      {id:'test',q:'¿Métricas del test mejoraron vs checkpoint anterior?',datos:e1rmLat?[{l:e1rmLat.ex,v:(parseFloat(e1rmLat.delta)>0?'+':'')+e1rmLat.delta+' kg',c:parseFloat(e1rmLat.delta)>0?G:R}]:[{l:'Test',v:'Sin datos'}],criterio:'<4 sem para evento: no tocar nada. 4-8 sem: solo recuperación. >8 sem: recalibrar si el % no genera el RIR esperado.',ops:[{v:'si',l:'Sí, mejoraron'},{v:'no_8',l:'No · >8 sem para evento'},{v:'no_48',l:'No · 4-8 sem para evento'},{v:'no_4',l:'No · <4 sem para evento'}]},
+    ],
+  };
+
+  // Decisiones finales por respuesta
+  function getDecision(blq,step,resp){
+    const DECS={
+      volumen:{
+        dolor:{si:'Bajar carga 10-15% en ese ejercicio. No cambiar bloque. Monitorear proximo checkpoint.'},
+        sens:{no:'Health Phase reactivo. Override inmediato.'},
+        comp:{no:'Hablar con el asesorado antes de ajustar el plan. No tocar nada esta semana.'},
+        e1rm:{si:'Bloque funciona. Continuar igual.',si_serie:'Bloque funciona. Considerar +1 serie al ejercicio principal.','1sem':'Esperar 1 semana mas. No tocar nada.','2sem':'Rotar o ajustar ejercicio puntual. Registrar motivo.','3sem':'Estancamiento confirmado. Ir a Fase 1.'}
+      },
+      fuerza:{
+        dolor:{si:'Reducir porcentaje y revisar tecnica. Si persiste ir a Fase 1.'},
+        sens:{no:'Health Phase reactivo.'},
+        comp:{no:'Hablar primero. No ajustar protocolo.'},
+        pesos:{si:'Continuar. Ajustar onda del proximo ciclo.','2sem_ctx':'Esperar 1 semana mas. Contexto exigente.','2sem':'Bajar 5% el peso de trabajo. Reiniciar ciclo.','3sem':'Estancamiento confirmado. Ir a Fase 1.'}
+      },
+      health:{
+        mejora:{si2:'Criterio de salida cumplido. Ir a Fase 1.',si1:'Continuar Health Phase. Una semana mas.',no_ctx:'Continuar. Abordar causa externa si es posible.',no_4sem:'Investigar causa medica o clinica. Derivar si corresponde.',no:'Continuar. El cuerpo necesita mas tiempo.'}
+      },
+      base:{
+        dolor:{si:'Revisar ejercicio especifico. Modificar variante.',generalizado:'Health Phase.'},
+        sens:{no:'Health Phase.'},
+        rir:{si:'Criterio de salida cumplido. Ir a Fase 1 (habitualmente Volumen).',no_4:'Continuar. Es temprano.',no_48:'Reformular instruccion tecnica.',no_8:'Ir a Fase 1. Revisar si NM es el bloque correcto.'}
+      },
+      man:{
+        ctx:{si:'Ir a Fase 1 con bloque activo.'},
+        e1rm:{no_sens:'Health Phase.',no_comp:'Revisar compliance con el asesorado.'},
+        peso:{si:'Continuar. Todo en orden.',cintura:'Ajustar calorico. No tocar entrenamiento.'}
+      },
+      deporte:{
+        sens:{no:'Descarga tactica 1 semana. El plan no se cancela, se pausa.'},
+        comp:{no:'Hablar primero. No ajustar hasta entender el porque.'},
+        test:{si:'Ajustar onda del proximo mes. Mantener todo lo demas.',no_8:'Recalibrar 1RM y rehacer la onda.',no_48:'No cambiar. Maximizar compliance y recuperacion.',no_4:'No tocar nada. Puesta a punto.'}
+      },
+    };
+        return((DECS[blq]||{})[step]||{})[resp]||null;
+  }
+
+  function saveDecision(decision){
+    setArbolSaving(true);
+    const payload={action:'decision',asesorado:name,bloque:bloqueActual,semanaEnBloque:semanasEnBloque,decision,nota:arbolNota};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .finally(()=>{setArbolSaving(false);setArbolDone(decision);});
+  }
+
+  const bloqueKey2=bloqueActual.toLowerCase().replace(' phase','').replace('conexion nm','base').replace('conexión nm','base').replace('mantenimiento','man').replace('intensidad/nm','deporte').replace('intensidad','deporte');
+  const arbol=ARBOLES[bloqueKey2]||ARBOLES['volumen'];
+  const pasoActual=arbol[arbolStep];
+
+  function ArbolCheckpoint(){
+    if(arbolDone)return h('div',{style:{...card,background:'#EAF7F2',border:'1px solid #A3DFC8'}},
+      h('div',{style:{fontSize:'14px',fontWeight:'800',color:G,marginBottom:'8px'}},'✅ Decisión registrada'),
+      h('div',{style:{fontSize:'13px',color:'#333',lineHeight:'1.5',marginBottom:'12px'}},arbolDone),
+      h('button',{onClick:()=>{setArbolStep(0);setArbolResp({});setArbolDone(null);setArbolNota('');},style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Nuevo checkpoint')
+    );
+    if(!pasoActual)return null;
+    const dec=getDecision(bloqueKey2,pasoActual.id,arbolResp[pasoActual.id]);
+    return h('div',null,
+      h('div',{style:{...card,background:'#0A0A0A',border:'none'}},
+        h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Checkpoint '+bloqueActual+' · Semana '+semanasEnBloque),
+        h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.35)',marginBottom:'12px'}},'Paso '+(arbolStep+1)+' de '+arbol.length),
+        h('div',{style:{fontSize:'15px',fontWeight:'800',color:'#fff',marginBottom:'14px',lineHeight:'1.4'}},pasoActual.q),
+        // Datos
+        h('div',{style:{background:'rgba(255,255,255,0.06)',borderRadius:'8px',padding:'10px',marginBottom:'10px'}},
+          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',marginBottom:'6px',letterSpacing:'0.06em'}},' DATOS DE ESTA SEMANA'),
+          pasoActual.datos.map(function(d,i){return h('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:'12px'}},
+            h('span',{style:{color:'rgba(255,255,255,0.5)'}},d.l),
+            h('span',{style:{fontWeight:'700',color:d.c||'#fff'}},d.v)
+          );})
+        ),
+        // Criterio
+        h('div',{style:{borderLeft:'3px solid '+AC,paddingLeft:'10px',marginBottom:'14px'}},
+          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',marginBottom:'4px',letterSpacing:'0.06em'}},' CRITERIO'),
+          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.65)',lineHeight:'1.5'}},pasoActual.criterio)
+        ),
+        // Opciones
+        h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
+          pasoActual.ops.map(function(op){
+            const sel=arbolResp[pasoActual.id]===op.v;
+            return h('button',{key:op.v,onClick:function(){
+              var newResp=Object.assign({},arbolResp,{});
+              newResp[pasoActual.id]=op.v;
+              setArbolResp(newResp);
+              // Verificar si hay decisión inmediata
+              var d=getDecision(bloqueKey2,pasoActual.id,op.v);
+              if(d){setArbolDone(null);} // se muestra abajo
+            },style:{padding:'10px 14px',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',textAlign:'left',color:sel?'#fff':'rgba(255,255,255,0.6)',background:sel?AC:'rgba(255,255,255,0.06)',borderColor:sel?AC:'rgba(255,255,255,0.1)',transition:'all 0.15s'}},op.l);
+          })
+        )
+      ),
+      // Decisión inmediata o navegación
+      arbolResp[pasoActual.id]&&h('div',{style:{marginTop:'8px'}},
+        dec
+          ?h('div',null,
+              h('div',{style:{...card,background:'#EAF7F2',border:'1px solid #A3DFC8',marginBottom:'8px'}},
+                h('div',{style:{fontSize:'10px',fontWeight:'700',color:G,letterSpacing:'0.06em',marginBottom:'6px'}},'SUGERENCIA'),
+                h('div',{style:{fontSize:'13px',color:'#333',lineHeight:'1.5'}},dec)
+              ),
+              h('textarea',{placeholder:'Nota adicional (opcional)',value:arbolNota,onChange:function(e){setArbolNota(e.target.value);},style:{...inp,height:'60px',resize:'none',fontSize:'12px',marginBottom:'8px'}}),
+              h('div',{style:{display:'flex',gap:'8px'}},
+                h('button',{onClick:function(){saveDecision(dec);},disabled:arbolSaving,style:{flex:1,background:GRAD,color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},arbolSaving?'Guardando...':'Confirmar y registrar'),
+                h('button',{onClick:function(){setArbolResp(Object.assign({},arbolResp,{[pasoActual.id]:undefined}));},style:{background:'rgba(0,0,0,0.06)',border:'none',borderRadius:'8px',padding:'12px',fontSize:'12px',cursor:'pointer'}},'Cambiar')
+              )
+            )
+          :h('div',{style:{display:'flex',gap:'8px'}},
+              arbolStep>0&&h('button',{onClick:function(){setArbolStep(arbolStep-1);},style:{flex:1,background:'rgba(0,0,0,0.06)',border:'none',borderRadius:'8px',padding:'12px',fontSize:'12px',cursor:'pointer'}},'← Atrás'),
+              arbolStep<arbol.length-1
+                ?h('button',{onClick:function(){setArbolStep(arbolStep+1);},style:{flex:2,background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Siguiente paso →')
+                :h('div',null,
+                    h('textarea',{placeholder:'Nota adicional (opcional)',value:arbolNota,onChange:function(e){setArbolNota(e.target.value);},style:{...inp,height:'60px',resize:'none',fontSize:'12px',marginBottom:'8px'}}),
+                    h('button',{onClick:function(){saveDecision('✅ Continuar igual — todos los criterios OK');},disabled:arbolSaving,style:{flex:1,background:GRAD,color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',width:'100%'}},arbolSaving?'Guardando...':'Registrar: Continuar igual')
+                  )
+            )
+      )
+    );
+  }
+
+  const DTABS=[{id:'med',l:' Tendencias'},{id:'ent',l:' Entreno'},{id:'hab',l:' Sensaciones'},{id:'cp',l:' Checkpoint'}];
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
     // Header
@@ -372,7 +540,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
         tmpl,' · ',numSes,' sesiones · Semana ',currentWkNum,' · ',
         h('span',{style:{fontWeight:'700',color:'#111'}},bloqueActual),
         ' sem.',semanasEnBloque,
-        esCheckpoint&&h('span',{style:{marginLeft:'8px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'20px'}},'🔔 Checkpoint'),
+        esCheckpoint&&h('span',{style:{marginLeft:'8px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'20px'}},' Checkpoint'),
         ' · Obj: ',h('span',{style:{fontWeight:'700',color:String(rutina?.Objetivo||'').toLowerCase()==='deficit'?B:String(rutina?.Objetivo||'').toLowerCase()==='superavit'?G:O}},String(rutina?.Objetivo||'mantenimiento'))
       )
     ),
@@ -380,7 +548,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
       // Alertas
       alerts.length>0&&h('div',{style:{marginBottom:'10px'}},
         alerts.map((a,i)=>h('div',{key:i,style:{background:ALERT_BG[a.lvl]||'#F8F8F8',border:'1px solid '+(ALERT_COLOR[a.lvl]||'#ddd'),borderRadius:'8px',padding:'10px 12px',marginBottom:'6px',display:'flex',gap:'8px',alignItems:'flex-start'}},
-          h('span',{style:{fontSize:'14px'}},a.lvl==='red'?'🔴':a.lvl==='yellow'?'🟡':'ℹ️'),
+          h('span',{style:{fontSize:'14px'}},a.lvl==='red'?'':a.lvl==='yellow'?'':'ℹ'),
           h('span',{style:{fontSize:'12px',color:'#111',fontWeight:'500',lineHeight:'1.4'}},a.txt)
         ))
       ),
@@ -450,7 +618,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
       tab==='ent'&&h('div',null,
         exNames.length===0
           ?h('div',{style:{...card,textAlign:'center',padding:'30px',color:'#999'}},
-              h('div',{style:{fontSize:'30px',marginBottom:'8px'}},'🏋️'),
+              h('div',{style:{fontSize:'30px',marginBottom:'8px'}},''),
               h('div',null,'Sin datos de entrenamiento todavía'),
               h('div',{style:{fontSize:'12px',marginTop:'4px'}},'El asesorado debe guardar semanas con reps cargadas')
             )
@@ -517,6 +685,18 @@ function ClientDetail({name,weeks,rutina,onBack}){
           )
         ),
         h(VideoPanel,{name})
+      ),
+      // TAB: CHECKPOINT
+      tab==='cp'&&h('div',null,
+        h('div',{style:{...card,background:'#0A0A0A',border:'none',marginBottom:'10px'}},
+          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Checkpoint · '+bloqueActual),
+          h('div',{style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',marginBottom:'4px'}},
+            esCheckpoint
+              ?'✅ Semana '+semanasEnBloque+' — es momento de checkpoint'
+              :'Próximo: sem '+(Math.ceil(semanasEnBloque/checkpointFreq)*checkpointFreq)+' del bloque (cada '+checkpointFreq+' sem)'
+          )
+        ),
+        h(ArbolCheckpoint,null)
       )
     )
   );
@@ -536,7 +716,7 @@ function VideoPanel({name}){
   if(loading)return null;
   if(!videos.length)return null;
   return h('div',{style:card},
-    h('div',{style:{...lbl,marginBottom:'10px'}},'🎬 Videos subidos'),
+    h('div',{style:{...lbl,marginBottom:'10px'}},' Videos subidos'),
     videos.slice().reverse().map((v,i)=>h('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:i<videos.length-1?'1px solid rgba(0,0,0,0.05)':'none'}},
       h('div',null,
         h('div',{style:{fontWeight:'600',fontSize:'13px'}},'Ses. '+(v.Sesion||''),' — ',v.Ejercicio||''),
@@ -582,7 +762,7 @@ function App(){
     h('div',{style:{fontSize:'14px',color:'#999'}}),'Cargando datos...'
   );
   if(error)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff',padding:'40px'}},
-    h('div',{style:{fontSize:'36px',marginBottom:'12px'}},'⚠️'),
+    h('div',{style:{fontSize:'36px',marginBottom:'12px'}},'⚠'),
     h('div',{style:{fontSize:'14px',color:'#666',marginBottom:'20px',textAlign:'center'}},error),
     h('button',{onClick:loadData,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'12px 24px',fontSize:'14px',cursor:'pointer'}},'Reintentar')
   );
