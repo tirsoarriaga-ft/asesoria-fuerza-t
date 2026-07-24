@@ -91,6 +91,18 @@ function getAlerts(weeks,objetivo){
   // Tóxicos
   if(tox>=4)A.push({lvl:'yellow',txt:'Semana con muchos permitidos — considerar en el análisis'});
 
+  // Dolor articular
+  const dolor=String(lat.Dolor||'');
+  const dolorInt=String(lat.DolorIntensidad||'');
+  if(dolor==='si'&&dolorInt==='Dolor en reposo')A.push({lvl:'red',txt:'🦴 Dolor en reposo — revisar antes de cualquier ajuste de carga'});
+  else if(dolor==='si'&&dolorInt==='Limita el movimiento')A.push({lvl:'yellow',txt:'🦴 Dolor que limita el movimiento — monitorear'});
+  else if(dolor==='si')A.push({lvl:'info',txt:'🦴 Molestia articular leve — '+(lat.DolorZona||'zona no especificada')});
+
+  // Contexto de vida
+  const ctx=String(lat.ContextoVida||'');
+  if(ctx==='muy_exigente'&&compPct<60)A.push({lvl:'yellow',txt:'Semana muy difícil + compliance bajo — revisar barreras antes de ajustar'});
+  else if(ctx==='muy_exigente')A.push({lvl:'info',txt:'Semana muy difícil — considerar en el análisis'});
+
   // Tendencias peso y cintura — últimas 2 semanas con datos
   if(weeks.length>=2){
     const objetivo=obj;
@@ -262,6 +274,11 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
         const status=getStatus(weeks,obj);const alerts=getAlerts(weeks,obj);
         const rutina=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===name.toLowerCase());
         const tmpl=rutina?.Template?String(rutina.Template)+'kcal':'—';
+        const bloqueInicio2=parseInt(rutina?.BloqueInicio)||1;
+        const latWkNum=latSemanID?parseInt(latSemanID.replace('sem_',''))||1:1;
+        const semsEnBloque=Math.max(1,latWkNum-bloqueInicio2+1);
+        const cpFreq=({'health phase':1,'mantenimiento':4,'deporte':4})[String(rutina?.Bloque||'').toLowerCase()]||2;
+        const esCP=semsEnBloque%cpFreq===0;
         const redAlerts=alerts.filter(a=>a.lvl==='red').length;
         const yelAlerts=alerts.filter(a=>a.lvl==='yellow').length;
         return h('div',{key:name,onClick:()=>onSelect(name),
@@ -269,7 +286,7 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}},
             h('div',null,
               h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#111'}},name),
-              h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},lat?.Semana||'Sin datos',' · ',tmpl)
+              h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},lat?.Semana||'Sin datos',' · ',tmpl,esCP&&h('span',{style:{marginLeft:'6px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},'🔔 CP'))
             ),
             h('div',{style:{textAlign:'right',display:'flex',gap:'4px',alignItems:'center'}},
               redAlerts>0&&h('span',{style:{background:R,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 6px',borderRadius:'20px'}},redAlerts+'🔴'),
@@ -333,6 +350,11 @@ function ClientDetail({name,weeks,rutina,onBack}){
   const tmpl=rutina?.Template?String(rutina.Template)+' kcal':'—';
   const numSes=rutina?.NumSesiones||'—';
   const bloqueActual=String(rutina?.Bloque||'—');
+  const bloqueInicio=parseInt(rutina?.BloqueInicio)||1;
+  const semanasEnBloque=Math.max(1,currentWkNum-bloqueInicio+1);
+  const CHECKPOINT_FREQ={'health phase':1,'mantenimiento':4,'deporte':4};
+  const checkpointFreq=CHECKPOINT_FREQ[bloqueActual.toLowerCase()]||2;
+  const esCheckpoint=semanasEnBloque>0&&semanasEnBloque%checkpointFreq===0;
   const latSemanID=lat?.SemanID||'';
   const currentWkNum=latSemanID?parseInt(latSemanID.replace('sem_',''))||'—':'—';
 
@@ -345,7 +367,13 @@ function ClientDetail({name,weeks,rutina,onBack}){
         h('button',{onClick:onBack,style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',color:'#111',padding:0}},'←'),
         h('div',{style:{fontSize:'18px',fontWeight:'800'}},name)
       ),
-      h('div',{style:{fontSize:'11px',color:'#999',marginLeft:'30px'}},tmpl,' · ',numSes,' sesiones · Semana ',currentWkNum,' · Bloque: ',h('span',{style:{fontWeight:'700',color:'#111'}},bloqueActual),' · Obj: ',h('span',{style:{fontWeight:'700',color:String(rutina?.Objetivo||'').toLowerCase()==='deficit'?B:String(rutina?.Objetivo||'').toLowerCase()==='superavit'?G:O}},String(rutina?.Objetivo||'mantenimiento')))
+      h('div',{style:{fontSize:'11px',color:'#999',marginLeft:'30px'}},
+        tmpl,' · ',numSes,' sesiones · Semana ',currentWkNum,' · ',
+        h('span',{style:{fontWeight:'700',color:'#111'}},bloqueActual),
+        ' sem.',semanasEnBloque,
+        esCheckpoint&&h('span',{style:{marginLeft:'8px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'20px'}},'🔔 Checkpoint'),
+        ' · Obj: ',h('span',{style:{fontWeight:'700',color:String(rutina?.Objetivo||'').toLowerCase()==='deficit'?B:String(rutina?.Objetivo||'').toLowerCase()==='superavit'?G:O}},String(rutina?.Objetivo||'mantenimiento'))
+      )
     ),
     h('div',{style:{padding:'12px',paddingBottom:'20px'}},
       // Alertas
