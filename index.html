@@ -830,7 +830,19 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
 
 // ── HABITOS ───────────────────────────────────────────────────────────
 // ── MEDICIONES ────────────────────────────────────────────────────────
+const ZONAS_DOLOR=['Rodilla','Hombro','Espalda','Cadera','Otro'];
+const INTENSIDAD_DOLOR=['Molestia leve','Limita el movimiento','Dolor en reposo'];
+const CONTEXTO_VIDA=[
+  {v:'normal',l:'Normal, sin cambios'},
+  {v:'exigente',l:'Más exigente de lo habitual'},
+  {v:'muy_exigente',l:'Semana muy difícil'},
+];
 function Mediciones({hab,setHab,setSaved,pp,pc,sC}){
+  const dolor=(hab.sens||{}).dolor||'';
+  const dolorZona=(hab.sens||{}).dolorZona||'';
+  const dolorIntensidad=(hab.sens||{}).dolorIntensidad||'';
+  const contexto=(hab.sens||{}).contextoVida||'';
+  function setSens(k,v){setHab({...hab,sens:{...(hab.sens||{}),[k]:v}});setSaved(false);}
   return h('div',null,
     h('div',{style:card},
       h('div',{style:{...lbl,marginBottom:'12px'}},'📏 Mediciones de la semana'),
@@ -859,6 +871,38 @@ function Mediciones({hab,setHab,setSaved,pp,pc,sC}){
         h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},'Nota libre (opcional)'),
         h('textarea',{placeholder:'Algo que quieras mencionar...',value:(hab.sens||{}).nota||'',onChange:e=>{setHab({...hab,sens:{...(hab.sens||{}),nota:e.target.value}});setSaved(false);},
           style:{...inp,height:'72px',resize:'none',fontSize:'13px',padding:'10px',lineHeight:'1.4'}})
+      )
+    ),
+    h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'12px'}},'🦴 Dolor articular'),
+      h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'8px'}},'¿Tuviste dolor articular esta semana?'),
+      h('div',{style:{display:'flex',gap:'8px',marginBottom:dolor==='si'?'12px':'0'}},
+        h('button',{onClick:()=>setSens('dolor','no'),style:{flex:1,padding:'10px',fontSize:'12px',fontWeight:dolor==='no'?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',color:dolor==='no'?'#fff':G,background:dolor==='no'?G:'#fff',borderColor:G}},'No'),
+        h('button',{onClick:()=>setSens('dolor','si'),style:{flex:1,padding:'10px',fontSize:'12px',fontWeight:dolor==='si'?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',color:dolor==='si'?'#fff':R,background:dolor==='si'?R:'#fff',borderColor:R}},'Sí')
+      ),
+      dolor==='si'&&h('div',null,
+        h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},'Zona'),
+        h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}},
+          ZONAS_DOLOR.map(z=>h('button',{key:z,onClick:()=>setSens('dolorZona',z),style:{padding:'6px 12px',fontSize:'11px',fontWeight:dolorZona===z?'700':'400',cursor:'pointer',borderRadius:'20px',border:'1px solid',color:dolorZona===z?'#fff':'#666',background:dolorZona===z?'#374151':'#fff',borderColor:dolorZona===z?'#374151':'rgba(0,0,0,0.1)'}},z))
+        ),
+        h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},'Intensidad'),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
+          INTENSIDAD_DOLOR.map((d,i)=>{
+            const colors=['#F59E0B',O,R];
+            const sel=dolorIntensidad===d;
+            return h('button',{key:d,onClick:()=>setSens('dolorIntensidad',d),style:{padding:'8px 12px',fontSize:'11px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',textAlign:'left',color:sel?'#fff':'#666',background:sel?colors[i]:'#fff',borderColor:sel?colors[i]:'rgba(0,0,0,0.1)'}},d);
+          })
+        )
+      )
+    ),
+    h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'12px'}},'🌡 Contexto de vida esta semana'),
+      h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
+        CONTEXTO_VIDA.map(function(c){
+          const sel=contexto===c.v;
+          const bg=c.v==='normal'?G:c.v==='exigente'?O:R;
+          return h('button',{key:c.v,onClick:function(){setSens('contextoVida',c.v);},style:{padding:'10px 14px',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',textAlign:'left',color:sel?'#fff':'#555',background:sel?bg:'#fff',borderColor:sel?bg:'rgba(0,0,0,0.1)'}},c.l);
+        })
       )
     )
   );
@@ -1378,6 +1422,10 @@ function App(){
           user,wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
           sens:hab.sens||{},
+          dolor:(hab.sens||{}).dolor||'',
+          dolorZona:(hab.sens||{}).dolorZona||'',
+          dolorIntensidad:(hab.sens||{}).dolorIntensidad||'',
+          contextoVida:(hab.sens||{}).contextoVida||'',
           e1rm:e1rmSnap
         })}).catch(()=>{});
       }
