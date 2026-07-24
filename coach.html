@@ -726,6 +726,84 @@ function VideoPanel({name}){
     ))
   );
 }
+function SemanaPanel({data,rutinas}){
+  const [copied,setCopied]=useState(null);
+  const [view,setView]=useState('lun');
+  const TIPS={
+    nutricion:{volumen:'Sin las comidas no hay energia para construir. Apunta a 4 comidas aunque sean simples.',fuerza:'La fuerza necesita energia disponible. Esta semana mantene las comidas aunque el dia este cargado.',health:'La recuperacion empieza en la cocina. Esta semana priorizá comer regular aunque sea poco.',man:'Sostener las comidas es lo que evita perder lo ganado. Aunque sea simple, no salteés.',base:'Establece el habito de las 4 comidas. Todo el proceso depende de eso.',deporte:'Segui el plan de alimentacion. El rendimiento depende directamente de esto.'},
+    sueno:{volumen:'Con menos de 7hs la construccion muscular se frena. Esta semana priorizá dormir.',fuerza:'La fuerza se construye mientras dormis, no mientras entrenás. Priorizá el descanso.',health:'El descanso ES el objetivo de este bloque. Priorizalo por encima de todo.',man:'El sueno es lo que sostiene la recuperacion sin perder lo ganado.',base:'Establece una rutina de sueno. Todo el proceso depende de eso.',deporte:'El rendimiento en competencia depende del descanso previo. Dormí bien.'},
+    entreno:{volumen:'Completa todas las sesiones esta semana. Sin el volumen de entrenamiento no hay estimulo.',fuerza:'No salteés ninguna sesion. La progresion de carga necesita estimulo consistente.',health:'Realiza las sesiones pautadas sin forzar. El movimiento ayuda a la recuperacion.',man:'Mantene la frecuencia. Es lo que sostiene lo que construiste.',base:'Priorizá la tecnica en cada rep. El control del esfuerzo es el objetivo ahora.',deporte:'No salteés sesiones. Cada una tiene un proposito especifico para la fecha que se viene.'},
+  };
+  function getBloqueKey(rutina){var b=String((rutina&&rutina.Bloque)||'volumen').toLowerCase();if(b.includes('health'))return 'health';if(b.includes('fuerza'))return 'fuerza';if(b.includes('man'))return 'man';if(b.includes('base')||b.includes('conexion')||b.includes('nm'))return 'base';if(b.includes('deporte')||b.includes('intensidad'))return 'deporte';return 'volumen';}
+  function getPilarDebil(weeks,rutina){
+    if(!weeks||!weeks.length)return null;
+    var lat=weeks[weeks.length-1];
+    var compPct2=parsePct((lat||{})['%Comidas']||0);
+    var suenoOk=parseInt((lat&&lat.DiasSueno)||0);
+    var e1rmOk=false;try{e1rmOk=Object.keys(JSON.parse((lat&&lat.E1RM)||'{}')).length>0;}catch(e){}
+    var scores={nutricion:compPct2/100,sueno:suenoOk/6,entreno:e1rmOk?1:0};
+    var min=Math.min.apply(null,Object.values(scores));
+    return Object.keys(scores).find(function(k){return scores[k]===min;})||'nutricion';
+  }
+  function genMensaje(name,weeks,rutina){
+    if(!weeks||!weeks.length)return 'Hola '+name+'! Arrancamos semana.\n\nNo tengo info tuya de la semana pasada para trabajar. Contame rapido:\n\n- Como estuvo el entrenamiento?\n- Como llegaste con las comidas?\n- Peso y cintura de esta semana?\n- Algo que cambio en tu contexto o vida?\n\nCon eso ya puedo orientarte para arrancar bien.';
+    var lat=weeks[weeks.length-1];
+    var pilar=getPilarDebil(weeks,rutina);
+    var bloqueKey=getBloqueKey(rutina);
+    var tip=((TIPS[pilar]||{})[bloqueKey])||((TIPS[pilar]||{}).volumen)||'Segui igual, la consistencia es la variable mas importante.';
+    var compPct2=parsePct((lat||{})['%Comidas']||0);
+    var suenoOk=parseInt((lat&&lat.DiasSueno)||0);
+    var pilarLabel=pilar==='nutricion'?'Comidas':pilar==='sueno'?'Sueno':'Entrenamiento';
+    var pilarDato=pilar==='nutricion'?compPct2+'% de comidas cumplidas':pilar==='sueno'?suenoOk+'/6 noches con sueno suficiente':'Registro de entreno incompleto';
+    var resto=[];if(pilar!=='nutricion')resto.push('comidas');if(pilar!=='sueno')resto.push('descanso');if(pilar!=='entreno')resto.push('entreno');
+    return 'Hola '+name+'! Arrancamos semana.\n\nLa semana pasada tu punto mas debil fue '+pilarLabel+':\n- '+pilarDato+'\n\nEsta semana: '+tip+'\n\n'+(resto.length?'En '+resto.join(' y ')+' venis bien, segui igual.\n\n':'')+'Cualquier duda en el momento me avisas, no esperes al sabado.';
+  }
+  function genMidWeek(name,weeks,rutina){
+    if(!weeks||!weeks.length)return 'Sin datos de semanas anteriores para '+name+'.';
+    var pilar=getPilarDebil(weeks,rutina);
+    var bloqueKey=getBloqueKey(rutina);
+    var tip=((TIPS[pilar]||{})[bloqueKey])||((TIPS[pilar]||{}).volumen)||'Segui igual.';
+    var pilarLabel=pilar==='nutricion'?'las comidas':pilar==='sueno'?'el sueno':'el entreno';
+    return 'Hola '+name+'! Mitad de semana.\n\nRecordatorio: la sem pasada tuviste dificultades con '+pilarLabel+'.\nEsta semana: '+tip+'\n\nEstas a tiempo de terminar fuerte. Cualquier duda me avisas.';
+  }
+  function copy(text,id){navigator.clipboard.writeText(text).then(function(){setCopied(id);setTimeout(function(){setCopied(null);},2000);});}
+  var clients=Object.keys(data).sort();
+  var MsgViernes='Ya arrancamos el fin de semana!\n\nRecordatorio: el sabado es el ultimo dia para registrar todo en la app antes de cerrar la semana.\n\nComidas, peso, cintura, sensaciones: todo lo que anotes le da herramientas a tu coach para ajustar el plan la semana que viene.\n\nCualquier duda del reporte me avisan.';
+  return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
+    h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'14px 18px',position:'sticky',top:0,zIndex:10}},
+      h('div',{style:{fontSize:'18px',fontWeight:'800',marginBottom:'10px'}},'Mensajes semanales'),
+      h('div',{style:{display:'flex',gap:'6px'}},
+        [{v:'lun',l:'Lun/Dom'},{v:'mie',l:'Mie'},{v:'vie',l:'Vie'}].map(function(t){return h('button',{key:t.v,onClick:function(){setView(t.v);},style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:view===t.v?'700':'400',cursor:'pointer',borderRadius:'8px',border:'none',background:view===t.v?'#111':'#F0F0F0',color:view===t.v?'#fff':'#666'}},t.l);})
+      )
+    ),
+    h('div',{style:{padding:'12px'}},
+      view==='vie'&&h('div',{style:{background:'#fff',borderRadius:'12px',padding:'16px',border:'1px solid rgba(0,0,0,0.08)'}},
+        h('div',{style:{fontSize:'11px',fontWeight:'700',color:'#999',letterSpacing:'0.06em',textTransform:'uppercase',marginBottom:'8px'}},'Mensaje comunidad Viernes'),
+        h('div',{style:{fontSize:'12px',color:'#555',lineHeight:'1.6',whiteSpace:'pre-line',background:'#F8F8F8',borderRadius:'8px',padding:'10px',marginBottom:'12px'}},MsgViernes),
+        h('button',{onClick:function(){copy(MsgViernes,'vie');},style:{width:'100%',background:copied==='vie'?G:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'10px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},copied==='vie'?'Copiado!':'Copiar')
+      ),
+      (view==='lun'||view==='mie')&&clients.map(function(name){
+        var weeks=data[name]||[];
+        var rutina=rutinas.find(function(r){return String(r.Asesorado||'').trim().toLowerCase()===name.toLowerCase();});
+        var msg=view==='lun'?genMensaje(name,weeks,rutina):genMidWeek(name,weeks,rutina);
+        var pilar=getPilarDebil(weeks,rutina);
+        var pilarColor=pilar==='nutricion'?O:pilar==='sueno'?B:G;
+        var hasData=weeks&&weeks.length>0;
+        return h('div',{key:name,style:{background:'#fff',borderRadius:'12px',padding:'14px',marginBottom:'10px',border:'1px solid rgba(0,0,0,0.08)'}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+            h('div',null,
+              h('div',{style:{fontWeight:'800',fontSize:'14px'}},name),
+              h('div',{style:{fontSize:'11px',marginTop:'2px',color:hasData?pilarColor:R,fontWeight:'600'}},hasData?('Punto debil: '+(pilar==='nutricion'?'Comidas':pilar==='sueno'?'Sueno':'Entreno')):'Sin reporte')
+            ),
+            h('button',{onClick:function(){copy(msg,name+view);},style:{background:copied===name+view?G:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'11px',fontWeight:'700',cursor:'pointer',flexShrink:0}},copied===name+view?'Copiado!':'Copiar')
+          ),
+          h('div',{style:{fontSize:'12px',color:'#555',lineHeight:'1.6',whiteSpace:'pre-line',background:'#F8F8F8',borderRadius:'8px',padding:'10px',maxHeight:'120px',overflowY:'auto'}},msg)
+        );
+      })
+    )
+  );
+}
+
 function App(){
   const [unlocked,setUnlocked]=useState(()=>sessionStorage.getItem('coach_ok')==='1');
   const [loading,setLoading]=useState(false);
@@ -733,9 +811,8 @@ function App(){
   const [rutinas,setRutinas]=useState([]);
   const [selected,setSelected]=useState(null);
   const [error,setError]=useState(null);
-
+  const [appTab,setAppTab]=useState('lista');
   const unlock=()=>{sessionStorage.setItem('coach_ok','1');setUnlocked(true);};
-
   const loadData=()=>{
     setLoading(true);setError(null);
     Promise.all([
@@ -743,36 +820,27 @@ function App(){
       fetch(SCRIPT_URL+'?action=rutinas').then(r=>r.json()).catch(()=>[])
     ]).then(([reportes,ruts])=>{
       const grouped={};
-      (reportes||[]).forEach(row=>{
-        const name=String(row.Asesorado||'').trim();if(!name)return;
-        if(!grouped[name])grouped[name]=[];
-        grouped[name].push(row);
-      });
+      (reportes||[]).forEach(row=>{const name=String(row.Asesorado||'').trim();if(!name)return;if(!grouped[name])grouped[name]=[];grouped[name].push(row);});
       Object.values(grouped).forEach(w=>w.sort((a,b)=>String(a.SemanID||'').localeCompare(String(b.SemanID||''))));
       setData(grouped);setRutinas(ruts||[]);
-    }).catch(()=>setError('Error al cargar datos. Verificá tu conexión.'))
-    .finally(()=>setLoading(false));
+    }).catch(()=>setError('Error al cargar datos.')).finally(()=>setLoading(false));
   };
-
   useEffect(()=>{if(unlocked)loadData();},[unlocked]);
-
   if(!unlocked)return h(PinScreen,{onUnlock:unlock});
-  if(loading)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff'}},
-    h('div',{style:{fontSize:'36px',marginBottom:'12px'}},'⏳'),
-    h('div',{style:{fontSize:'14px',color:'#999'}}),'Cargando datos...'
+  if(loading)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff'}},h('div',{style:{fontSize:'14px',color:'#999'}},'Cargando datos...'));
+  if(error)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff',padding:'40px'}},h('div',{style:{fontSize:'14px',color:'#666',marginBottom:'20px',textAlign:'center'}},error),h('button',{onClick:loadData,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'12px 24px',fontSize:'14px',cursor:'pointer'}},'Reintentar'));
+  if(selected)return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()),onBack:()=>setSelected(null)});
+  return h('div',null,
+    h('div',{style:{paddingBottom:'60px'}},
+      appTab==='lista'&&h(ClientList,{data,rutinas,onSelect:setSelected,onRefresh:loadData}),
+      appTab==='sem'&&h(SemanaPanel,{data,rutinas})
+    ),
+    h('div',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'#fff',borderTop:'1px solid rgba(0,0,0,0.08)',display:'flex',zIndex:20}},
+      [{v:'lista',l:'Asesorados',ic:'👥'},{v:'sem',l:'Semana',ic:'📅'}].map(t=>
+        h('button',{key:t.v,onClick:()=>setAppTab(t.v),style:{flex:1,padding:'10px 2px 14px',fontSize:'10px',background:'none',border:'none',borderTop:appTab===t.v?'2px solid #111':'2px solid transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',color:appTab===t.v?'#111':'#999',fontWeight:appTab===t.v?'700':'400'}},h('span',{style:{fontSize:'18px'}},t.ic),t.l)
+      )
+    )
   );
-  if(error)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff',padding:'40px'}},
-    h('div',{style:{fontSize:'36px',marginBottom:'12px'}},'⚠'),
-    h('div',{style:{fontSize:'14px',color:'#666',marginBottom:'20px',textAlign:'center'}},error),
-    h('button',{onClick:loadData,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'12px 24px',fontSize:'14px',cursor:'pointer'}},'Reintentar')
-  );
-  if(selected)return h(ClientDetail,{
-    name:selected,
-    weeks:data[selected]||[],
-    rutina:rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()),
-    onBack:()=>setSelected(null)
-  });
-  return h(ClientList,{data,rutinas,onSelect:setSelected,onRefresh:loadData});
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(h(App,null));
