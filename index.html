@@ -21,7 +21,7 @@ input:focus,textarea:focus,select:focus{border-color:#E8541A!important;box-shado
 <div id="root"></div>
 <script>
 const {useState,useEffect,useRef,useMemo,useCallback,createElement:h}=React;
-const SCRIPT_URL='https://script.google.com/macros/s/AKfycbw4_lvzFlMM27Q5QcGyvd4AygPd4IlQt_sPf6m3CM2i0m4A4cMwIV3WWx2JD1EqnzzA/exec';
+const SCRIPT_URL='https://script.google.com/macros/s/AKfycbyksx6PigX-HH2UofaiA_YenZzwUPZGDjfrTpACXWiTIzYKfMGr-0IRAhdf7teZTEKo/exec';
 const G='#1D9E75',B='#378ADD',O='#D97706',R='#EF4444';
 const AC='#E8541A'; // acento Fuerza T
 const AC2='#C0392B'; // acento degradado
@@ -1627,7 +1627,7 @@ function App(){
     // Verificar si ya se mandó reporte esta sem
     const sentKey=`ase_${user}_reporteSent_${wk.id}`;
     if(localStorage.getItem(sentKey)){
-      if(!confirm('Ya enviaste el reporte de esta semana. ¿Querés reemplazarlo con los datos actuales?'))return;
+      if(!confirm('Ya enviaste el reporte de esta semana.\n\n¿Querés sobreescribirlo con los datos actuales?\n\nEn el sheet quedará solo un reporte por semana.'))return;
     }
     const anyMeal=nut.some(d=>Object.values(d.m||{}).some(Boolean));
     const anyAguaOk=nut.some(d=>d.ak);
