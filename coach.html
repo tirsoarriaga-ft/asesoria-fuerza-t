@@ -366,6 +366,36 @@ function ClientDetail({name,weeks,rutina,onBack}){
   const [arbolDone,setArbolDone]=useState(null);
   const [arbolNota,setArbolNota]=useState('');
   const [arbolSaving,setArbolSaving]=useState(false);
+  const [factoresAlert,setFactoresAlert]=useState(null); // null | {factores:[...], continuar:fn}
+
+  // Detectar factores externos
+  function detectFactoresExternos(){
+    var factores=[];
+    if(ultCtx==='exigente')factores.push('Semana con cambios — algo fuera de lo habitual');
+    if(ultCtx==='muy_exigente')factores.push('Semana muy diferente — viaje, enfermedad u otro evento');
+    var suenoNum=parseInt(String(ultS).split('/')[0])||0;
+    if(suenoNum<4)factores.push('Solo '+suenoNum+' noches con sueno suficiente (minimo eficiente: 4)');
+    var toxicos=parseInt(lat&&lat.Toxicos)||0;
+    if(toxicos>=2)factores.push(toxicos+' dias con toxicos esta semana');
+    var energia=String(lat&&lat.Energia||'');
+    if(energia.toLowerCase().includes('baja')||energia.toLowerCase().includes('alta')||energia==='Baja')factores.push('Energia: '+energia);
+    var estres=String(lat&&lat.Estres||'');
+    if(estres.toLowerCase().includes('alto'))factores.push('Estres: '+estres);
+    return factores;
+  }
+
+  // Verificar si la respuesta actual indica resultado fisiológico no esperado
+  function esResultadoNoEsperado(pasoId,respVal){
+    // Resultados no esperados: e1rm no subio, peso no se mueve como deberia, compliance bajo
+    var noEsperados={
+      e1rm:['1sem','2sem','3sem'],
+      pesos:['2sem','2sem_ctx','3sem'],
+      peso:['cintura'],
+      comp:['no'],
+      sens:['no'],
+    };
+    return (noEsperados[pasoId]||[]).includes(respVal);
+  }
 
   // Datos para el árbol
   const ultE=lat?.Energia||'—';
@@ -463,47 +493,66 @@ function ClientDetail({name,weeks,rutina,onBack}){
 
   function ArbolCheckpoint(){
     if(arbolDone)return h('div',{style:{...card,background:'#EAF7F2',border:'1px solid #A3DFC8'}},
-      h('div',{style:{fontSize:'14px',fontWeight:'800',color:G,marginBottom:'8px'}},'✅ Decisión registrada'),
+      h('div',{style:{fontSize:'14px',fontWeight:'800',color:G,marginBottom:'8px'}},'Decisión registrada'),
       h('div',{style:{fontSize:'13px',color:'#333',lineHeight:'1.5',marginBottom:'12px'}},arbolDone),
-      h('button',{onClick:()=>{setArbolStep(0);setArbolResp({});setArbolDone(null);setArbolNota('');},style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Nuevo checkpoint')
+      h('button',{onClick:()=>{setArbolStep(0);setArbolResp({});setArbolDone(null);setArbolNota('');setFactoresAlert(null);},style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Nuevo checkpoint')
     );
+
+    // Alerta de factores externos
+    if(factoresAlert)return h('div',null,
+      h('div',{style:{...card,background:'#FFF8E1',border:'1px solid #F59E0B',marginBottom:'8px'}},
+        h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#92400E',marginBottom:'8px'}},'Hay factores externos que pueden explicar este resultado'),
+        factoresAlert.map(function(f,i){return h('div',{key:i,style:{fontSize:'12px',color:'#78350F',marginBottom:'4px',paddingLeft:'8px',borderLeft:'3px solid #F59E0B'}},f);})
+      ),
+      h('div',{style:{...card,marginBottom:'8px'}},
+        h('div',{style:{fontSize:'12px',color:'#555',lineHeight:'1.6'}},'Estos factores impactan directamente en los resultados esperados. Antes de ajustar el plan, considerá si fueron puntuales o van a seguir.')
+      ),
+      h('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},
+        h('button',{onClick:function(){setFactoresAlert(null);setArbolStep(arbolStep+1);},style:{background:'#111',color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Fue puntual — continuar el árbol'),
+        h('button',{onClick:function(){saveDecision('Factores externos presentes. No ajustar el plan. Abordar el contexto primero.');setFactoresAlert(null);},style:{background:O,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Ajustar contexto primero — no tocar el plan')
+      )
+    );
+
     if(!pasoActual)return null;
-    const dec=getDecision(bloqueKey2,pasoActual.id,arbolResp[pasoActual.id]);
+    var dec=getDecision(bloqueKey2,pasoActual.id,arbolResp[pasoActual.id]);
     return h('div',null,
       h('div',{style:{...card,background:'#0A0A0A',border:'none'}},
         h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Checkpoint '+bloqueActual+' · Semana '+semanasEnBloque),
         h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.35)',marginBottom:'12px'}},'Paso '+(arbolStep+1)+' de '+arbol.length),
         h('div',{style:{fontSize:'15px',fontWeight:'800',color:'#fff',marginBottom:'14px',lineHeight:'1.4'}},pasoActual.q),
-        // Datos
         h('div',{style:{background:'rgba(255,255,255,0.06)',borderRadius:'8px',padding:'10px',marginBottom:'10px'}},
-          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',marginBottom:'6px',letterSpacing:'0.06em'}},' DATOS DE ESTA SEMANA'),
+          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',marginBottom:'6px',letterSpacing:'0.06em'}},'DATOS DE ESTA SEMANA'),
           pasoActual.datos.map(function(d,i){return h('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:'12px'}},
             h('span',{style:{color:'rgba(255,255,255,0.5)'}},d.l),
             h('span',{style:{fontWeight:'700',color:d.c||'#fff'}},d.v)
           );})
         ),
-        // Criterio
         h('div',{style:{borderLeft:'3px solid '+AC,paddingLeft:'10px',marginBottom:'14px'}},
-          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',marginBottom:'4px',letterSpacing:'0.06em'}},' CRITERIO'),
+          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',marginBottom:'4px',letterSpacing:'0.06em'}},'CRITERIO'),
           h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.65)',lineHeight:'1.5'}},pasoActual.criterio)
         ),
-        // Opciones
         h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
           pasoActual.ops.map(function(op){
-            const sel=arbolResp[pasoActual.id]===op.v;
+            var sel=arbolResp[pasoActual.id]===op.v;
             return h('button',{key:op.v,onClick:function(){
-              var newResp=Object.assign({},arbolResp,{});
+              var newResp=Object.assign({},arbolResp);
               newResp[pasoActual.id]=op.v;
               setArbolResp(newResp);
-              // Verificar si hay decisión inmediata
+              // Detectar factores externos si el resultado no es esperado
+              if(esResultadoNoEsperado(pasoActual.id,op.v)){
+                var factores=detectFactoresExternos();
+                if(factores.length>0){
+                  setFactoresAlert(factores);
+                  return;
+                }
+              }
               var d=getDecision(bloqueKey2,pasoActual.id,op.v);
-              if(d){setArbolDone(null);} // se muestra abajo
+              if(d){setArbolDone(null);}
             },style:{padding:'10px 14px',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',textAlign:'left',color:sel?'#fff':'rgba(255,255,255,0.6)',background:sel?AC:'rgba(255,255,255,0.06)',borderColor:sel?AC:'rgba(255,255,255,0.1)',transition:'all 0.15s'}},op.l);
           })
         )
       ),
-      // Decisión inmediata o navegación
-      arbolResp[pasoActual.id]&&h('div',{style:{marginTop:'8px'}},
+      arbolResp[pasoActual.id]&&!factoresAlert&&h('div',{style:{marginTop:'8px'}},
         dec
           ?h('div',null,
               h('div',{style:{...card,background:'#EAF7F2',border:'1px solid #A3DFC8',marginBottom:'8px'}},
@@ -513,7 +562,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
               h('textarea',{placeholder:'Nota adicional (opcional)',value:arbolNota,onChange:function(e){setArbolNota(e.target.value);},style:{...inp,height:'60px',resize:'none',fontSize:'12px',marginBottom:'8px'}}),
               h('div',{style:{display:'flex',gap:'8px'}},
                 h('button',{onClick:function(){saveDecision(dec);},disabled:arbolSaving,style:{flex:1,background:GRAD,color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},arbolSaving?'Guardando...':'Confirmar y registrar'),
-                h('button',{onClick:function(){setArbolResp(Object.assign({},arbolResp,{[pasoActual.id]:undefined}));},style:{background:'rgba(0,0,0,0.06)',border:'none',borderRadius:'8px',padding:'12px',fontSize:'12px',cursor:'pointer'}},'Cambiar')
+                h('button',{onClick:function(){var r=Object.assign({},arbolResp);delete r[pasoActual.id];setArbolResp(r);},style:{background:'rgba(0,0,0,0.06)',border:'none',borderRadius:'8px',padding:'12px',fontSize:'12px',cursor:'pointer'}},'Cambiar')
               )
             )
           :h('div',{style:{display:'flex',gap:'8px'}},
@@ -522,7 +571,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
                 ?h('button',{onClick:function(){setArbolStep(arbolStep+1);},style:{flex:2,background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Siguiente paso →')
                 :h('div',null,
                     h('textarea',{placeholder:'Nota adicional (opcional)',value:arbolNota,onChange:function(e){setArbolNota(e.target.value);},style:{...inp,height:'60px',resize:'none',fontSize:'12px',marginBottom:'8px'}}),
-                    h('button',{onClick:function(){saveDecision('✅ Continuar igual — todos los criterios OK');},disabled:arbolSaving,style:{flex:1,background:GRAD,color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',width:'100%'}},arbolSaving?'Guardando...':'Registrar: Continuar igual')
+                    h('button',{onClick:function(){saveDecision('Continuar igual — todos los criterios OK');},disabled:arbolSaving,style:{flex:1,background:GRAD,color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',width:'100%'}},arbolSaving?'Guardando...':'Registrar: Continuar igual')
                   )
             )
       )
