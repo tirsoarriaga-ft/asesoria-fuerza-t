@@ -50,7 +50,7 @@ const CLOUD_URL=`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/video/upload`;
 const MEAT_KEYS=['pollo','ternera','lomo','muslopollo','carne','salmon','merluza'];
 const CAT={'P':{l:'Proteína',bg:'#EBF4FF',c:B},'C':{l:'Carbohidrato',bg:'#FEF3C7',c:O},'G':{l:'Grasa',bg:'#F3E8FF',c:'#7C3AED'},'FV':{l:'Fruta/Verdura',bg:'#EAF7F2',c:G}};
 const SENS={
-  energia:{l:'Energía',opts:['Alta toda la semana','Variable','Baja toda la semana'],colors:[G,O,R]},
+  energia:{l:'Energía',opts:['Alta toda la semana','Normal, sin cambios','Baja toda la semana'],colors:[G,O,R]},
   hambre:{l:'Hambre',opts:['No sentí','Sentí a veces','Bastante presente'],colors:[G,O,R]},
   digestion:{l:'Digestión',opts:['Buena','A veces alterada','Mala'],colors:[G,O,R]},
   estres:{l:'Estrés',opts:['Sin estrés','Estrés moderado','Estrés alto'],colors:[G,O,R]},
@@ -813,6 +813,11 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
 }
 
 // ── DIET ──────────────────────────────────────────────────────────────
+const NIVEL_BANNER={
+  1:'Foco en la calidad y el orden de las comidas. Cuatro comidas al dia, alimentos reales, pocas ultraprocesados.',
+  2:'Foco en las porciones ademas de la calidad. Comer lo correcto en la cantidad correcta para tu objetivo.',
+  3:'Foco en la precision. Macros ajustados a tu plan, porciones exactas, timing nutricional optimizado.',
+};
 function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
   const tKey=`ase_${user}_tmpl`;const oKey=`ase_${user}_opts`;
   const [tmpl,setTmplState]=useState(()=>parseInt(localStorage.getItem(tKey))||2100);
@@ -933,219 +938,226 @@ const CONTEXTO_VIDA=[
   {v:'exigente',l:'Más exigente de lo habitual'},
   {v:'muy_exigente',l:'Semana muy difícil'},
 ];
-// ── MI SEMANA (reemplaza Cumplimiento + Mediciones) ───────────────────
-const MEAL_STATES=[
+// ── MI SEMANA ─────────────────────────────────────────────────────────
+var MEAL_STATES=[
   {v:'',ic:'○',color:'#E0E0E0',label:''},
-  {v:'ok',ic:'✅',color:'#1D9E75',label:'Cumplí'},
-  {v:'par',ic:'↔',color:'#D97706',label:'Comí distinto'},
-  {v:'no',ic:'❌',color:'#EF4444',label:'No comí'},
+  {v:'ok',ic:'✅',color:'#1D9E75',label:'Cumpli'},
+  {v:'par',ic:'↔',color:'#D97706',label:'Comi distinto'},
+  {v:'no',ic:'❌',color:'#EF4444',label:'No comi'},
 ];
-const AGUA_STATES=[
+var AGUA_STATES=[
   {v:'',ic:'○',color:'#E0E0E0'},
   {v:'max',ic:'●',color:'#1D9E75'},
   {v:'min',ic:'◐',color:'#D97706'},
   {v:'ins',ic:'○',color:'#EF4444'},
 ];
+var DS6=['L','M','X','J','V','S'];
 function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg}){
-  // Agua objetivo desde PesoRef del sheet (cargado en cfg)
-  const pesoRef=parseFloat(cfg&&cfg.pesoRef)||0;
-  const aguaMax=pesoRef>0?Math.round(pesoRef*35)/1000:2.0;
-  const aguaMin=pesoRef>0?Math.round(pesoRef*30)/1000:1.5;
-  const aguaMaxStr=aguaMax.toFixed(1)+'L ('+(Math.round(aguaMax/0.25))+' vasos)';
-  const aguaMinStr=aguaMin.toFixed(1)+'L ('+(Math.round(aguaMin/0.25))+' vasos)';
-
-  // Banner primera vez
-  const bannerKey='ase_misemana_banner_seen';
-  const [showBanner,setShowBanner]=useState(()=>!localStorage.getItem(bannerKey));
+  var pesoRef=parseFloat(cfg&&cfg.pesoRef)||0;
+  var aguaMaxL=pesoRef>0?Math.round(pesoRef*35)/1000:2.0;
+  var aguaMinL=pesoRef>0?Math.round(pesoRef*30)/1000:1.5;
+  var aguaMaxStr=aguaMaxL.toFixed(1)+'L ('+Math.round(aguaMaxL/0.25)+' vasos)';
+  var aguaMinStr=aguaMinL.toFixed(1)+'L ('+Math.round(aguaMinL/0.25)+' vasos)';
+  var bannerKey='ase_misemana_v2';
+  var [showBanner,setShowBanner]=useState(function(){return !localStorage.getItem(bannerKey);});
   function closeBanner(){localStorage.setItem(bannerKey,'1');setShowBanner(false);}
-
   function cycleMeal(di,meal){
-    const cur=nut[di].m[meal]||'';
-    const idx=MEAL_STATES.findIndex(s=>s.v===cur);
-    const next=MEAL_STATES[(idx+1)%MEAL_STATES.length].v;
-    const newN=[...nut];newN[di]={...newN[di],m:{...newN[di].m,[meal]:next}};
+    var cur=(nut[di].m[meal])||'';
+    var idx=MEAL_STATES.findIndex(function(s){return s.v===cur;});
+    var next=MEAL_STATES[(idx+1)%MEAL_STATES.length].v;
+    var newN=nut.map(function(d,i){return i===di?Object.assign({},d,{m:Object.assign({},d.m,{[meal]:next})}):d;});
     setNut(newN);setSaved(false);
   }
   function cycleAgua(di){
-    const cur=nut[di].agua||'';
-    const idx=AGUA_STATES.findIndex(s=>s.v===cur);
-    const next=AGUA_STATES[(idx+1)%AGUA_STATES.length].v;
-    const newN=[...nut];newN[di]={...newN[di],agua:next};
+    var cur=(nut[di].agua)||'';
+    var idx=AGUA_STATES.findIndex(function(s){return s.v===cur;});
+    var next=AGUA_STATES[(idx+1)%AGUA_STATES.length].v;
+    var newN=nut.map(function(d,i){return i===di?Object.assign({},d,{agua:next}):d;});
     setNut(newN);setSaved(false);
   }
   function toggleHab(key,di){
-    const arr=[...(hab[key]||Array(7).fill(false))];
+    var arr=(hab[key]||Array(7).fill(false)).slice();
     arr[di]=!arr[di];
-    setHab({...hab,[key]:arr});setSaved(false);
+    setHab(Object.assign({},hab,{[key]:arr}));setSaved(false);
   }
-  function setSens(k,v){setHab({...hab,sens:{...(hab.sens||{}),[k]:v}});setSaved(false);}
-
-  const DS6=['L','M','X','J','V','S'];
-  const dolor=(hab.sens||{}).dolor||'';
-  const dolorZona=(hab.sens||{}).dolorZona||'';
-  const dolorIntensidad=(hab.sens||{}).dolorIntensidad||'';
-  const contexto=(hab.sens||{}).contextoVida||'';
-
-  // Grid de burbujas
-  function BubbleGrid({rows}){
-    // rows: [{label, items: [{ic, color, onClick}]}]
-    return h('div',{style:{overflowX:'auto'}},
-      h('div',{style:{minWidth:'280px'}},
-        // Header días
-        h('div',{style:{display:'grid',gridTemplateColumns:'80px repeat(6,1fr)',gap:'2px',marginBottom:'4px'}},
-          h('div',null),
-          DS6.map((d,i)=>h('div',{key:i,style:{textAlign:'center',fontSize:'11px',fontWeight:'700',color:'#999'}},d))
-        ),
-        rows.map((row,ri)=>h('div',{key:ri,style:{display:'grid',gridTemplateColumns:'80px repeat(6,1fr)',gap:'2px',marginBottom:'4px',alignItems:'center'}},
-          h('div',{style:{fontSize:'11px',color:'#555',fontWeight:'600',paddingRight:'4px'}},row.label),
-          row.items.map((item,ii)=>h('button',{key:ii,onClick:item.onClick,style:{width:'100%',aspectRatio:'1',borderRadius:'50%',border:'2px solid '+item.color,background:item.bg||'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',padding:0}},item.ic))
-        ))
-      )
-    );
+  function setSens(k,v){setHab(Object.assign({},hab,{sens:Object.assign({},(hab.sens||{}),{[k]:v})}));setSaved(false);}
+  var dolor=(hab.sens||{}).dolor||'';
+  var dolorZona=(hab.sens||{}).dolorZona||'';
+  var dolorInt=(hab.sens||{}).dolorIntensidad||'';
+  var ctx=(hab.sens||{}).contextoVida||'';
+  // Helper: burbuja clickeable
+  function Bub(color,bg,ic,onClick){
+    return h('button',{onClick:onClick,style:{width:'100%',aspectRatio:'1',borderRadius:'50%',border:'2px solid '+color,background:bg,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',padding:0}},ic);
   }
-
+  // Header row de dias
+  var diaHeader=h('div',{style:{display:'grid',gridTemplateColumns:'72px repeat(6,1fr)',gap:'2px',marginBottom:'4px',alignItems:'center'}},
+    h('div',null),
+    DS6.map(function(d,i){return h('div',{key:i,style:{textAlign:'center',fontSize:'11px',fontWeight:'700',color:'#999'}},d);})
+  );
   return h('div',null,
-    // Banner primera vez
-    showBanner&&h('div',{style:{...card,background:'#111',border:'none',marginBottom:'10px'}},
+    // Banner
+    showBanner&&h('div',{style:Object.assign({},card,{background:'#111',border:'none',marginBottom:'10px'})},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
         h('div',{style:{flex:1}},
           h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#fff',marginBottom:'6px'}},'Como registrar'),
-          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.7)',lineHeight:'1.6'}},
-            'Tocá cada burbuja para cambiar su estado. Seguí tocando para rotar entre opciones.',h('br',null),
-            h('span',{style:{color:'#1D9E75'}},'● Cumplí'),' · ',h('span',{style:{color:'#D97706'}},'◐ Parcial'),' · ',h('span',{style:{color:'#EF4444'}},'○ No cumplí')
-          )
+          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.7)',lineHeight:'1.6'}},'Toca cada burbuja para cambiar su estado. Sigue tocando para rotar entre opciones.')
         ),
-        h('button',{onClick:closeBanner,style:{background:'none',border:'none',color:'rgba(255,255,255,0.5)',fontSize:'18px',cursor:'pointer',padding:'0 0 0 8px'}},'×')
+        h('button',{onClick:closeBanner,style:{background:'none',border:'none',color:'rgba(255,255,255,0.5)',fontSize:'18px',cursor:'pointer',padding:'0 0 0 8px'}},'x')
       )
     ),
-
     // COMIDAS
     h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'10px'}},'Comidas'),
-      h(BubbleGrid,{rows:MEALS_CHECK.map(meal=>({
-        label:meal.l,
-        items:nut.slice(0,6).map((d,di)=>{
-          const cur=d.m[meal.k]||'';
-          const st=MEAL_STATES.find(s=>s.v===cur)||MEAL_STATES[0];
-          return{ic:st.ic,color:st.color,bg:cur?st.color+'22':'transparent',onClick:()=>cycleMeal(di,meal.k)};
+      h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Comidas'),
+      h('div',{style:{display:'flex',gap:'10px',marginBottom:'10px',flexWrap:'wrap'}},
+        MEAL_STATES.slice(1).map(function(ms){
+          return h('div',{key:ms.v,style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'10px',color:'#666'}},
+            h('span',{style:{color:ms.color,fontWeight:'700',marginRight:'2px'}},ms.ic),ms.label
+          );
         })
-      }))}),
-      h('div',{style:{display:'flex',gap:'12px',marginTop:'8px',flexWrap:'wrap'}},
-        MEAL_STATES.slice(1).map(s=>h('div',{key:s.v,style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'10px',color:'#666'}},
-          h('span',{style:{color:s.color,fontWeight:'700'}},s.ic),' '+s.label
-        ))
-      )
+      ),
+      diaHeader,
+      ['desayuno','almuerzo','merienda','cena'].map(function(meal,mi){
+        var labels=['Desayuno','Almuerzo','Merienda','Cena'];
+        return h('div',{key:meal,style:{display:'grid',gridTemplateColumns:'72px repeat(6,1fr)',gap:'2px',marginBottom:'4px',alignItems:'center'}},
+          h('div',{style:{fontSize:'11px',color:'#555',fontWeight:'600'}},labels[mi]),
+          nut.slice(0,6).map(function(d,di){
+            var cur=(d.m[meal])||'';
+            var st=MEAL_STATES.find(function(s){return s.v===cur;})||MEAL_STATES[0];
+            return Bub(st.color,cur?st.color+'22':'transparent',st.ic,function(){cycleMeal(di,meal);});
+          })
+        );
+      })
     ),
-
     // AGUA
     h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'4px'}},'Agua'),
-      h('div',{style:{fontSize:'10px',color:'#999',marginBottom:'8px'}},
-        h('span',{style:{color:'#1D9E75',fontWeight:'600'}},'● '+aguaMaxStr),' · ',
-        h('span',{style:{color:'#D97706',fontWeight:'600'}},'◐ '+aguaMinStr),' · ',
-        h('span',{style:{color:'#EF4444',fontWeight:'600'}},'○ Menos')
+      h('div',{style:Object.assign({},lbl,{marginBottom:'6px'})},'Agua diaria'),
+      h('div',{style:{marginBottom:'10px'}},
+        h('div',{style:{fontSize:'11px',color:G,fontWeight:'600',marginBottom:'3px'}},'● Maximo: al menos '+aguaMaxStr),
+        h('div',{style:{fontSize:'11px',color:O,fontWeight:'600',marginBottom:'3px'}},'◐ Minimo: al menos '+aguaMinStr),
+        h('div',{style:{fontSize:'11px',color:R,fontWeight:'600'}},'○ Insuficiente: menos de '+aguaMinStr)
       ),
-      h('div',{style:{display:'grid',gridTemplateColumns:'80px repeat(6,1fr)',gap:'2px',alignItems:'center'}},
-        h('div',null),
-        DS6.map((d,i)=>h('div',{key:i,style:{textAlign:'center',fontSize:'11px',fontWeight:'700',color:'#999'}},d))
-      ),
-      h('div',{style:{display:'grid',gridTemplateColumns:'80px repeat(6,1fr)',gap:'2px',marginTop:'4px',alignItems:'center'}},
+      diaHeader,
+      h('div',{style:{display:'grid',gridTemplateColumns:'72px repeat(6,1fr)',gap:'2px',alignItems:'center'}},
         h('div',{style:{fontSize:'11px',color:'#555',fontWeight:'600'}},'Hidrat.'),
-        nut.slice(0,6).map((d,di)=>{
-          const cur=d.agua||'';
-          const st=AGUA_STATES.find(s=>s.v===cur)||AGUA_STATES[0];
-          return h('button',{key:di,onClick:()=>cycleAgua(di),style:{width:'100%',aspectRatio:'1',borderRadius:'50%',border:'2px solid '+st.color,background:cur?st.color+'22':'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',padding:0}},st.ic);
+        nut.slice(0,6).map(function(d,di){
+          var cur=(d.agua)||'';
+          var st=AGUA_STATES.find(function(s){return s.v===cur;})||AGUA_STATES[0];
+          return h('button',{key:di,onClick:function(){cycleAgua(di);},style:{width:'100%',aspectRatio:'1',borderRadius:'50%',border:'2px solid '+st.color,background:cur?st.color+'22':'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px',padding:0}},st.ic);
         })
       )
     ),
-
-    // SUEÑO, TÓXICOS, NEAT
+    // HABITOS
     h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'8px'}},'Hábitos diarios'),
-      h('div',{style:{display:'grid',gridTemplateColumns:'80px repeat(6,1fr)',gap:'2px',marginBottom:'6px',alignItems:'center'}},
-        h('div',null),
-        DS6.map((d,i)=>h('div',{key:i,style:{textAlign:'center',fontSize:'11px',fontWeight:'700',color:'#999'}},d))
-      ),
+      h('div',{style:Object.assign({},lbl,{marginBottom:'10px'})},'Habitos diarios'),
+      diaHeader,
       [
-        {key:'sleep',label:'Sueño ≥7hs',colorOn:G},
-        {key:'toxics',label:'Sin tóxicos',colorOn:G,invert:true},
-        {key:'actExtra',label:'NEAT',colorOn:B},
-      ].map(row=>h('div',{key:row.key,style:{display:'grid',gridTemplateColumns:'80px repeat(6,1fr)',gap:'2px',marginBottom:'4px',alignItems:'center'}},
-        h('div',{style:{fontSize:'11px',color:'#555',fontWeight:'600'}},row.label),
-        (hab[row.key]||Array(7).fill(false)).slice(0,6).map((val,di)=>{
-          const on=row.invert?!val:val;
-          return h('button',{key:di,onClick:()=>toggleHab(row.key,di),style:{width:'100%',aspectRatio:'1',borderRadius:'50%',border:'2px solid '+(on?row.colorOn:'#E0E0E0'),background:on?row.colorOn+'22':'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',padding:0}},on?'✅':'○');
-        })
-      ))
+        {key:'sleep',label:'Sueno',desc:'Dormiste 7hs o mas',colorOn:G,invert:false},
+        {key:'toxics',label:'Toxicos',desc:'Alcohol, tabaco u otros',colorOn:R,invert:true},
+        {key:'actExtra',label:'NEAT',desc:'Caminar, bici, escaleras fuera del gym',colorOn:B,invert:false},
+      ].map(function(row,ri){
+        return h('div',{key:row.key,style:{marginBottom:ri<2?'12px':'0'}},
+          h('div',{style:{marginBottom:'4px'}},
+            h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333'}},row.label),
+            h('div',{style:{fontSize:'10px',color:'#999'}},row.desc)
+          ),
+          h('div',{style:{display:'grid',gridTemplateColumns:'72px repeat(6,1fr)',gap:'2px',alignItems:'center'}},
+            h('div',null),
+            (hab[row.key]||Array(7).fill(false)).slice(0,6).map(function(val,di){
+              var on=row.invert?!val:val;
+              var col=row.key==='toxics'?(on?G+'22':R+'22'):(on?row.colorOn+'22':'transparent');
+              var border=row.key==='toxics'?(on?G:R):(on?row.colorOn:'#E0E0E0');
+              return Bub(border,col,on?'✅':'○',function(){toggleHab(row.key,di);});
+            })
+          )
+        );
+      })
     ),
-
     // MEDICIONES
     h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'8px'}},'Mediciones'),
+      h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Mediciones'),
+      h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'10px',lineHeight:'1.5'}},'En ayunas y luego de ir al bano. Hasta 3 tomas durante la semana.'),
       h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'12px',padding:'10px',background:'#F8F8F8',borderRadius:'8px'}},
-        h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'2px'}},'Promedio peso'),h('div',{style:{fontWeight:'800',fontSize:'16px'}},pp+' kg')),
+        h('div',{style:{textAlign:'center'}},
+          h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'2px'}},'Promedio peso'),
+          h('div',{style:{fontWeight:'800',fontSize:'16px'}},pp+' kg')
+        ),
         h('div',{style:{width:'1px',background:'rgba(0,0,0,0.08)'}}),
-        h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'2px'}},'Promedio cintura'),h('div',{style:{fontWeight:'800',fontSize:'16px'}},pc+' cm'))
+        h('div',{style:{textAlign:'center'}},
+          h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'2px'}},'Promedio cintura'),
+          h('div',{style:{fontWeight:'800',fontSize:'16px'}},pc+' cm')
+        )
       ),
-      hab.meds.map((m,i)=>h('div',{key:i,style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'8px'}},
-        h('div',null,h('div',{style:lbl},'Toma '+(i+1)+' — Peso'),h('input',{type:'text',inputMode:'decimal',placeholder:'ej: 82.5',value:m.p,onChange:e=>{const n=[...hab.meds];n[i]={...n[i],p:e.target.value};setHab({...hab,meds:n});setSaved(false);},style:inp})),
-        h('div',null,h('div',{style:lbl},'Toma '+(i+1)+' — Cintura'),h('input',{type:'text',inputMode:'decimal',placeholder:'ej: 88.0',value:m.c,onChange:e=>{const n=[...hab.meds];n[i]={...n[i],c:e.target.value};setHab({...hab,meds:n});setSaved(false);},style:inp}))
-      ))
+      hab.meds.map(function(m,i){
+        return h('div',{key:i,style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'8px'}},
+          h('div',null,
+            h('div',{style:lbl},'Toma '+(i+1)+' — Peso'),
+            h('input',{type:'text',inputMode:'decimal',placeholder:'ej: 82.5',value:m.p,onChange:function(e){var n=hab.meds.slice();n[i]=Object.assign({},n[i],{p:e.target.value});setHab(Object.assign({},hab,{meds:n}));setSaved(false);},style:inp})
+          ),
+          h('div',null,
+            h('div',{style:lbl},'Toma '+(i+1)+' — Cintura'),
+            h('input',{type:'text',inputMode:'decimal',placeholder:'ej: 88.0',value:m.c,onChange:function(e){var n=hab.meds.slice();n[i]=Object.assign({},n[i],{c:e.target.value});setHab(Object.assign({},hab,{meds:n}));setSaved(false);},style:inp})
+          )
+        );
+      })
     ),
-
     // SENSACIONES
     h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'10px'}},'Sensaciones de la semana'),
-      Object.entries(SENS).map(([key,cfg2])=>h('div',{key,style:{marginBottom:'12px'}},
-        h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},cfg2.l),
-        h('div',{style:{display:'flex',gap:'4px'}},cfg2.opts.map((opt,i)=>{
-          const sel=(hab.sens||{})[key]===opt;
-          return h('button',{key:i,onClick:()=>{setHab({...hab,sens:{...(hab.sens||{}),[key]:opt}});setSaved(false);},
-            style:{flex:1,padding:'7px 4px',fontSize:'10px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',
-            color:sel?'#fff':'#666',background:sel?cfg2.colors[i]:'#fff',borderColor:sel?cfg2.colors[i]:'rgba(0,0,0,0.1)',lineHeight:'1.3',textAlign:'center'}},opt);
-        }))
-      )),
+      h('div',{style:Object.assign({},lbl,{marginBottom:'10px'})},'Sensaciones de la semana'),
+      Object.entries(SENS).map(function(entry){
+        var key=entry[0];var cfg2=entry[1];
+        return h('div',{key:key,style:{marginBottom:'12px'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},cfg2.l),
+          h('div',{style:{display:'flex',gap:'4px'}},
+            cfg2.opts.map(function(opt,i){
+              var sel=(hab.sens||{})[key]===opt;
+              return h('button',{key:i,onClick:function(){setHab(Object.assign({},hab,{sens:Object.assign({},(hab.sens||{}),{[key]:opt})}));setSaved(false);},
+                style:{flex:1,padding:'7px 4px',fontSize:'10px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',
+                color:sel?'#fff':'#666',background:sel?cfg2.colors[i]:'#fff',borderColor:sel?cfg2.colors[i]:'rgba(0,0,0,0.1)',lineHeight:'1.3',textAlign:'center'}},opt);
+            })
+          )
+        );
+      }),
       h('div',null,
         h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},'Nota libre (opcional)'),
-        h('textarea',{placeholder:'Algo que quieras mencionar...',value:(hab.sens||{}).nota||'',onChange:e=>{setHab({...hab,sens:{...(hab.sens||{}),nota:e.target.value}});setSaved(false);},
-          style:{...inp,height:'72px',resize:'none',fontSize:'13px',padding:'10px',lineHeight:'1.4'}})
+        h('textarea',{placeholder:'Algo que quieras mencionar...',value:(hab.sens||{}).nota||'',onChange:function(e){setSens('nota',e.target.value);},
+          style:Object.assign({},inp,{height:'72px',resize:'none',fontSize:'13px',padding:'10px',lineHeight:'1.4'})})
       )
     ),
-
     // DOLOR ARTICULAR
     h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'10px'}},'Dolor articular'),
-      h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'8px'}},'Esta semana, tuviste dolor articular?'),
+      h('div',{style:Object.assign({},lbl,{marginBottom:'10px'})},'Dolor articular'),
+      h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'8px'}},'Tuviste dolor articular esta semana?'),
       h('div',{style:{display:'flex',gap:'8px',marginBottom:dolor==='si'?'12px':'0'}},
-        h('button',{onClick:()=>setSens('dolor','no'),style:{flex:1,padding:'10px',fontSize:'12px',fontWeight:dolor==='no'?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',color:dolor==='no'?'#fff':G,background:dolor==='no'?G:'#fff',borderColor:G}},'No'),
-        h('button',{onClick:()=>setSens('dolor','si'),style:{flex:1,padding:'10px',fontSize:'12px',fontWeight:dolor==='si'?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',color:dolor==='si'?'#fff':R,background:dolor==='si'?R:'#fff',borderColor:R}},'Si')
+        h('button',{onClick:function(){setSens('dolor','no');},style:{flex:1,padding:'10px',fontSize:'12px',fontWeight:dolor==='no'?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',color:dolor==='no'?'#fff':G,background:dolor==='no'?G:'#fff',borderColor:G}},'No'),
+        h('button',{onClick:function(){setSens('dolor','si');},style:{flex:1,padding:'10px',fontSize:'12px',fontWeight:dolor==='si'?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',color:dolor==='si'?'#fff':R,background:dolor==='si'?R:'#fff',borderColor:R}},'Si')
       ),
       dolor==='si'&&h('div',null,
         h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},'Zona'),
         h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
-          ZONAS_DOLOR.map(z=>h('button',{key:z,onClick:()=>setSens('dolorZona',z),style:{padding:'6px 12px',fontSize:'11px',fontWeight:dolorZona===z?'700':'400',cursor:'pointer',borderRadius:'20px',border:'1px solid',color:dolorZona===z?'#fff':'#666',background:dolorZona===z?'#374151':'#fff',borderColor:dolorZona===z?'#374151':'rgba(0,0,0,0.1)'}},z))
+          ZONAS_DOLOR.map(function(z){
+            return h('button',{key:z,onClick:function(){setSens('dolorZona',z);},style:{padding:'6px 12px',fontSize:'11px',fontWeight:dolorZona===z?'700':'400',cursor:'pointer',borderRadius:'20px',border:'1px solid',color:dolorZona===z?'#fff':'#666',background:dolorZona===z?'#374151':'#fff',borderColor:dolorZona===z?'#374151':'rgba(0,0,0,0.1)'}},z);
+          })
         ),
         h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},'Intensidad'),
         h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
-          INTENSIDAD_DOLOR.map((d,i)=>{
-            const colors=['#F59E0B',O,R];const sel=dolorIntensidad===d;
-            return h('button',{key:d,onClick:()=>setSens('dolorIntensidad',d),style:{padding:'8px 12px',fontSize:'11px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',textAlign:'left',color:sel?'#fff':'#666',background:sel?colors[i]:'#fff',borderColor:sel?colors[i]:'rgba(0,0,0,0.1)'}},d);
+          INTENSIDAD_DOLOR.map(function(d,i){
+            var colors=['#F59E0B',O,R];var sel=dolorInt===d;
+            return h('button',{key:d,onClick:function(){setSens('dolorIntensidad',d);},style:{padding:'8px 12px',fontSize:'11px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',textAlign:'left',color:sel?'#fff':'#666',background:sel?colors[i]:'#fff',borderColor:sel?colors[i]:'rgba(0,0,0,0.1)'}},d);
           })
         )
       )
     ),
-
     // CONTEXTO DE VIDA
     h('div',{style:card},
-      h('div',{style:{...lbl,marginBottom:'10px'}},'Contexto de vida esta semana'),
+      h('div',{style:Object.assign({},lbl,{marginBottom:'10px'})},'Contexto de vida esta semana'),
       h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
         [
           {v:'normal',l:'Semana normal — todo como siempre',c:G},
           {v:'exigente',l:'Semana con cambios — algo fuera de lo habitual',c:O},
           {v:'muy_exigente',l:'Semana muy diferente — viaje, enfermedad u otro evento',c:R},
-        ].map(function(ctx){
-          const sel=contexto===ctx.v;
-          return h('button',{key:ctx.v,onClick:function(){setSens('contextoVida',ctx.v);},style:{padding:'10px 14px',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',textAlign:'left',color:sel?'#fff':'#555',background:sel?ctx.c:'#fff',borderColor:sel?ctx.c:'rgba(0,0,0,0.1)'}},ctx.l);
+        ].map(function(item){
+          var sel=ctx===item.v;
+          return h('button',{key:item.v,onClick:function(){setSens('contextoVida',item.v);},style:{padding:'10px 14px',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',textAlign:'left',color:sel?'#fff':'#555',background:sel?item.c:'#fff',borderColor:sel?item.c:'rgba(0,0,0,0.1)'}},item.l);
         })
       )
     )
