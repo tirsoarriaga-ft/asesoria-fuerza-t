@@ -941,9 +941,9 @@ const CONTEXTO_VIDA=[
 // ── MI SEMANA ─────────────────────────────────────────────────────────
 var MEAL_STATES=[
   {v:'',ic:'○',color:'#E0E0E0',label:''},
-  {v:'ok',ic:'✅',color:'#1D9E75',label:'Cumpli'},
-  {v:'par',ic:'↔',color:'#D97706',label:'Comi distinto'},
-  {v:'no',ic:'❌',color:'#EF4444',label:'No comi'},
+  {v:'ok',ic:'✅',color:'#1D9E75',label:'Cumpli menu y cantidades'},
+  {v:'par',ic:'↔',color:'#D97706',label:'Cumpli menu, no cantidades'},
+  {v:'no',ic:'❌',color:'#EF4444',label:'Comi por fuera del menu'},
 ];
 var AGUA_STATES=[
   {v:'',ic:'○',color:'#E0E0E0'},
@@ -1008,6 +1008,7 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg}){
     // COMIDAS
     h('div',{style:card},
       h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Comidas'),
+      h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'6px'}},'Como estuvo cada comida?'),
       h('div',{style:{display:'flex',gap:'10px',marginBottom:'10px',flexWrap:'wrap'}},
         MEAL_STATES.slice(1).map(function(ms){
           return h('div',{key:ms.v,style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'10px',color:'#666'}},
@@ -1030,10 +1031,11 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg}){
     ),
     // AGUA
     h('div',{style:card},
-      h('div',{style:Object.assign({},lbl,{marginBottom:'6px'})},'Agua diaria'),
+      h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Agua'),
+      h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'6px'}},'Cuanta agua tomaste hoy?'),
       h('div',{style:{marginBottom:'10px'}},
-        h('div',{style:{fontSize:'11px',color:G,fontWeight:'600',marginBottom:'3px'}},'● Maximo: al menos '+aguaMaxStr),
-        h('div',{style:{fontSize:'11px',color:O,fontWeight:'600',marginBottom:'3px'}},'◐ Minimo: al menos '+aguaMinStr),
+        h('div',{style:{fontSize:'11px',color:G,fontWeight:'600',marginBottom:'3px'}},'● Perfecto: '+aguaMaxStr+' o mas'),
+        h('div',{style:{fontSize:'11px',color:O,fontWeight:'600',marginBottom:'3px'}},'◐ Minimo: al menos '+aguaMinStr+' (minimo eficiente)'),
         h('div',{style:{fontSize:'11px',color:R,fontWeight:'600'}},'○ Insuficiente: menos de '+aguaMinStr)
       ),
       diaHeader,
@@ -1051,9 +1053,9 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg}){
       h('div',{style:Object.assign({},lbl,{marginBottom:'10px'})},'Habitos diarios'),
       diaHeader,
       [
-        {key:'sleep',label:'Sueno',desc:'Dormiste 7hs o mas',colorOn:G,invert:false},
-        {key:'toxics',label:'Toxicos',desc:'Alcohol, tabaco u otros',colorOn:R,invert:true},
-        {key:'actExtra',label:'NEAT',desc:'Caminar, bici, escaleras fuera del gym',colorOn:B,invert:false},
+        {key:'sleep',label:'Sueno',desc:'Marca los dias que dormiste 7hs o mas',colorOn:G,invert:false},
+        {key:'toxics',label:'Toxicos',desc:'Marca los dias con alcohol, ultraprocesados o tabaco',colorOn:R,invert:true},
+        {key:'actExtra',label:'NEAT',desc:'Marca los dias con actividad fisica fuera del gym (caminar, bici, escaleras)',colorOn:B,invert:false},
       ].map(function(row,ri){
         return h('div',{key:row.key,style:{marginBottom:ri<2?'12px':'0'}},
           h('div',{style:{marginBottom:'4px'}},
@@ -1075,7 +1077,8 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg}){
     // MEDICIONES
     h('div',{style:card},
       h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Mediciones'),
-      h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'10px',lineHeight:'1.5'}},'En ayunas y luego de ir al bano. Hasta 3 tomas durante la semana.'),
+      h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'4px'}},'Pesate y medi tu cintura en ayunas, despues de ir al bano.'),
+      h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'10px'}},'Minimo 1 toma a la semana (minimo eficiente). 3 tomas es el cumplimiento perfecto.'),
       h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'12px',padding:'10px',background:'#F8F8F8',borderRadius:'8px'}},
         h('div',{style:{textAlign:'center'}},
           h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'2px'}},'Promedio peso'),
@@ -1102,7 +1105,8 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg}){
     ),
     // SENSACIONES
     h('div',{style:card},
-      h('div',{style:Object.assign({},lbl,{marginBottom:'10px'})},'Sensaciones de la semana'),
+      h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Sensaciones'),
+      h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'10px'}},'Marca la opcion que mejor refleje tu semana.'),
       Object.entries(SENS).map(function(entry){
         var key=entry[0];var cfg2=entry[1];
         return h('div',{key:key,style:{marginBottom:'12px'}},
@@ -1149,7 +1153,8 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg}){
     ),
     // CONTEXTO DE VIDA
     h('div',{style:card},
-      h('div',{style:Object.assign({},lbl,{marginBottom:'10px'})},'Contexto de vida esta semana'),
+      h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Contexto de vida'),
+      h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'10px'}},'Como fue tu semana en general?'),
       h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
         [
           {v:'normal',l:'Semana normal — todo como siempre',c:G},
