@@ -1169,6 +1169,11 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg}){
   );
 }
 
+function SelBtn({val,cur,onClick,color}){
+  var sel=cur===val;
+  var c=color||'#374151';
+  return h('button',{onClick:onClick,style:{padding:'6px 10px',fontSize:'11px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'20px',border:'1px solid',color:sel?'#fff':'#666',background:sel?c:'#fff',borderColor:sel?c:'rgba(0,0,0,0.1)',transition:'all 0.15s'}},val);
+}
 const HIIT_SENS={
   'Tabata':'Muy alta — vas al limite en cada ronda',
   'AMRAP':'Alta — ritmo sostenido todo el tiempo',
