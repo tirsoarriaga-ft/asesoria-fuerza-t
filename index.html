@@ -1169,6 +1169,14 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg}){
   );
 }
 
+const HIIT_SENS={
+  'Tabata':'Muy alta — vas al limite en cada ronda',
+  'AMRAP':'Alta — ritmo sostenido todo el tiempo',
+  'EMOM':'Moderada-alta — explosion + recuperacion',
+  'Circuito':'Moderada — flujo continuo entre ejercicios',
+  'Intervalos':'Variable — depende de la relacion trabajo/descanso',
+  'Steady State':'Baja-moderada — ritmo constante y controlado',
+};
 function Hiit({cfg,hiitData,setHiitData,setSaved}){
   const sess=cfg?.hiit||[];
   const [activeS,setActiveS]=useState(sess[0]?.id||'A');
