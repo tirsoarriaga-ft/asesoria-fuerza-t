@@ -246,6 +246,21 @@ function AjustarSemana({onClose}){
   function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
   function lsRm(k){try{localStorage.removeItem(k);}catch(e){}}
 
+  // Cargar nombres de ejercicios para mostrar en lugar de IDs
+  var [exNames,setExNames]=useState({});
+  useEffect(function(){
+    fetch(SCRIPT_URL+'?action=ejercicios')
+      .then(function(r){return r.json();})
+      .then(function(data){
+        var map={};
+        (data||[]).forEach(function(ex){
+          if(ex.id!==undefined&&ex.n)map[String(ex.id)]=ex.n;
+        });
+        setExNames(map);
+      })
+      .catch(function(){});
+  },[]);
+
   function cargar(){
     var u=nombre.trim();if(!u)return;
     var p=pref(u);
@@ -398,7 +413,9 @@ function AjustarSemana({onClose}){
                           h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.3)',marginBottom:'6px',letterSpacing:'0.08em'}},'KG USADOS ESTA SEM (skUsed) — toca para editar'),
                           skEntries.map(function(entry,ei){
                             return h('div',{key:ei,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',borderBottom:ei<skEntries.length-1?'1px solid rgba(255,255,255,0.06)':'none'}},
-                              h('span',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)'}},'Ses.'+entry.sess+' · Ej.'+entry.exId),
+                              h('span',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)'}},
+                                'Ses.'+entry.sess+' · '+(exNames[String(entry.exId)]||'Ej.'+entry.exId)
+                              ),
                               h('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
                                 h('input',{type:'number',defaultValue:entry.kg,style:{width:'60px',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',color:'#fff',borderRadius:'6px',padding:'3px 6px',fontSize:'12px',textAlign:'right'},
                                   onBlur:function(e){
