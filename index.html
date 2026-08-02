@@ -307,7 +307,8 @@ function AjustarSemana({onClose}){
     }
     lsSet(key,JSON.stringify(merged));
     lsSet(p+'draft_'+sem.id,JSON.stringify({sr:merged.sr,n:merged.n,h:merged.h,hiit:merged.hiit}));
-    setMsg('✅ Sem '+sem.id+' restaurada. Navegá a esa semana para ver los datos.');
+    setMsg('Sem '+sem.id+' restaurada. Recargando la app...');
+    setTimeout(function(){window.location.href=window.location.pathname;},1500);
   }
 
   function guardar(){
