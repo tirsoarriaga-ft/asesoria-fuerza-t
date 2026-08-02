@@ -21,7 +21,7 @@ input:focus,textarea:focus,select:focus{border-color:#E8541A!important;box-shado
 <div id="root"></div>
 <script>
 const {useState,useEffect,useRef,useMemo,useCallback,createElement:h}=React;
-const SCRIPT_URL='https://script.google.com/macros/s/AKfycbzY5DtRfnpWa8vpp--12FXrK7YX5Zpryr4JBH97mzr0JHf6S3_ZcPDQfWb25ThP1rnw/exec';
+const SCRIPT_URL='https://script.google.com/macros/s/AKfycbwjqifLptX8JDpkE0mZfOVjNfwNHzVyWmtZwdxmFd3jhB9nUWWgSEVBL7ombGFp6EQZ/exec';
 const G='#1D9E75',B='#378ADD',O='#D97706',R='#EF4444';
 const AC='#E8541A'; // acento Fuerza T
 const AC2='#C0392B'; // acento degradado
@@ -1539,11 +1539,17 @@ function App(){
       const draftStr=localStorage.getItem(`ase_${user}_draft_${wkId}`);
       const savedStr=localStorage.getItem(SK(wkId,user));
       const d=draftStr?JSON.parse(draftStr):(savedStr?JSON.parse(savedStr):null);
-      if(d){if(d.sr)setSessionReps(d.sr);if(d.n)setNut(migrateNut(d.n));if(d.h)setHab(migrateHab(d.h));if(d.hiit)setHiitData(d.hiit);
-        // saved=true solo si la sem guardada corresponde a esta sem
+      if(d){
+        if(d.sr)setSessionReps(d.sr);
+        if(d.n)setNut(migrateNut(d.n));
+        if(d.h)setHab(migrateHab(d.h));
+        if(d.hiit)setHiitData(d.hiit);
         setSaved(!!savedStr);
+      }else{
+        // Sin datos locales — marcar para restaurar desde sheet después de cargar ejercicios
+        setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
+        localStorage.setItem(`ase_${user}_needsRestore_${wkId}`,'1');
       }
-      else{setNut(iN());setHab(iH());setSessionReps({});setSaved(false);}
     }catch(e){}
     setCfg(()=>{try{return JSON.parse(localStorage.getItem(CFG_KEY(user)))||defCfg;}catch(e){return defCfg;}});
     try{
@@ -1575,7 +1581,36 @@ function App(){
       }).catch(()=>{}).finally(()=>{
         setLoadingExes(false);
         setExesReady(true);
-        setTimeout(()=>{draftReady.current=true;},200);
+        // Verificar si hay que restaurar desde el sheet
+        const wkId=`sem_${localStorage.getItem(`ase_${user}_wknum`)||'1'}`;
+        const needsRestore=localStorage.getItem(`ase_${user}_needsRestore_${wkId}`);
+        if(needsRestore){
+          localStorage.removeItem(`ase_${user}_needsRestore_${wkId}`);
+          fetch(SCRIPT_URL+'?action=drafts')
+            .then(r=>r.json())
+            .then(rows=>{
+              const row=(rows||[]).find(r=>
+                String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase()&&
+                String(r.SemanID||'').trim()===wkId
+              );
+              if(row&&row.Draft){
+                try{
+                  const d2=JSON.parse(row.Draft);
+                  if(d2.sr)setSessionReps(d2.sr);
+                  if(d2.n)setNut(migrateNut(d2.n));
+                  if(d2.h)setHab(migrateHab(d2.h));
+                  if(d2.hiit)setHiitData(d2.hiit);
+                  localStorage.setItem(`ase_${user}_draft_${wkId}`,row.Draft);
+                }catch(e){}
+              }
+            })
+            .catch(()=>{})
+            .finally(()=>{
+              setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},400);
+            });
+        }else{
+          setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},400);
+        }
       });
   },[user]);
 
@@ -1649,13 +1684,55 @@ function App(){
   const logout=()=>{if(confirm('¿Cambiar nombre?')){localStorage.removeItem(USER_KEY);setUser(null);}};
 
   function load(id){
+    dataLoaded.current=false; // bloquear auto-save mientras cargamos
+    draftReady.current=false;
     try{
-      const draft=localStorage.getItem(`ase_${user}_draft_${id}`);
-      const saved=localStorage.getItem(SK(id,user));
-      const d=draft?JSON.parse(draft):(saved?JSON.parse(saved):null);
-      if(d){setNut(migrateNut(d.n));setHab(migrateHab(d.h));if(d.hiit)setHiitData(d.hiit);else setHiitData(iHiit());if(d.sr)setSessionReps(d.sr);else setSessionReps({});setSaved(!!saved);}
-      else{setNut(iN());setHab(iH());setSessionReps({});setSaved(false);}
-    }catch(e){setNut(iN());setHab(iH());setSessionReps({});setSaved(false);}
+      const draft=localStorage.getItem('ase_'+user+'_draft_'+id);
+      const saved2=localStorage.getItem(SK(id,user));
+      const d=draft?JSON.parse(draft):(saved2?JSON.parse(saved2):null);
+      if(d){
+        setNut(migrateNut(d.n));
+        setHab(migrateHab(d.h));
+        if(d.hiit)setHiitData(d.hiit);else setHiitData(iHiit());
+        if(d.sr)setSessionReps(d.sr);else setSessionReps({});
+        setSaved(!!saved2);
+        loadH();
+        setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},300);
+      }else{
+        // No hay datos locales — intentar restaurar desde el sheet
+        fetch(SCRIPT_URL+'?action=drafts')
+          .then(function(r){return r.json();})
+          .then(function(rows){
+            const row=(rows||[]).find(function(r){
+              return String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase()&&
+                     String(r.SemanID||'').trim()===id;
+            });
+            if(row&&row.Draft){
+              try{
+                const d2=JSON.parse(row.Draft);
+                if(d2.sr)setSessionReps(d2.sr);
+                if(d2.n)setNut(migrateNut(d2.n));
+                if(d2.h)setHab(migrateHab(d2.h));
+                if(d2.hiit)setHiitData(d2.hiit);
+                // Guardar en localStorage para la próxima vez
+                localStorage.setItem('ase_'+user+'_draft_'+id,row.Draft);
+              }catch(e2){}
+            }else{
+              setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
+            }
+          })
+          .catch(function(){setNut(iN());setHab(iH());setSessionReps({});setSaved(false);})
+          .finally(function(){
+            loadH();
+            setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},300);
+          });
+        return; // salir — el finally del fetch habilitará el auto-save
+      }
+    }catch(e){
+      setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
+      loadH();
+      setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},300);
+    }
     loadH();
   }
   function loadH(){
@@ -1800,6 +1877,11 @@ function App(){
   function saveProgress(){
     if(weekLocked)return;
     setCumplWarning(false);setSaveErrors([]);doSave(false);
+    // Backup silencioso al sheet
+    try{
+      var draftBk={sr:sessionReps,n:nut,h:hab,hiit:hiitData};
+      fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'draft',user:user,wi:wk.id,draft:draftBk})}).catch(function(){});
+    }catch(e){}
   }
   function resetWeek(){
     if(!window.confirm('¿Resetear la semana actual? Se borrarán las reps, comidas y hábitos cargados. Los kg se mantienen.'))return;
@@ -1826,24 +1908,22 @@ function App(){
     setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
     draftReady.current=false;
     load(`sem_${prevNum}`);
-    setTimeout(()=>{draftReady.current=true;},100);
   }
   const draftReady=useRef(false);
+  const dataLoaded=useRef(false); // true solo cuando el draft fue cargado completamente
 
-  // Auto-guardar borrador — protección total contra sobreescritura con estado vacío
+  // Auto-guardar borrador — NUNCA corre hasta que dataLoaded sea true
   useEffect(()=>{
-    if(!user||!wk.id||!wk.num||!draftReady.current)return;
-    const hasReps=Object.values(sessionReps).some(s=>Object.values(s||{}).some(e=>Object.values(e||{}).some(v=>v)));
-    const hasNut=nut.some(d=>Object.values(d.m||{}).some(Boolean)||d.ak);
-    const hasHab=(hab.sleep||[]).some(Boolean)||(hab.actExtra||[]).some(Boolean)||hab.meds?.some(m=>m.p||m.c)||(hab.sens?.energia);
-    if(!hasReps&&!hasNut&&!hasHab){
-      // Verificar si ya hay datos guardados antes de sobreescribir con vacío
-      const existing=localStorage.getItem(`ase_${user}_draft_${wk.id}`);
-      if(existing)return; // nunca pisar datos existentes con estado vacío
-      return;
-    }
+    if(!user||!wk.id||!wk.num)return;
+    if(!dataLoaded.current)return; // bloqueo absoluto hasta que los datos estén cargados
+    if(!draftReady.current)return;
+    // Solo guardar si hay datos reales
+    const hasReps=Object.values(sessionReps).some(function(s){return Object.values(s||{}).some(function(e){return Object.values(e||{}).some(function(v){return v;});});});
+    const hasNut=nut.some(function(d){return Object.values(d.m||{}).some(Boolean)||d.agua||d.ak;});
+    const hasHab=(hab.sleep||[]).some(Boolean)||(hab.actExtra||[]).some(Boolean)||(hab.meds||[]).some(function(m){return m.p||m.c;})||((hab.sens||{}).energia);
+    if(!hasReps&&!hasNut&&!hasHab)return; // nunca guardar estado vacío
     const draft={sr:sessionReps,n:nut,h:hab,hiit:hiitData};
-    localStorage.setItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(draft));
+    localStorage.setItem('ase_'+user+'_draft_'+wk.id,JSON.stringify(draft));
   },[sessionReps,nut,hab,hiitData,user,wk.id]);
 
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
@@ -1878,11 +1958,12 @@ function App(){
     const opt=exOptions[selExOpt];if(!opt)return[];
     return hist.map(function(w){
       const exData=w.e?w.e.find(function(e){return e.id===opt.exId;}):null;
-      const reps=w.sr&&w.sr[opt.sessId]?w.sr[opt.sessId][opt.exId]:null;
-      // Use skUsed first (kg actually used that week), fallback to sk, then exData
-      const kg=(w.skUsed&&w.skUsed[opt.sessId]?w.skUsed[opt.sessId][opt.exId]:null)||
-               (w.sk&&w.sk[opt.sessId]?w.sk[opt.sessId][opt.exId]:null)||
-               (exData?exData.kg:null);
+      const reps=w.sr&&w.sr[opt.sessId]?(w.sr[opt.sessId][opt.exId]||w.sr[opt.sessId][String(opt.exId)]):null;
+      // Try both string and number keys for skUsed and sk
+      var skSess=w.skUsed&&w.skUsed[opt.sessId];
+      var skKg=skSess?(skSess[opt.exId]||skSess[String(opt.exId)]||skSess[parseInt(opt.exId)]):null;
+      if(!skKg){var sk2=w.sk&&w.sk[opt.sessId];skKg=sk2?(sk2[opt.exId]||sk2[String(opt.exId)]||sk2[parseInt(opt.exId)]):null;}
+      const kg=skKg||(exData?exData.kg:null);
       if(!kg||!reps)return null;
       const r1=parseInt(reps.r1)||0;
       if(r1===0)return null;
