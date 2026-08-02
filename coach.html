@@ -315,6 +315,179 @@ function ClientList({data,rutinas,onSelect,onRefresh}){
 }
 
 // ── CLIENT DETAIL ─────────────────────────────────────────────────────
+// ── CALCULADORA DE DIAGNÓSTICO ─────────────────────────────────────────
+function calcDiagnostico(rutina, weeks){
+  var peso=parseFloat(rutina&&rutina.PesoRef||0);
+  var altura=parseFloat(rutina&&rutina.Altura||0);
+  var edad=parseFloat(rutina&&rutina.Edad||0);
+  var sexo=String(rutina&&rutina.Sexo||'M').toUpperCase();
+  var template=parseFloat(rutina&&rutina.Template||2000);
+  var objetivo=String(rutina&&rutina.Objetivo||'mantenimiento').toLowerCase();
+
+  // Cintura del último reporte
+  var cintura=0;
+  for(var i=weeks.length-1;i>=0;i--){
+    var c=parseFloat(weeks[i].Cintura||0);
+    if(c>0){cintura=c;break;}
+  }
+
+  if(!peso||!altura||!edad){return null;}
+
+  // IMC y %grasa (Deurenberg)
+  var imc=peso/(altura/100*altura/100);
+  var sexNum=sexo==='M'?1:0;
+  var pctGrasa=(1.2*imc)+(0.23*edad)-(10.8*sexNum)-5.4;
+  pctGrasa=Math.max(3,Math.min(50,pctGrasa));
+
+  // Composicion
+  var masaGrasa=peso*(pctGrasa/100);
+  var masaMagra=peso-masaGrasa;
+
+  // Criterio cintura/altura
+  var cinturaCrit=cintura>0?(cintura/(altura)):null;
+  var superaCriterio=cinturaCrit!==null&&cinturaCrit>0.5;
+  var cinturObj=altura*0.47;
+
+  // Macros objetivo
+  var protDia=Math.round(peso*1.9);
+  var grasaDiaMin=Math.max(Math.round(peso*0.5),Math.round(template*0.25/9));
+  var hidrDia=Math.round((template-(protDia*4)-(grasaDiaMin*9))/4);
+
+  var resultado={
+    peso,altura,edad,sexo,cintura,imc:imc.toFixed(1),
+    pctGrasa:pctGrasa.toFixed(1),
+    masaGrasa:masaGrasa.toFixed(1),
+    masaMagra:masaMagra.toFixed(1),
+    cinturaCrit:cinturaCrit?(cinturaCrit).toFixed(3):null,
+    superaCriterio,
+    cinturObj:cinturObj.toFixed(1),
+    protDia,grasaDiaMin,hidrDia,template,objetivo,
+    kgGrasaPerder:null,pesoObj:null,semanasEst:null,deficitDia:null,
+  };
+
+  // Si supera criterio → calcular cuanto bajar
+  if(superaCriterio&&cintura>0){
+    var cmABajar=cintura-cinturObj;
+    // ~1.5kg grasa por cm de cintura (rango 1-2, usamos conservador)
+    var kgGrasaPerder=cmABajar*1.5;
+    // %grasa objetivo según sexo
+    var pctGrasaObj=sexo==='M'?14:24;
+    var pesoObj=masaMagra/(1-pctGrasaObj/100);
+    // Ritmo: 0.5% peso corporal/semana
+    var ritmo=peso*0.005;
+    var semanasEst=Math.round(kgGrasaPerder/ritmo);
+    var deficitDia=Math.round(ritmo*7200/7);
+    resultado.kgGrasaPerder=kgGrasaPerder.toFixed(1);
+    resultado.pesoObj=pesoObj.toFixed(1);
+    resultado.semanasEst=semanasEst;
+    resultado.deficitDia=deficitDia;
+    resultado.ritmo=ritmo.toFixed(2);
+  }
+
+  return resultado;
+}
+
+function DiagnosticoPanel({rutina,weeks}){
+  var d=calcDiagnostico(rutina,weeks);
+  if(!d)return h('div',{style:{...card,textAlign:'center',padding:'32px'}},
+    h('div',{style:{fontSize:'13px',color:'#999'}},'Falta cargar Altura, Edad o Sexo en la hoja Rutinas para este asesorado.')
+  );
+
+  var sexLabel=d.sexo==='M'?'Hombre':'Mujer';
+  var rangSal=d.sexo==='M'
+    ?(d.edad<40?'8-20%':d.edad<60?'11-22%':'13-25%')
+    :(d.edad<40?'21-33%':d.edad<60?'23-35%':'24-36%');
+
+  return h('div',null,
+    // Header composicion
+    h('div',{style:{...card,background:'#0A0A0A',border:'none'}},
+      h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'8px'}},'Composicion corporal estimada'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'8px'}},
+        [{l:'Peso',v:d.peso+' kg'},{l:'IMC',v:d.imc},{l:'%Grasa est.',v:d.pctGrasa+'%'}].map(function(item,i){
+          return h('div',{key:i,style:{background:'rgba(255,255,255,0.06)',borderRadius:'8px',padding:'10px',textAlign:'center'}},
+            h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#fff'}},item.v),
+            h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',marginTop:'2px'}},item.l)
+          );
+        })
+      ),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}},
+        [{l:'Masa magra',v:d.masaMagra+' kg'},{l:'Masa grasa',v:d.masaGrasa+' kg'}].map(function(item,i){
+          return h('div',{key:i,style:{background:'rgba(255,255,255,0.06)',borderRadius:'8px',padding:'10px',textAlign:'center'}},
+            h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#fff'}},item.v),
+            h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',marginTop:'2px'}},item.l)
+          );
+        })
+      ),
+      h('div',{style:{marginTop:'8px',fontSize:'10px',color:'rgba(255,255,255,0.3)',textAlign:'center'}},
+        sexLabel+' '+d.edad+' años · Saludable: '+rangSal+' (Gallagher 2000)'
+      )
+    ),
+
+    // Criterio cintura/altura
+    d.cintura>0&&h('div',{style:{...card,border:'2px solid '+(d.superaCriterio?R:G),marginBottom:'10px'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}},
+        h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#111'}},'Criterio cintura/altura'),
+        h('div',{style:{fontSize:'20px'}},d.superaCriterio?'🔴':'🟢')
+      ),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px'}},
+        [
+          {l:'Cintura actual',v:d.cintura+' cm'},
+          {l:'Indice C/A',v:d.cinturaCrit},
+          {l:'Cintura objetivo',v:d.cinturObj+' cm'},
+        ].map(function(item,i){
+          return h('div',{key:i,style:{background:'#F8F8F8',borderRadius:'8px',padding:'8px',textAlign:'center'}},
+            h('div',{style:{fontSize:'14px',fontWeight:'800',color:i===0&&d.superaCriterio?R:'#111'}},item.v),
+            h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},item.l)
+          );
+        })
+      ),
+      !d.superaCriterio&&h('div',{style:{marginTop:'8px',fontSize:'11px',color:G,fontWeight:'600'}},'Cintura dentro del rango saludable. El objetivo no es bajar grasa sino composicion y rendimiento.')
+    ),
+
+    // Plan de deficit (solo si supera criterio)
+    d.superaCriterio&&d.kgGrasaPerder&&h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'10px'}},'Plan de deficit estimado'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}},
+        [
+          {l:'Grasa a perder',v:d.kgGrasaPerder+' kg',c:O},
+          {l:'Peso objetivo',v:d.pesoObj+' kg',c:G},
+          {l:'Tiempo estimado',v:d.semanasEst+' sem',c:B},
+          {l:'Deficit diario',v:d.deficitDia+' kcal',c:O},
+        ].map(function(item,i){
+          return h('div',{key:i,style:{background:'#F8F8F8',borderRadius:'8px',padding:'10px',textAlign:'center'}},
+            h('div',{style:{fontSize:'16px',fontWeight:'900',color:item.c}},item.v),
+            h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},item.l)
+          );
+        })
+      ),
+      h('div',{style:{fontSize:'11px',color:'#666',lineHeight:'1.6',background:'#FEF3C7',borderRadius:'8px',padding:'10px'}},
+        'Ritmo: '+d.ritmo+' kg/sem (0.5% del peso corporal). Si el e1RM baja 2 semanas seguidas durante el deficit, reducir el ritmo.'
+      )
+    ),
+
+    // Macros objetivo
+    h('div',{style:card},
+      h('div',{style:{...lbl,marginBottom:'10px'}},'Macros diarios objetivo · '+d.template+' kcal'),
+      h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}},
+        [
+          {l:'Proteina',v:d.protDia+'g',sub:Math.round(d.protDia/d.peso*10)/10+'g/kg',c:G},
+          {l:'Grasa min.',v:d.grasaDiaMin+'g',sub:'min '+d.peso*0.5+'g',c:O},
+          {l:'Hidratos',v:d.hidrDia+'g',sub:'resto calórico',c:B},
+        ].map(function(item,i){
+          return h('div',{key:i,style:{background:'#F8F8F8',borderRadius:'8px',padding:'10px',textAlign:'center'}},
+            h('div',{style:{fontSize:'18px',fontWeight:'900',color:item.c}},item.v),
+            h('div',{style:{fontSize:'11px',fontWeight:'700',color:'#333',marginTop:'2px'}},item.l),
+            h('div',{style:{fontSize:'10px',color:'#999',marginTop:'1px'}},item.sub)
+          );
+        })
+      ),
+      h('div',{style:{marginTop:'8px',fontSize:'10px',color:'#999',lineHeight:'1.5'}},
+        'Proteina: PesoRef x 1.9g · Grasa: max(PesoRef x 0.5g, 25% calorico) · Hidratos: resto'
+      )
+    )
+  );
+}
+
 function ClientDetail({name,weeks,rutina,onBack}){
   const [tab,setTab]=useState('med');
   const [selEx,setSelEx]=useState(0);
@@ -578,7 +751,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
     );
   }
 
-  const DTABS=[{id:'med',l:' Tendencias'},{id:'ent',l:' Entreno'},{id:'hab',l:' Sensaciones'},{id:'cp',l:' Checkpoint'}];
+  const DTABS=[{id:'med',l:' Tendencias'},{id:'ent',l:' Entreno'},{id:'hab',l:' Sensaciones'},{id:'cp',l:' Checkpoint'},{id:'diag',l:' Diagnostico'}];
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
     // Header
@@ -761,6 +934,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
         h(VideoPanel,{name})
       ),
       // TAB: CHECKPOINT
+      tab==='diag'&&h(DiagnosticoPanel,{rutina,weeks}),
       tab==='cp'&&h('div',null,
         h('div',{style:{...card,background:'#0A0A0A',border:'none',marginBottom:'10px'}},
           h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Checkpoint · '+bloqueActual),
