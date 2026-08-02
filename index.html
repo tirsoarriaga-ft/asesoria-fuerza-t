@@ -398,15 +398,15 @@ function AjustarSemana({onClose}){
 
 // ── MI BLOQUE ─────────────────────────────────────────────────────────
 const BLOQUE_INFO={
-  'volumen':{titulo:'Bloque Triple Progresión',sub:'rep → kg → series',texto:'Estás en la etapa de construcción. El músculo se construye con trabajo acumulado, proteína consistente y descanso real. Cada semana que subís reps, kg o series — y llegás a las comidas y al sueño — estás generando el estímulo que cambia tu cuerpo.'},
-  'fuerza':{titulo:'Bloque Fuerza',sub:'tensión máxima',texto:'Estás en la etapa de fuerza. El sistema nervioso necesita cargas altas, recuperación completa y energía disponible para adaptarse. Si el entrenamiento, la nutrición y el descanso están alineados, los números suben.'},
-  'intensidad':{titulo:'Bloque Intensidad',sub:'eficiencia neuromuscular',texto:'Estás en una etapa de transición y eficiencia. El cuerpo necesita velocidad de ejecución, no volumen. La nutrición sostiene sin exceder, el descanso permite recuperar. Es una etapa para consolidar, no para forzar.'},
-  'man':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Estás sosteniendo lo construido. El contexto de vida tiene prioridad ahora. El objetivo es mantener la adherencia al entrenamiento, a las comidas y al descanso sin perder lo ganado. Cuando el espacio aparezca, retomamos la progresión.'},
-  'mantenimiento':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Estás sosteniendo lo construido. El contexto de vida tiene prioridad ahora. El objetivo es mantener la adherencia al entrenamiento, a las comidas y al descanso sin perder lo ganado. Cuando el espacio aparezca, retomamos la progresión.'},
-  'base':{titulo:'Bloque Base',sub:'calibración del esfuerzo',texto:'Estás en la etapa de calibración. El objetivo no es el peso ni las reps — es aprender a controlar el esfuerzo. En paralelo, establecer hábitos de alimentación y descanso que sostengan el entrenamiento. Todo lo que hagas bien acá hace posible lo que viene.'},
-  'conexion':{titulo:'Bloque Base',sub:'calibración del esfuerzo',texto:'Estás en la etapa de calibración. El objetivo no es el peso ni las reps — es aprender a controlar el esfuerzo. En paralelo, establecer hábitos de alimentación y descanso que sostengan el entrenamiento. Todo lo que hagas bien acá hace posible lo que viene.'},
-  'health':{titulo:'Bloque Restauración',sub:'recuperación activa',texto:'Estás en una etapa de restauración. El cuerpo necesita menos estímulo y más recuperación — en el entrenamiento, en la alimentación y en el descanso. No es un paso atrás: es lo que hace posible el próximo bloque.'},
-  'deporte':{titulo:'Bloque Deporte',sub:'rendimiento específico',texto:'Estás preparando tu rendimiento para un objetivo concreto. Cada sesión, cada comida y cada noche de descanso tiene un propósito específico. La fecha del evento define el plan.'},
+  'volumen':{titulo:'Bloque Triple Progresion',sub:'rep → kg → series',texto:'Cada semana intentar superar la marca anterior. Cuando llegas al techo, el peso sube solo. En deficit: cintura baja, peso baja lento (0.3-0.5 kg cada 2 sem), la cintura no sube. En superavit: peso sube lento (0.1-0.3 kg/sem), cintura estable. Si la cintura sube: revisar el cumplimiento de porciones. Sin las 4 comidas no hay crecimiento.'},
+  'fuerza':{titulo:'Bloque Fuerza',sub:'tension maxima',texto:'Los kg suben cada 2 sem, las reps son siempre al fallo. El sueno es clave — sin descanso el sistema nervioso no responde. Necesitas energia disponible antes de cada sesion. En deficit: cintura baja, peso baja lento (0.3-0.5 kg cada 2 sem). En superavit: peso sube lento (0.1-0.3 kg/sem), cintura estable. Si la cintura sube: revisar el cumplimiento de porciones. Sin las 4 comidas no hay fuerza.'},
+  'intensidad':{titulo:'Bloque Intensidad',sub:'eficiencia neuromuscular',texto:'Velocidad de ejecucion antes que peso. En deficit: cintura baja, peso puede quedarse igual — eso es buena senal. Contexto de vida estable es clave, este bloque no tolera estres acumulado. Sin buen descanso, saciedad y recuperacion optimas, no hay tal intensidad.'},
+  'man':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Mismos pesos, misma nutricion. Peso y cintura estables (+/-0.5 kg/sem). Si el contexto de vida mejora, es momento de evaluar un bloque activo.'},
+  'mantenimiento':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Mismos pesos, misma nutricion. Peso y cintura estables (+/-0.5 kg/sem). Si el contexto de vida mejora, es momento de evaluar un bloque activo.'},
+  'base':{titulo:'Bloque Base',sub:'calibracion del esfuerzo',texto:'Tecnica antes que peso. Las series y kg son fijos — lo que cuenta es que cada rep salga controlada. Nutricion estable, 4 comidas con alimentos de calidad (que recomienda la app). El peso y la cintura no son el foco por ahora. Pero si que no pases hambre, que estes con energia, y mejores tu descanso.'},
+  'conexion':{titulo:'Bloque Base',sub:'calibracion del esfuerzo',texto:'Tecnica antes que peso. Las series y kg son fijos — lo que cuenta es que cada rep salga controlada. Nutricion estable, 4 comidas con alimentos de calidad (que recomienda la app). El peso y la cintura no son el foco por ahora. Pero si que no pases hambre, que estes con energia, y mejores tu descanso.'},
+  'health':{titulo:'Bloque Restauracion',sub:'recuperacion activa',texto:'Haces exactamente lo pautado, ni mas ni menos. Come regular, sin restriccion. La energia deberia mejorar semana a semana — si no mejora, hay que investigar que la bloquea.'},
+  'deporte':{titulo:'Bloque Deporte',sub:'rendimiento especifico',texto:'Protocolo fijo: pesos, reps y descansos exactos. Carbohidrato antes de entrenar siempre. Sueno y recuperacion entre sesiones son mas importantes que en cualquier otro bloque.'},
 };
 
 const FOCO_MSGS={
@@ -723,21 +723,36 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
       showCamera&&h(CameraModal,{onCapture:blob=>{const{sessId,exId}=showCamera;setShowCamera(null);uploadBlob(blob,sessId,exId);},onClose:()=>setShowCamera(null)}),
       // Modal equivalencias de ejercicios
       exEquiv&&h('div',{onClick:()=>setExEquiv(null),style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:100,display:'flex',alignItems:'flex-end'}},
-        h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 16px 36px',maxHeight:'70vh',overflowY:'auto',animation:'fadeIn 0.2s ease'}},
+        h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 16px 36px',maxHeight:'70vh',overflowY:'auto'}},
           h('div',{style:{width:'36px',height:'4px',background:'#E0E0E0',borderRadius:'2px',margin:'0 auto 16px'}}),
           h('div',{style:{fontSize:'11px',fontWeight:'700',color:'#888',marginBottom:'4px',letterSpacing:'0.08em',textTransform:'uppercase'}},'Equivalentes — '+exEquiv.m),
-          h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#0A0A0A',marginBottom:'16px'}},'¿No podés hacer '+exEquiv.n+'?'),
-          exes.filter(e=>e.m===exEquiv.m&&e.id!==exEquiv.id).length===0
+          h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#0A0A0A',marginBottom:'16px'}},'No podes hacer '+exEquiv.n+'?'),
+          exes.filter(function(e){return e.m===exEquiv.m&&e.id!==exEquiv.id;}).length===0
             ?h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay ejercicios equivalentes en tu lista')
-            :exes.filter(e=>e.m===exEquiv.m&&e.id!==exEquiv.id).map((e,i,arr)=>
-                h('div',{key:e.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 0',borderBottom:i<arr.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
-                  h('div',null,
-                    h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#0A0A0A'}},e.n),
-                    h('div',{style:{fontSize:'11px',color:'#888',marginTop:'2px'}},e.low+'–'+e.hi+' reps')
+            :exes.filter(function(e){return e.m===exEquiv.m&&e.id!==exEquiv.id;}).map(function(e,i,arr){
+                return h('div',{key:e.id,style:{padding:'12px 0',borderBottom:i<arr.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
+                  h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+                    h('div',null,
+                      h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#0A0A0A'}},e.n),
+                      h('div',{style:{fontSize:'11px',color:'#888',marginTop:'2px'}},e.low+'-'+e.hi+' reps')
+                    ),
+                    e.url&&h('a',{href:e.url,target:'_blank',rel:'noreferrer',style:{fontSize:'11px',color:AC,fontWeight:'700',textDecoration:'none'}},'Ver')
                   ),
-                  e.url&&h('a',{href:e.url,target:'_blank',rel:'noreferrer',style:{fontSize:'11px',color:AC,fontWeight:'700',textDecoration:'none'}},'▶ Ver')
-                )
-              )
+                  h('div',{style:{display:'flex',gap:'8px'}},
+                    h('button',{onClick:function(){
+                      // Solo hoy: guardar en sessionStorage
+                      try{sessionStorage.setItem('ase_'+user+'_eqhoy_'+activeSess+'_'+exEquiv.id,String(e.id));}catch(err){}
+                      setExEquiv(null);
+                    },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.12)',background:'#fff',color:'#333'}},'Solo hoy'),
+                    h('button',{onClick:function(){
+                      // Reemplazar siempre: guardar en localStorage
+                      var key='ase_'+user+'_eqperm_'+activeSess+'_'+exEquiv.id;
+                      try{localStorage.setItem(key,String(e.id));}catch(err){}
+                      setExEquiv(null);
+                    },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:AC,color:'#fff'}},'Reemplazar siempre')
+                  )
+                );
+              })
         )
       ),
     sessGroups.length===0
@@ -881,14 +896,35 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
       h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 16px 32px',maxHeight:'70vh',overflowY:'auto'}},
         h('div',{style:{width:'36px',height:'4px',background:'#E0E0E0',borderRadius:'2px',margin:'0 auto 16px'}}),
         h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#999',marginBottom:'4px'}},'Equivalentes — '+(CAT[swapItem.cat]?.l||swapItem.cat)),
-        h('div',{style:{fontSize:'15px',fontWeight:'800',marginBottom:'14px'}},'¿No tenés '+swapItem.n+'? Reemplazalo con:'),
+        h('div',{style:{fontSize:'15px',fontWeight:'800',marginBottom:'14px'}},'No tenes '+swapItem.n+'? Reemplazalo con:'),
         equivalents.length===0
-          ?h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay otros alimentos de esta categoría en tu plan')
-          :equivalents.map((item,i)=>{
+          ?h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay otros alimentos de esta categoria en tu plan')
+          :equivalents.map(function(item,i){
               const p=calcP(item,tmpl);
-              return h('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 0',borderBottom:i<equivalents.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
-                h('span',{style:{fontSize:'14px',color:'#111'}},item.n),
-                h('div',{style:{textAlign:'right'}},h('div',{style:{fontSize:'15px',fontWeight:'800'}},p.v),p.g&&h('div',{style:{fontSize:'10px',color:'#ccc'}},p.g))
+              return h('div',{key:i,style:{padding:'10px 0',borderBottom:i<equivalents.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
+                h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+                  h('span',{style:{fontSize:'14px',color:'#111',fontWeight:'600'}},item.n),
+                  h('div',{style:{textAlign:'right'}},h('div',{style:{fontSize:'15px',fontWeight:'800'}},p.v),p.g&&h('div',{style:{fontSize:'10px',color:'#ccc'}},p.g))
+                ),
+                h('div',{style:{display:'flex',gap:'8px'}},
+                  h('button',{onClick:function(e){
+                    e.stopPropagation();
+                    // Solo hoy: guardar en sessionStorage
+                    try{sessionStorage.setItem('ase_'+user+'_food_hoy_'+swapItem.key,JSON.stringify(item));}catch(err){}
+                    setSwapItem(null);
+                  },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.12)',background:'#fff',color:'#333'}},'Solo hoy'),
+                  h('button',{onClick:function(e){
+                    e.stopPropagation();
+                    // Reemplazar siempre: guardar en localStorage
+                    try{
+                      var permKey='ase_'+user+'_food_perm';
+                      var perms=JSON.parse(localStorage.getItem(permKey)||'{}');
+                      perms[swapItem.key]=item;
+                      localStorage.setItem(permKey,JSON.stringify(perms));
+                    }catch(err){}
+                    setSwapItem(null);
+                  },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:AC,color:'#fff'}},'Reemplazar siempre')
+                )
               );
             })
       )
@@ -1730,15 +1766,18 @@ function App(){
 
   const e1rmHistory=useMemo(()=>{
     const opt=exOptions[selExOpt];if(!opt)return[];
-    return hist.map(w=>{
-      const exData=w.e?.find(e=>e.id===opt.exId);
-      const reps=w.sr?.[opt.sessId]?.[opt.exId];
-      const kg=(w.sk?.[opt.sessId]?.[opt.exId])||exData?.kg;
+    return hist.map(function(w){
+      const exData=w.e?w.e.find(function(e){return e.id===opt.exId;}):null;
+      const reps=w.sr&&w.sr[opt.sessId]?w.sr[opt.sessId][opt.exId]:null;
+      // Use skUsed first (kg actually used that week), fallback to sk, then exData
+      const kg=(w.skUsed&&w.skUsed[opt.sessId]?w.skUsed[opt.sessId][opt.exId]:null)||
+               (w.sk&&w.sk[opt.sessId]?w.sk[opt.sessId][opt.exId]:null)||
+               (exData?exData.kg:null);
       if(!kg||!reps)return null;
       const r1=parseInt(reps.r1)||0;
       if(r1===0)return null;
-      return{e1rm:calcE1RM(kg,r1),r1,kg};
-    }).filter(v=>v!==null);
+      return{e1rm:calcE1RM(kg,r1),r1,kg,label:w.wi?w.wi.replace('sem_','S'):''};
+    }).filter(function(v){return v!==null;});
   },[hist,exOptions,selExOpt]);
 
   // Last 3 weeks for charts
@@ -1866,15 +1905,17 @@ function App(){
       ),
       // 4. Peso y cintura
       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}},
-        [{l:'Peso',u:'kg',k:'pp'},{l:'Cintura',u:'cm',k:'pc'}].map((m,i)=>{
-          const hPW2=hist3.filter(w=>w[m.k]&&w[m.k]!=='—');
-          const lastV=hPW2.length?hPW2[hPW2.length-1][m.k]:'—';
-          const prevV=hPW2.length>1?hPW2[hPW2.length-2][m.k]:null;
+        [{l:'Peso',u:'kg',k:'pp',cur:pp},{l:'Cintura',u:'cm',k:'pc',cur:pc}].map(function(m,i){
+          const hPW2=hist3.filter(function(w){return w[m.k]&&w[m.k]!=='—';});
+          const curVal=m.cur!=='—'?m.cur:null;
+          const lastHist=hPW2.length?hPW2[hPW2.length-1][m.k]:null;
+          const lastV=curVal||lastHist||'—';
+          const prevV=lastHist&&curVal?lastHist:(hPW2.length>1?hPW2[hPW2.length-2][m.k]:null);
           const diff=prevV&&lastV!=='—'?(parseFloat(lastV)-parseFloat(prevV)).toFixed(1):null;
           return h('div',{key:i,style:{...card,marginBottom:0}},
             h('div',{style:lbl},m.l),
             h('div',{style:{fontSize:'24px',fontWeight:'800'}},lastV,' ',h('span',{style:{fontSize:'13px',color:'#999'}},m.u)),
-            diff?h('div',{style:{fontSize:'12px',color:parseFloat(diff)<0?G:O,marginTop:'4px'}},(parseFloat(diff)<0?'↓':'↑')+' '+Math.abs(diff)+' vs sem. ant.'):null
+            diff&&parseFloat(diff)!==0?h('div',{style:{fontSize:'12px',color:parseFloat(diff)<0?G:O,marginTop:'4px'}},(parseFloat(diff)<0?'↓':'↑')+' '+Math.abs(diff)+' vs sem. ant.'):null
           );
         })
       ),
