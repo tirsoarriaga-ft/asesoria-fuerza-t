@@ -368,7 +368,7 @@ function AjustarSemana({onClose}){
                   &&h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.6)'}},'Energía: '+datos.draft.h.sens.energia)
               ),
               h('div',{style:box},
-                h('div',{style:tag},'Semanas en historial'),
+                h('div',{style:tag},'Semanas en historial — editar kg'),
                 datos.sems.length===0
                   ?h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,0.3)'}},'Sin semanas guardadas')
                   :datos.sems.map(function(sem,i){
@@ -378,13 +378,51 @@ function AjustarSemana({onClose}){
                       if(sem.h&&sem.h.meds&&sem.h.meds.some(function(m){return m.p;}))tags.push('peso ✓');
                       if(sem.h&&sem.h.meds&&sem.h.meds.some(function(m){return m.c;}))tags.push('cintura ✓');
                       if(sem.h&&sem.h.sens&&sem.h.sens.energia)tags.push('sens ✓');
+                      // skUsed entries for this sem
+                      var skU=sem.skUsed||{};
+                      var skEntries=[];
+                      Object.keys(skU).forEach(function(sess){
+                        Object.keys(skU[sess]||{}).forEach(function(exId){
+                          skEntries.push({sess:sess,exId:exId,kg:skU[sess][exId]});
+                        });
+                      });
                       return h('div',{key:i,style:{padding:'10px 0',borderBottom:'1px solid rgba(255,255,255,0.06)'}},
-                        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:skEntries.length?'8px':'0'}},
                           h('div',null,
                             h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#fff'}},sem.id),
                             h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'2px'}},tags.join(' · ')||'sin datos')
                           ),
                           h('button',{onClick:function(){restaurar(sem);},style:{background:AC,color:'#fff',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Restaurar')
+                        ),
+                        skEntries.length>0&&h('div',{style:{background:'rgba(255,255,255,0.04)',borderRadius:'8px',padding:'8px'}},
+                          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.3)',marginBottom:'6px',letterSpacing:'0.08em'}},'KG USADOS ESTA SEM (skUsed) — toca para editar'),
+                          skEntries.map(function(entry,ei){
+                            return h('div',{key:ei,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',borderBottom:ei<skEntries.length-1?'1px solid rgba(255,255,255,0.06)':'none'}},
+                              h('span',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)'}},'Ses.'+entry.sess+' · Ej.'+entry.exId),
+                              h('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
+                                h('input',{type:'number',defaultValue:entry.kg,style:{width:'60px',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',color:'#fff',borderRadius:'6px',padding:'3px 6px',fontSize:'12px',textAlign:'right'},
+                                  onBlur:function(e){
+                                    var newKg=parseFloat(e.target.value);
+                                    if(isNaN(newKg)||newKg<=0)return;
+                                    var u=nombre.trim();if(!u)return;
+                                    var p=pref(u);
+                                    // Update skUsed in the stored sem
+                                    var raw=ls(p+sem.id);
+                                    if(!raw)return;
+                                    try{
+                                      var d=JSON.parse(raw);
+                                      if(!d.skUsed)d.skUsed={};
+                                      if(!d.skUsed[entry.sess])d.skUsed[entry.sess]={};
+                                      d.skUsed[entry.sess][entry.exId]=newKg;
+                                      lsSet(p+sem.id,JSON.stringify(d));
+                                      setMsg('kg actualizado en '+sem.id+'. Recarga la app para ver el grafico corregido.');
+                                    }catch(err){}
+                                  }
+                                }),
+                                h('span',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)'}},'kg')
+                              )
+                            );
+                          })
                         )
                       );
                     })
@@ -866,11 +904,65 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
     return allFoods.filter(item=>item.cat===swapItem.cat&&item.key!==swapItem.key);
   },[swapItem,comidas,user]);
 
+  // SVG plato para nivel 1
+  const SVG_PLATO=`<svg width="100%" viewBox="0 0 380 240" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Metodo del plato</title>
+<circle cx="192" cy="122" r="94" fill="#D3D1C7"/>
+<circle cx="190" cy="120" r="94" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="1"/>
+<path d="M190,120 L190,26 A94,94 0 0,0 190,214 Z" fill="#97C459"/>
+<path d="M190,120 L190,26 A94,94 0 0,1 284,120 Z" fill="#F0997B"/>
+<path d="M190,120 L284,120 A94,94 0 0,1 190,214 Z" fill="#85B7EB"/>
+<line x1="190" y1="26" x2="190" y2="214" stroke="white" stroke-width="2.5"/>
+<line x1="190" y1="120" x2="284" y2="120" stroke="white" stroke-width="2.5"/>
+<circle cx="190" cy="120" r="94" fill="none" stroke="white" stroke-width="3"/>
+<circle cx="190" cy="120" r="20" fill="#FAC775" stroke="white" stroke-width="2.5"/>
+<text x="190" y="124" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="9" fill="#412402">Grasa</text>
+<text x="113" y="113" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="12" fill="#173404">Fruta y</text>
+<text x="113" y="128" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="12" fill="#173404">verdura</text>
+<text x="113" y="144" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#27500A">½ plato</text>
+<text x="243" y="79" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="12" fill="#4A1B0C">Proteina</text>
+<text x="243" y="93" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#712B13">¼ plato</text>
+<text x="243" y="158" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="12" fill="#042C53">Hidrato</text>
+<text x="243" y="172" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#185FA5">amilosa · ¼</text>
+<rect x="20" y="222" width="340" height="14" rx="4" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="190" y="232" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#5F5E5A">Esta proporcion se repite en cada una de las 4 comidas</text>
+</svg>`;
+
   function IR({item,last}){
-    const cs=CAT[item.cat]||{l:item.cat,bg:'#F8F8F8',c:'#666'};const p=calcP(item,tmpl);
+    const cs=CAT[item.cat]||{l:item.cat,bg:'#F8F8F8',c:'#666'};
+    const p=calcP(item,tmpl);
+    // Nivel 1: solo nombre del alimento + etiqueta de categoria
+    if(nivel===1){
+      return h('div',{onClick:e=>{e.stopPropagation();setSwapItem(item);},style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)',cursor:'pointer'}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+          h('span',{style:{fontSize:'10px',background:cs.bg,color:cs.c,padding:'2px 6px',borderRadius:'20px',fontWeight:'700',flexShrink:0}},cs.l),
+          h('span',{style:{fontSize:'13px',color:'#111'}},item.n)
+        ),
+        h('span',{style:{fontSize:'12px',color:'#ccc'}},'›')
+      );
+    }
+    // Nivel 2: nombre + cantidad visual cotidiana
+    if(nivel===2){
+      return h('div',{onClick:e=>{e.stopPropagation();setSwapItem(item);},style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)',cursor:'pointer'}},
+        h('div',{style:{flex:1,paddingRight:'8px'}},
+          h('span',{style:{fontSize:'10px',background:cs.bg,color:cs.c,padding:'2px 6px',borderRadius:'20px',fontWeight:'700',marginRight:'6px'}},cs.l),
+          h('span',{style:{fontSize:'13px',color:'#111'}},item.n)
+        ),
+        h('div',{style:{textAlign:'right',flexShrink:0}},
+          h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111'}},p.v)
+        )
+      );
+    }
+    // Nivel 3: nombre + cantidad visual + gramos exactos
     return h('div',{onClick:e=>{e.stopPropagation();setSwapItem(item);},style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)',cursor:'pointer'}},
-      h('div',{style:{flex:1,paddingRight:'8px'}},h('span',{style:{fontSize:'10px',background:cs.bg,color:cs.c,padding:'2px 6px',borderRadius:'20px',fontWeight:'700',marginRight:'6px'}},cs.l),h('span',{style:{fontSize:'13px',color:'#111'}},item.n)),
-      h('div',{style:{textAlign:'right',flexShrink:0}},h('div',{style:{fontSize:'15px',fontWeight:'800',color:'#111'}},p.v),p.g&&h('div',{style:{fontSize:'10px',color:'#ccc',marginTop:'1px'}},p.g))
+      h('div',{style:{flex:1,paddingRight:'8px'}},
+        h('span',{style:{fontSize:'10px',background:cs.bg,color:cs.c,padding:'2px 6px',borderRadius:'20px',fontWeight:'700',marginRight:'6px'}},cs.l),
+        h('span',{style:{fontSize:'13px',color:'#111'}},item.n)
+      ),
+      h('div',{style:{textAlign:'right',flexShrink:0}},
+        h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111'}},p.v),
+        p.g&&h('div',{style:{fontSize:'10px',color:'#bbb',marginTop:'1px'}},p.g)
+      )
     );
   }
   function MC({comida}){
@@ -947,6 +1039,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
           h('div',{style:{fontSize:'13px',color:'#999'}},'Tu coach todavía no cargó tu plan de alimentación.')
         )
       :h('div',null,
+          nivel===1&&h('div',{style:{...card,padding:'12px',marginBottom:'8px'},dangerouslySetInnerHTML:{__html:SVG_PLATO}}),
           comidas.map(c=>h(MC,{key:c.id,comida:c})),
           h('div',{style:{...card,marginTop:'4px',display:'flex',justifyContent:'space-around',alignItems:'center'}},
             h('div',{style:{textAlign:'center'}},
