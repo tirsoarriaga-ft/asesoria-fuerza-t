@@ -877,21 +877,30 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
               to&&ex.url&&h('div',{style:{background:'#EBF4FF',border:'1px solid rgba(55,138,221,0.2)',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px'}},h('a',{href:ex.url,target:'_blank',rel:'noreferrer',style:{fontSize:'13px',color:B,fontWeight:'600',textDecoration:'none'}},'▶ Ver video tutorial')),
               showHistorial===ex.id&&h('div',{style:{background:'#F0F9FF',border:'1px solid rgba(55,138,221,0.2)',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px'}},
                 h('div',{style:{fontSize:'10px',fontWeight:'700',color:B,letterSpacing:'0.08em',marginBottom:'8px'}},'HISTORIAL DE REGISTROS'),
-                hist.length===0
-                  ?h('div',{style:{fontSize:'12px',color:'#bbb'}},'Sin semanas guardadas en este dispositivo')
-                  :hist.slice().reverse().map(function(w,wi){
-                      var reps=w.sr&&w.sr[activeSess]?(w.sr[activeSess][ex.id]||w.sr[activeSess][String(ex.id)]):null;
-                      var skU=w.skUsed||w.sk||{};
-                      var kg=(skU[activeSess]?(skU[activeSess][ex.id]||skU[activeSess][String(ex.id)]):null);
-                      if(!reps&&!kg)return null;
-                      return h('div',{key:wi,style:{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid rgba(55,138,221,0.1)',fontSize:'12px'}},
-                        h('span',{style:{color:'#666'}},w.wi||w.id),
-                        h('div',{style:{display:'flex',gap:'8px'}},
-                          reps&&h('span',{style:{fontWeight:'700',color:'#333'}},reps.r1?(reps.r1+'×'+(reps.r2?'/'+reps.r2:'')):'—'),
-                          kg&&h('span',{style:{fontWeight:'700',color:B}},kg+' kg')
-                        )
-                      );
-                    }).filter(Boolean)
+                (function(){
+                  // Leer directamente del localStorage para no depender del estado hist
+                  var histIds=[];
+                  try{histIds=JSON.parse(localStorage.getItem('ase_'+user+'_hist')||'[]');}catch(e){}
+                  if(!histIds.length)return h('div',{style:{fontSize:'12px',color:'#bbb'}},'Sin semanas guardadas en este dispositivo');
+                  var rows=histIds.slice().reverse().map(function(semId){
+                    var w=null;
+                    try{w=JSON.parse(localStorage.getItem('ase_'+user+'_'+semId)||'null');}catch(e){}
+                    if(!w)return null;
+                    var reps=w.sr&&w.sr[activeSess]?(w.sr[activeSess][ex.id]||w.sr[activeSess][String(ex.id)]):null;
+                    var skU=w.skUsed||w.sk||{};
+                    var kg=(skU[activeSess]?(skU[activeSess][ex.id]||skU[activeSess][String(ex.id)]):null);
+                    if(!reps&&!kg)return null;
+                    return h('div',{key:semId,style:{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid rgba(55,138,221,0.1)',fontSize:'12px'}},
+                      h('span',{style:{color:'#666'}},semId),
+                      h('div',{style:{display:'flex',gap:'8px'}},
+                        reps&&h('span',{style:{fontWeight:'700',color:'#333'}},reps.r1?(reps.r1+'×'+(reps.r2?'/'+reps.r2:'')):'—'),
+                        kg&&h('span',{style:{fontWeight:'700',color:B}},kg+' kg')
+                      )
+                    );
+                  }).filter(Boolean);
+                  if(!rows.length)return h('div',{style:{fontSize:'12px',color:'#bbb'}},'Este ejercicio no tiene registros guardados');
+                  return rows;
+                })()
               ),
               h('div',{style:{marginBottom:'8px'}},
                 getVideo(activeSess,ex.id)
