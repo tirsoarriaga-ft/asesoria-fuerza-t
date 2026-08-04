@@ -610,7 +610,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
     try{const e=JSON.parse(lat?.E1RM||'{}');const prev=JSON.parse(weeks[weeks.length-2]?.E1RM||'{}');const keys=Object.keys(e);if(!keys.length)return null;const k=keys[0];const d=parseFloat(e[k]||0)-parseFloat(prev[k]||0);return{ex:k,delta:d.toFixed(1)};}catch(e2){return null;}
   })():null;
 
-  // Checkpoint semanal — 4 preguntas siempre (3 transversales + 1 especifica del bloque)
+  const bloqueKey2=bloqueActual.toLowerCase().replace(' phase','').replace('conexion nm','base').replace('conexión nm','base').replace('mantenimiento','man').replace('intensidad/nm','deporte').replace('intensidad','deporte');
   // Siempre se responden las 4 antes de ver la sugerencia
   const PREGUNTAS_CP=useMemo(function(){
     var blq=bloqueKey2||'volumen';
@@ -713,8 +713,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
       .finally(()=>{setArbolSaving(false);setArbolDone(decision);});
   }
 
-  const bloqueKey2=bloqueActual.toLowerCase().replace(' phase','').replace('conexion nm','base').replace('conexión nm','base').replace('mantenimiento','man').replace('intensidad/nm','deporte').replace('intensidad','deporte');
-
+  // Checkpoint semanal — 4 preguntas siempre
   function ArbolCheckpoint(){
     var preguntas=PREGUNTAS_CP;
     var totalPreg=preguntas.length; // siempre 4
