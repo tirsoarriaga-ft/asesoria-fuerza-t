@@ -960,6 +960,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
   const cKey=`ase_${user}_diet_collapsed`;
   const [collapsed,setCollapsed]=useState(()=>{try{return JSON.parse(localStorage.getItem(cKey))||{};}catch(e){return{};}});
   const toggle=id=>setCollapsed(c=>{const n={...c,[id]:c[id]===undefined?true:!c[id]};localStorage.setItem(cKey,JSON.stringify(n));return n;});
+  const [swapVersion,setSwapVersion]=useState(0);
   const comidas=useMemo(()=>{
     try{
       const s=localStorage.getItem(`ase_${user}_menus`);
@@ -992,7 +993,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
       }
     }catch(e){}
     return [];
-  },[user,menusVer]);
+  },[user,menusVer,swapVersion]);
   useEffect(()=>{const t=parseInt(localStorage.getItem(tKey));if(!isNaN(t)&&TEMPLATES.includes(t))setTmplState(t);},[menusVer]);
   const setO=(m,o)=>{const n={...opts,[m]:o};setOpts(n);localStorage.setItem(oKey,JSON.stringify(n));};
   const pesoVal=normNum(hab.meds.find(m=>m.p&&normNum(m.p)>0)?.p)||70;
@@ -1115,13 +1116,12 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
                 h('div',{style:{display:'flex',gap:'8px'}},
                   h('button',{onClick:function(e){
                     e.stopPropagation();
-                    // Solo hoy: guardar en sessionStorage
                     try{sessionStorage.setItem('ase_'+user+'_food_hoy_'+swapItem.key,JSON.stringify(item));}catch(err){}
                     setSwapItem(null);
+                    setSwapVersion(function(v){return v+1;});
                   },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.12)',background:'#fff',color:'#333'}},'Solo hoy'),
                   h('button',{onClick:function(e){
                     e.stopPropagation();
-                    // Reemplazar siempre: guardar en localStorage
                     try{
                       var permKey='ase_'+user+'_food_perm';
                       var perms=JSON.parse(localStorage.getItem(permKey)||'{}');
@@ -1129,6 +1129,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
                       localStorage.setItem(permKey,JSON.stringify(perms));
                     }catch(err){}
                     setSwapItem(null);
+                    setSwapVersion(function(v){return v+1;});
                   },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:AC,color:'#fff'}},'Reemplazar siempre')
                 )
               );
