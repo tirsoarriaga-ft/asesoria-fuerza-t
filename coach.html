@@ -235,21 +235,35 @@ function PinScreen({onUnlock}){
 // ── CLIENT LIST ───────────────────────────────────────────────────────
 function ClientList({data,rutinas,decisiones,onSelect,onRefresh}){
   const statusOrder={red:0,yellow:1,green:2,grey:3};
+  const [soloSinRevisar,setSoloSinRevisar]=useState(false);
   const getObj=name=>{const r=rutinas.find(rt=>String(rt.Asesorado||'').trim().toLowerCase()===name.toLowerCase());return String(r?.Objetivo||'mantenimiento').toLowerCase().trim()||'mantenimiento';};
-  // Ordenar: sin checkpoint + sem más antigua primero, luego con checkpoint
+
+  // hasCPA: check local localStorage flag first (más confiable que el sheet)
+  function hasCPCheck(name,semId){
+    var key='coach_cp_'+name.trim().toLowerCase()+'_'+semId;
+    try{if(localStorage.getItem(key))return true;}catch(e){}
+    // fallback: check decisiones del sheet
+    if(!decisiones||!semId)return false;
+    return decisiones.some(function(d){
+      return String(d.Asesorado||'').trim().toLowerCase()===name.toLowerCase()&&
+             (String(d.SemanID||'')).trim()===semId;
+    });
+  }
   const clients=Object.keys(data).sort((a,b)=>{
     const wa=data[a],wb=data[b];
     const latA=wa[wa.length-1],latB=wb[wb.length-1];
     const semA=String(latA?.SemanID||'sem_0');
     const semB=String(latB?.SemanID||'sem_0');
-    const raA=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===a.toLowerCase());
-    const raB=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===b.toLowerCase());
-    const hasCPA=decisiones&&decisiones.some(d=>String(d.Asesorado||'').trim().toLowerCase()===a.toLowerCase()&&String(d.SemanID||d.Fecha||'')>=semA);
-    const hasCPB=decisiones&&decisiones.some(d=>String(d.Asesorado||'').trim().toLowerCase()===b.toLowerCase()&&String(d.SemanID||d.Fecha||'')>=semB);
-    // Sin checkpoint primero
+    const hasCPA=hasCPCheck(a,semA);
+    const hasCPB=hasCPCheck(b,semB);
     if(hasCPA!==hasCPB)return hasCPA?1:-1;
-    // Dentro del mismo grupo, sem más antigua primero
     return semA.localeCompare(semB);
+  }).filter(name=>{
+    if(!soloSinRevisar)return true;
+    const weeks=data[name];
+    const lat=weeks[weeks.length-1];
+    const semId=lat?.SemanID||'';
+    return !hasCPCheck(name,semId);
   });
   const statusBg={red:'#FEF2F2',yellow:'#FFFBEB',green:'#F0FDF4',grey:'#F9F9F9'};
   const counts={red:0,yellow:0,green:0};
@@ -262,7 +276,10 @@ function ClientList({data,rutinas,decisiones,onSelect,onRefresh}){
           h('div',{style:{fontSize:'10px',color:'#999',fontWeight:'600',letterSpacing:'0.08em',textTransform:'uppercase'}},'Panel del Coach'),
           h('div',{style:{fontSize:'18px',fontWeight:'800'}},clients.length+' asesorados')
         ),
-        h('button',{onClick:onRefresh,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'↻ Actualizar')
+        h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
+          h('button',{onClick:()=>setSoloSinRevisar(s=>!s),style:{background:soloSinRevisar?O:'#F0F0F0',color:soloSinRevisar?'#fff':'#666',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},soloSinRevisar?'Sin revisar ✓':'Sin revisar'),
+          h('button',{onClick:onRefresh,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'↻ Actualizar')
+        )
       ),
       h('div',{style:{display:'flex',gap:'8px',marginTop:'10px'}},
         [{c:'red',l:'Atención',color:R},{c:'yellow',l:'Revisar',color:O},{c:'green',l:'OK',color:G}].map(s=>
@@ -293,7 +310,7 @@ function ClientList({data,rutinas,decisiones,onSelect,onRefresh}){
         const esCP=semsEnBloque%cpFreq===0;
         const redAlerts=alerts.filter(a=>a.lvl==='red').length;
         const yelAlerts=alerts.filter(a=>a.lvl==='yellow').length;
-        const hasCPA=decisiones&&decisiones.some(function(d){return String(d.Asesorado||'').trim().toLowerCase()===name.toLowerCase()&&String(d.SemanID||d.Fecha||'')>=String(lat?.SemanID||'');});
+        const hasCPA=hasCPCheck(name,lat?.SemanID||'');
         return h('div',{key:name,onClick:()=>onSelect(name),
           style:{...card,cursor:'pointer',background:statusBg[status]||'#fff',borderLeft:'3px solid '+(status==='red'?R:status==='yellow'?O:status==='green'?G:'#E0E0E0')}},
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}},
@@ -708,9 +725,19 @@ function ClientDetail({name,weeks,rutina,onBack}){
 
   function saveDecision(decision){
     setArbolSaving(true);
-    const payload={action:'decision',asesorado:name,bloque:bloqueActual,semanaEnBloque:semanasEnBloque,decision,nota:arbolNota};
+    const latSemanID=lat?.SemanID||'';
+    const payload={action:'decision',asesorado:name,bloque:bloqueActual,semanaEnBloque:semanasEnBloque,decision,nota:arbolNota,SemanID:latSemanID};
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-      .finally(()=>{setArbolSaving(false);setArbolDone(decision);});
+      .finally(()=>{
+        setArbolSaving(false);
+        setArbolDone(decision);
+        // Guardar flag local: este asesorado+sem ya fue revisado
+        try{
+          var key='coach_cp_'+name.trim().toLowerCase()+'_'+latSemanID;
+          sessionStorage.setItem(key,'1');
+          localStorage.setItem(key,'1'); // también en localStorage para persistir
+        }catch(e){}
+      });
   }
 
   // Checkpoint semanal — 4 preguntas siempre
@@ -792,11 +819,16 @@ function ClientDetail({name,weeks,rutina,onBack}){
                 h('div',{style:{fontSize:'13px',color:'#333',lineHeight:'1.5'}},calcSugerencia(arbolResp))
               ),
               h('textarea',{placeholder:'Nota adicional (opcional)',
-                ref:function(el){if(el&&!el._init){el._init=true;el.value=arbolNota||'';}},
-                onBlur:function(e){setArbolNota(e.target.value);},
+                ref:function(el){if(el&&el._nota===undefined){el._nota=true;el.value='';}},
+                id:'cp-nota-'+name,
+                onChange:function(e){setArbolNota(e.target.value);},
                 style:Object.assign({},inp,{height:'60px',resize:'none',fontSize:'12px',marginBottom:'8px'})
               }),
-              h('button',{onClick:function(){saveDecision(calcSugerencia(arbolResp));},disabled:arbolSaving,style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},
+              h('button',{onClick:function(){
+                var ta=document.getElementById('cp-nota-'+name);
+                if(ta)setArbolNota(ta.value);
+                saveDecision(calcSugerencia(arbolResp));
+              },disabled:arbolSaving,style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},
                 arbolSaving?'Guardando...':'Confirmar y registrar decision'
               )
             )
