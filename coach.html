@@ -791,9 +791,9 @@ function ClientDetail({name,weeks,rutina,onBack}){
                 h('div',{style:{fontSize:'10px',fontWeight:'700',color:G,marginBottom:'6px',letterSpacing:'0.06em'}},'SUGERENCIA'),
                 h('div',{style:{fontSize:'13px',color:'#333',lineHeight:'1.5'}},calcSugerencia(arbolResp))
               ),
-              h('textarea',{placeholder:'Nota adicional (opcional)',value:arbolNota,
-                onChange:function(e){setArbolNota(e.target.value);},
-                onFocus:function(e){e.target.scrollIntoView({behavior:'smooth',block:'nearest'});},
+              h('textarea',{placeholder:'Nota adicional (opcional)',
+                ref:function(el){if(el&&!el._init){el._init=true;el.value=arbolNota||'';}},
+                onBlur:function(e){setArbolNota(e.target.value);},
                 style:Object.assign({},inp,{height:'60px',resize:'none',fontSize:'12px',marginBottom:'8px'})
               }),
               h('button',{onClick:function(){saveDecision(calcSugerencia(arbolResp));},disabled:arbolSaving,style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},
