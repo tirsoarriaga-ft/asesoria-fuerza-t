@@ -254,7 +254,10 @@ function AjustarSemana({onClose}){
       .then(function(data){
         var map={};
         (data||[]).forEach(function(ex){
-          if(ex.id!==undefined&&ex.n)map[String(ex.id)]=ex.n;
+          // El sheet tiene columna "ID" (mayúsculas) y "Nombre"
+          var exId=ex.ID||ex.id;
+          var exName=ex.Nombre||ex.NOMBRE||ex.nombre||ex.n;
+          if(exId!==undefined&&exName)map[String(exId)]=String(exName);
         });
         setExNames(map);
       })
@@ -307,8 +310,11 @@ function AjustarSemana({onClose}){
     }
     lsSet(key,JSON.stringify(merged));
     lsSet(p+'draft_'+sem.id,JSON.stringify({sr:merged.sr,n:merged.n,h:merged.h,hiit:merged.hiit}));
-    setMsg('Sem '+sem.id+' restaurada. Recargando la app...');
-    setTimeout(function(){window.location.href=window.location.pathname;},1500);
+    // Navegar a esa sem al recargar
+    var semNum=parseInt(sem.id.replace('sem_',''))||1;
+    lsSet(p+'wknum',String(semNum));
+    setMsg('Sem '+sem.id+' restaurada. Recargando...');
+    setTimeout(function(){window.location.href=window.location.pathname;},1200);
   }
 
   function guardar(){
@@ -553,7 +559,7 @@ function Login({onLogin}){
 }
 
 // ── TRAINING ──────────────────────────────────────────────────────────
-function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes}){
+function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum}){
   const BLOQUES={
     volumen:    {label:'Volumen',        color:'#1D9E75',emoji:'📈',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. Cada 2 semanas la app te agregará una serie efectiva extra.'},
     intensidad: {label:'Intensidad',     color:'#378ADD',emoji:'🏋️',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. En la última serie de cada ejercicio, aplicá una técnica de intensidad.'},
@@ -629,7 +635,21 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const toggleEx=(s,id)=>{const cur=cfg.assign[s]||[];const na=cur.includes(id)?cur.filter(x=>x!==id):[...cur,id];saveCfg({...cfg,assign:{...cfg.assign,[s]:na}});};
   const setNum=n=>{const na={};['A','B','C','D'].slice(0,n).forEach(s=>{na[s]=cfg.assign[s]||[];});saveCfg({...cfg,num:n,assign:na});};
 
-  const getKg=ex=>sessionKg?.[activeSess]?.[ex.id]??sessionKg?.[activeSess]?.[String(ex.id)]??undefined;
+  const getKg=function(ex){
+    // Si estamos en una sem pasada, mostrar el kg con que se entrenó esa sem (skUsed)
+    if(isViewingPast){
+      const thisWkData=hist.find(function(w){return w.wi===wk.id||w.id===wk.id;});
+      if(thisWkData){
+        var skU=thisWkData.skUsed||thisWkData.sk||{};
+        var skSess=skU[activeSess];
+        if(skSess){
+          var kg=skSess[ex.id]||skSess[String(ex.id)];
+          if(kg)return kg;
+        }
+      }
+    }
+    return sessionKg&&sessionKg[activeSess]?(sessionKg[activeSess][ex.id]||sessionKg[activeSess][String(ex.id)]||undefined):undefined;
+  };
   const getRep=(sess,exId,k)=>{
     const stored=sessionReps?.[sess]?.[exId]?.[k]||'';
     if(stored)return stored;
@@ -1685,54 +1705,62 @@ function App(){
   const logout=()=>{if(confirm('¿Cambiar nombre?')){localStorage.removeItem(USER_KEY);setUser(null);}};
 
   function load(id){
-    dataLoaded.current=false; // bloquear auto-save mientras cargamos
+    dataLoaded.current=false;
     draftReady.current=false;
+    // Leer datos ANTES de tocar cualquier estado React
+    var draft=null;var saved2=null;
     try{
-      const draft=localStorage.getItem('ase_'+user+'_draft_'+id);
-      const saved2=localStorage.getItem(SK(id,user));
-      const d=draft?JSON.parse(draft):(saved2?JSON.parse(saved2):null);
-      if(d){
-        setNut(migrateNut(d.n));
-        setHab(migrateHab(d.h));
-        if(d.hiit)setHiitData(d.hiit);else setHiitData(iHiit());
-        if(d.sr)setSessionReps(d.sr);else setSessionReps({});
-        setSaved(!!saved2);
-        loadH();
-        setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},300);
-      }else{
-        // No hay datos locales — intentar restaurar desde el sheet
-        fetch(SCRIPT_URL+'?action=drafts')
-          .then(function(r){return r.json();})
-          .then(function(rows){
-            const row=(rows||[]).find(function(r){
-              return String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase()&&
-                     String(r.SemanID||'').trim()===id;
-            });
-            if(row&&row.Draft){
-              try{
-                const d2=JSON.parse(row.Draft);
-                if(d2.sr)setSessionReps(d2.sr);
-                if(d2.n)setNut(migrateNut(d2.n));
-                if(d2.h)setHab(migrateHab(d2.h));
-                if(d2.hiit)setHiitData(d2.hiit);
-                // Guardar en localStorage para la próxima vez
-                localStorage.setItem('ase_'+user+'_draft_'+id,row.Draft);
-              }catch(e2){}
-            }else{
-              setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
-            }
-          })
-          .catch(function(){setNut(iN());setHab(iH());setSessionReps({});setSaved(false);})
-          .finally(function(){
-            loadH();
-            setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},300);
-          });
-        return; // salir — el finally del fetch habilitará el auto-save
-      }
-    }catch(e){
-      setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
+      var draftStr=localStorage.getItem('ase_'+user+'_draft_'+id);
+      var savedStr=localStorage.getItem(SK(id,user));
+      draft=draftStr?JSON.parse(draftStr):null;
+      saved2=savedStr?JSON.parse(savedStr):null;
+    }catch(e){}
+    var d=draft||saved2;
+    if(d){
+      // Hay datos locales — cargar sin tocar estados vacíos
+      if(d.n)setNut(migrateNut(d.n));
+      if(d.h)setHab(migrateHab(d.h));
+      if(d.hiit)setHiitData(d.hiit);
+      if(d.sr)setSessionReps(d.sr);
+      setSaved(!!saved2);
       loadH();
-      setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},300);
+      setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},400);
+    }else{
+      // Sin datos locales — buscar en sheet Drafts antes de resetear
+      fetch(SCRIPT_URL+'?action=drafts')
+        .then(function(r){return r.json();})
+        .then(function(rows){
+          var row=(rows||[]).find(function(r){
+            return String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase()&&
+                   String(r.SemanID||'').trim()===id;
+          });
+          if(row&&row.Draft){
+            try{
+              var d2=JSON.parse(row.Draft);
+              if(d2.n)setNut(migrateNut(d2.n));
+              if(d2.h)setHab(migrateHab(d2.h));
+              if(d2.hiit)setHiitData(d2.hiit);
+              if(d2.sr)setSessionReps(d2.sr);
+              // Guardar en localStorage para la próxima vez
+              localStorage.setItem('ase_'+user+'_draft_'+id,row.Draft);
+              setSaved(false);
+            }catch(e2){
+              // Si falla el parse, resetear limpiamente
+              setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
+            }
+          }else{
+            // No hay datos en ningún lado — sem nueva/vacía
+            setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
+          }
+        })
+        .catch(function(){
+          // Error de red — no resetear, dejar lo que había
+        })
+        .finally(function(){
+          loadH();
+          setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},400);
+        });
+      return;
     }
     loadH();
   }
@@ -1904,10 +1932,10 @@ function App(){
     const curNum=wk.num||1;
     if(curNum<=1)return;
     const prevNum=curNum-1;
+    dataLoaded.current=false;
+    draftReady.current=false;
     localStorage.setItem(`ase_${user}_wknum`,String(prevNum));
     setWk(getWkForNum(user,prevNum));
-    setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
-    draftReady.current=false;
     load(`sem_${prevNum}`);
   }
   const draftReady=useRef(false);
@@ -1916,14 +1944,19 @@ function App(){
   // Auto-guardar borrador — NUNCA corre hasta que dataLoaded sea true
   useEffect(()=>{
     if(!user||!wk.id||!wk.num)return;
-    if(!dataLoaded.current)return; // bloqueo absoluto hasta que los datos estén cargados
+    if(!dataLoaded.current)return;
     if(!draftReady.current)return;
-    // Solo guardar si hay datos reales
-    const hasReps=Object.values(sessionReps).some(function(s){return Object.values(s||{}).some(function(e){return Object.values(e||{}).some(function(v){return v;});});});
-    const hasNut=nut.some(function(d){return Object.values(d.m||{}).some(Boolean)||d.agua||d.ak;});
-    const hasHab=(hab.sleep||[]).some(Boolean)||(hab.actExtra||[]).some(Boolean)||(hab.meds||[]).some(function(m){return m.p||m.c;})||((hab.sens||{}).energia);
-    if(!hasReps&&!hasNut&&!hasHab)return; // nunca guardar estado vacío
-    const draft={sr:sessionReps,n:nut,h:hab,hiit:hiitData};
+    var hasReps=Object.values(sessionReps).some(function(s){return Object.values(s||{}).some(function(e){return Object.values(e||{}).some(function(v){return v;});});});
+    var hasNut=nut.some(function(d){return Object.values(d.m||{}).some(Boolean)||d.agua||d.ak;});
+    var hasHab=(hab.sleep||[]).some(Boolean)||(hab.actExtra||[]).some(Boolean)||(hab.meds||[]).some(function(m){return m.p||m.c;})||((hab.sens||{}).energia);
+    if(!hasReps&&!hasNut&&!hasHab){
+      // NUNCA guardar estado vacío si ya hay datos guardados para esta sem
+      var existingDraft=localStorage.getItem('ase_'+user+'_draft_'+wk.id);
+      var existingSaved=localStorage.getItem(SK(wk.id,user));
+      if(existingDraft||existingSaved)return; // protección absoluta
+      return;
+    }
+    var draft={sr:sessionReps,n:nut,h:hab,hiit:hiitData};
     localStorage.setItem('ase_'+user+'_draft_'+wk.id,JSON.stringify(draft));
   },[sessionReps,nut,hab,hiitData,user,wk.id]);
 
@@ -2234,10 +2267,11 @@ function App(){
           h('button',{onClick:prevWeek,disabled:(wk.num||1)<=1,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:(wk.num||1)<=1?'default':'pointer',border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',color:(wk.num||1)<=1?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.6)'}},'← Anterior'),
           isViewingPast
             ?h('button',{onClick:()=>{
+                dataLoaded.current=false;
+                draftReady.current=false;
                 localStorage.setItem(`ase_${user}_wknum`,String(realWkNum));
                 setWk(getWkForNum(user,realWkNum));
                 load(`sem_${realWkNum}`);
-                setTimeout(()=>{draftReady.current=true;},100);
               },style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'700',cursor:'pointer',border:`1px solid ${AC}`,background:AC+'22',color:AC}},'Sem actual →')
             :h('button',{onClick:newWeek,
                 // Nueva → disponible desde Dom si ya guardó, sino desde el próximo Dom
@@ -2259,7 +2293,7 @@ function App(){
         )
       ),
       tab==='d'&&h(Dashboard,null),
-      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes}),
+      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
       tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg}),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
