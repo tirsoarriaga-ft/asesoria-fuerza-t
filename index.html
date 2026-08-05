@@ -976,12 +976,18 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
               ops:comida.ops.map(function(op){
                 return Object.assign({},op,{
                   items:op.items.map(function(item){
-                    // Check swap permanente
-                    if(perms[item.key])return Object.assign({},perms[item.key],{key:item.key+'_swap'});
-                    // Check swap solo hoy (sessionStorage)
+                    var origKey=item.origKey||item.key;
+                    // Check swap permanente usando la key original
+                    if(perms[origKey]){
+                      return Object.assign({},perms[origKey],{key:origKey,origKey:origKey,_swapped:true});
+                    }
+                    // Check swap solo hoy
                     try{
-                      var hoyStr=sessionStorage.getItem('ase_'+user+'_food_hoy_'+item.key);
-                      if(hoyStr)return Object.assign({},JSON.parse(hoyStr),{key:item.key+'_hoy'});
+                      var hoyStr=sessionStorage.getItem('ase_'+user+'_food_hoy_'+origKey);
+                      if(hoyStr){
+                        var hoyItem=JSON.parse(hoyStr);
+                        return Object.assign({},hoyItem,{key:origKey,origKey:origKey,_swappedHoy:true});
+                      }
                     }catch(e3){}
                     return item;
                   })
