@@ -885,7 +885,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
                 h('div',{style:{fontSize:'12px',color:'#333',whiteSpace:'pre-line',lineHeight:'1.6',background:'#F0F9F0',borderRadius:'6px',padding:'8px'}},sug.mje)
               ),
               h('textarea',{placeholder:'Agregar nota personal (opcional)',id:'cp-nota-'+name,
-                onChange:function(e){setArbolNota(e.target.value);},
+                defaultValue:'',
                 style:Object.assign({},inp,{height:'50px',resize:'none',fontSize:'12px',marginBottom:'8px'})
               }),
               h('div',{style:{display:'flex',gap:'8px'}},
