@@ -18,7 +18,7 @@ button,input,select{font-family:inherit;outline:none}
 const {useState,useEffect,useMemo,createElement:h}=React;
 
 // ── CONFIGURACIÓN ─────────────────────────────────────────────────────
-const SCRIPT_URL='https://script.google.com/macros/s/AKfycbwjqifLptX8JDpkE0mZfOVjNfwNHzVyWmtZwdxmFd3jhB9nUWWgSEVBL7ombGFp6EQZ/exec';
+const SCRIPT_URL='https://script.google.com/macros/s/AKfycbwAZIsXShtE0o74oCtCQ6KIAJTd87Qm31CnkDzFBRiemjleNrNTDcsU2hW3SHEVuFl2/exec';
 const COACH_PIN='1234'; // ← cambiá por tu PIN
 
 const G='#1D9E75',B='#378ADD',O='#D97706',R='#EF4444',AC='#E8541A';
@@ -628,114 +628,153 @@ function ClientDetail({name,weeks,rutina,onBack}){
   })():null;
 
   const bloqueKey2=bloqueActual.toLowerCase().replace(' phase','').replace('conexion nm','base').replace('conexión nm','base').replace('mantenimiento','man').replace('intensidad/nm','deporte').replace('intensidad','deporte');
-  // Siempre se responden las 4 antes de ver la sugerencia
+
   const PREGUNTAS_CP=useMemo(function(){
-    var blq=bloqueKey2||'volumen';
+    var objetivo=String(rutina&&rutina.Objetivo||'mantenimiento').toLowerCase();
+    var nivelAse=String(rutina&&rutina.Nivel||'online').toLowerCase();
     var peso=lat&&lat.Peso?lat.Peso+' kg':'—';
     var cintura=lat&&lat.Cintura?lat.Cintura+' cm':'—';
     var pesoAnterior=weeks.length>=2?weeks[weeks.length-2].Peso:'—';
     var cinAnterior=weeks.length>=2?weeks[weeks.length-2].Cintura:'—';
-    var objetivo=String(rutina&&rutina.Objetivo||'mantenimiento').toLowerCase();
     var pesoDelta=pesoAnterior&&peso!=='—'?(parseFloat(peso)-parseFloat(pesoAnterior)).toFixed(1):null;
     var cinDelta2=cinAnterior&&cintura!=='—'?(parseFloat(cintura)-parseFloat(cinAnterior)).toFixed(1):null;
-    var pesoEsperado=objetivo==='deficit'?'Baja 0.3-0.5 kg/sem':objetivo==='superavit'?'Sube 0.1-0.3 kg/sem':'Estable ±0.5 kg';
-    var cinEsperada=objetivo==='deficit'?'Baja':objetivo==='superavit'?'Estable':' Estable';
-
-    // Q4 especifica del bloque
-    var q4={
-      volumen:{id:'q4',q:'Progresion de carga (e1RM)',datos:e1rmLat?[{l:e1rmLat.ex,v:(parseFloat(e1rmLat.delta)>0?'+':'')+e1rmLat.delta+' kg',c:parseFloat(e1rmLat.delta)>0?G:R}]:[{l:'e1RM',v:'Sin datos suficientes'}],esperado:'e1RM sube cada 1-2 semanas. Si no sube en 3 sem consecutivas sin factores externos: Fase 1.',ops:[{v:'sube',l:'Sube o estable'},{v:'1sem',l:'Sin progresion 1 sem'},{v:'2sem',l:'Sin progresion 2 sem'},{v:'3sem',l:'Sin progresion 3+ sem'}]},
-      fuerza:{id:'q4',q:'Progresion de carga en el protocolo',datos:e1rmLat?[{l:e1rmLat.ex,v:(parseFloat(e1rmLat.delta)>0?'+':'')+e1rmLat.delta+' kg',c:parseFloat(e1rmLat.delta)>0?G:R}]:[{l:'e1RM',v:'Sin datos'}],esperado:'Pesos suben cada ciclo (2-3 semanas). Sin mejora en 3 ciclos: Fase 1.',ops:[{v:'sube',l:'Sube'},{v:'estable',l:'Estable 2 sem'},{v:'baja',l:'Bajo o no pudo completar reps'}]},
-      health:{id:'q4',q:'Energia y recuperacion vs semana anterior',datos:[{l:'Energia',v:ultE},{l:'Sueno',v:ultS}],esperado:'Debe mejorar semana a semana. 2 sem consecutivas OK = criterio de salida.',ops:[{v:'mejor2',l:'Mejoro 2 sem seguidas'},{v:'mejor1',l:'Mejoro solo esta sem'},{v:'igual',l:'Igual que la semana pasada'},{v:'peor',l:'Peor que la semana pasada'}]},
-      base:{id:'q4',q:'Control tecnico y percepcion del esfuerzo',datos:[{l:'Semanas en bloque',v:semanasEnBloque}],esperado:'<4 sem: temprano. 4-8 sem: debe mejorar. >8 sem sin mejora: Fase 1.',ops:[{v:'mejora',l:'Mejora visible'},{v:'igual_temprano',l:'Igual - menos de 4 sem'},{v:'igual_tarde',l:'Igual - 4+ sem en bloque'},{v:'retroceso',l:'Retroceso'}]},
-      man:{id:'q4',q:'e1RM y peso estables',datos:[{l:'Peso',v:peso},{l:'e1RM',v:e1rmLat?(parseFloat(e1rmLat.delta)>0?'+':'')+e1rmLat.delta+' kg':'—'}],esperado:'Todo debe mantenerse estable. Si el contexto mejora: Fase 1.',ops:[{v:'estable',l:'Todo estable'},{v:'baja_e1rm',l:'e1RM baja'},{v:'sube_cintura',l:'Cintura sube'},{v:'ctx_mejor',l:'Contexto mejoro'}]},
-      deporte:{id:'q4',q:'Rendimiento en el gesto especifico',datos:e1rmLat?[{l:e1rmLat.ex,v:(parseFloat(e1rmLat.delta)>0?'+':'')+e1rmLat.delta+' kg',c:parseFloat(e1rmLat.delta)>0?G:R}]:[{l:'Test',v:'Sin datos'}],esperado:'Mejora sostenida. Con <4 sem para el evento: no tocar nada.',ops:[{v:'mejora',l:'Mejora'},{v:'estable',l:'Estable'},{v:'baja_lejos',l:'Baja - >4 sem para evento'},{v:'baja_cerca',l:'Baja - <4 sem para evento'}]},
-    };
+    var pesoDir=objetivo==='deficit'?'baja':objetivo==='superavit'?'sube':'estable';
+    var reportoEstaSem=lat&&lat.SemanID;
 
     return [
-      {id:'q1',q:'Sensaciones y recuperacion esta semana',
-        datos:[{l:'Energia',v:ultE,c:ultE==='Baja toda la semana'?R:G},{l:'Sueno',v:ultS,c:parseInt(ultS)<4?R:G},{l:'Hambre',v:ultH},{l:'Toxicos',v:(lat&&lat.Toxicos||0)+' dias',c:parseInt(lat&&lat.Toxicos||0)>=2?O:G},{l:'Contexto',v:ultCtx==='muy_exigente'?'Muy diferente':ultCtx==='exigente'?'Con cambios':'Normal'}],
-        esperado:'Energia OK + sueno ≥4 noches + hambre no alterada. Si todo falla puede indicar Health Phase.',
-        ops:[{v:'todo_ok',l:'Todo dentro de lo esperado'},{v:'algo_mal',l:'Algo alterado (puntual)'},{v:'todo_mal',l:'Todo alterado (sostenido)'}]},
-      {id:'q2',q:'Cumplimiento del plan esta semana',
-        datos:[{l:'Comidas',v:pctComp+'%',c:pctComp>=70?G:pctComp>=50?O:R},{l:'Agua',v:lat&&lat.DiasSueno?lat.DiasSueno+'/6 dias':' — '},{l:'Dolor articular',v:ultDolor==='si'?(ultDolorZ||'Si'):'No',c:ultDolor==='si'?R:G}],
-        esperado:'≥70% comidas y ≥4 dias de agua = minimo eficiente. Dolor nuevo = detener progresion en ese ejercicio.',
-        ops:[{v:'ok',l:'≥70% en todo'},{v:'bajo',l:'<70% - hubo causas externas'},{v:'muy_bajo',l:'<50% - sin causas claras'}]},
-      {id:'q3',q:'Mediciones: peso y cintura segun objetivo',
-        datos:[{l:'Peso actual',v:peso,c:pesoDelta!==null?(objetivo==='deficit'?parseFloat(pesoDelta)<=0?G:R:objetivo==='superavit'?parseFloat(pesoDelta)>=0?G:R:G):G},{l:'Vs sem anterior',v:pesoDelta!==null?(parseFloat(pesoDelta)>0?'+':'')+pesoDelta+' kg':'—'},{l:'Cintura actual',v:cintura},{l:'Vs sem anterior',v:cinDelta2!==null?(parseFloat(cinDelta2)>0?'+':'')+cinDelta2+' cm':'—'}],
-        esperado:'Objetivo '+objetivo+': peso → '+pesoEsperado+'. Cintura → '+cinEsperada+'. Cintura que sube siempre es alerta.',
-        ops:[{v:'ok',l:'En direccion esperada'},{v:'estancado',l:'Sin cambio 2+ sem'},{v:'contrario',l:'Va en direccion contraria'}]},
-      q4[blq]||q4['volumen'],
+      // P1: Reportó?
+      {id:'q1',q:'Reporto esta semana?',
+        datos:[
+          {l:'Ultimo reporte',v:lat?lat.Semana:'Sin reportes',c:reportoEstaSem?G:R},
+          {l:'Semanas sin reporte',v:weeks.length?'Tiene '+weeks.length+' reportes':'Nunca reporto'},
+        ],
+        esperado:'El reporte es la base del seguimiento. Sin datos no puedo ajustar ni garantizar resultados. Su parte: registrar y reportar cada semana.',
+        ops:[{v:'si',l:'Si, reporto esta semana'},{v:'no',l:'No reporto'}]
+      },
+      // P2: Cumplimiento
+      {id:'q2',q:'Cumplio su parte esta semana?',
+        datos:[
+          {l:'Comidas',v:pctComp+'%',c:pctComp>=70?G:pctComp>=50?O:R},
+          {l:'Sueno',v:ultS,c:parseInt(ultS)<4?R:G},
+          {l:'Energia',v:ultE,c:ultE==='Baja toda la semana'?R:G},
+          {l:'Contexto',v:ultCtx==='muy_exigente'?'Semana muy diferente':ultCtx==='exigente'?'Con cambios':'Normal',c:ultCtx==='muy_exigente'?O:'#111'},
+        ],
+        esperado:'Minimo eficiente: ≥70% comidas + ≥4 noches sueno. Sin esto las mediciones no tienen sentido para analizar.',
+        ops:[{v:'ok',l:'Si, ≥70% en lo principal'},{v:'bajo_ctx',l:'No, pero hubo factores externos'},{v:'muy_bajo',l:'No, sin causas claras'}]
+      },
+      // P3: Mediciones
+      {id:'q3',q:'Las mediciones van en la direccion esperada?',
+        datos:[
+          {l:'Peso actual',v:peso},
+          {l:'Vs sem anterior',v:pesoDelta!==null?(parseFloat(pesoDelta)>0?'+':'')+pesoDelta+' kg':'—',c:pesoDelta!==null?(objetivo==='deficit'?parseFloat(pesoDelta)<=0?G:R:objetivo==='superavit'?parseFloat(pesoDelta)>=0?G:R:G):G},
+          {l:'Cintura actual',v:cintura},
+          {l:'Vs sem anterior',v:cinDelta2!==null?(parseFloat(cinDelta2)>0?'+':'')+cinDelta2+' cm':'—',c:cinDelta2!==null?parseFloat(cinDelta2)<=0?G:R:G},
+          {l:'Objetivo',v:objetivo+' → peso '+pesoDir},
+          {l:'Factores externos',v:ultCtx==='muy_exigente'?'Semana muy diferente':ultCtx==='exigente'?'Con cambios':'Semana normal',c:ultCtx!=='normal'?O:G},
+        ],
+        esperado:'Deficit: peso baja 0.3-0.5kg/sem + cintura baja o estable. Superavit: peso sube 0.1-0.3kg/sem + cintura estable. Cintura que sube siempre es alerta.',
+        ops:[{v:'ok',l:'Si, en direccion esperada'},{v:'estancado_ctx',l:'Estancado con factores externos'},{v:'estancado',l:'Estancado sin factores externos'},{v:'contrario',l:'Va en direccion contraria'}]
+      },
+      // P4: Entreno/videos
+      {id:'q4',q:'Progresion en el entrenamiento y registro?',
+        datos:[
+          {l:'e1RM vs sem anterior',v:e1rmLat?(parseFloat(e1rmLat.delta)>0?'+':'')+e1rmLat.delta+' kg':'Sin datos suficientes',c:e1rmLat?parseFloat(e1rmLat.delta)>0?G:O:R},
+          {l:'Nivel',v:nivelAse},
+          {l:'Videos enviados',v:nivelAse==='presencial'?'Presencial — sin videos':'Revisar si mando videos esta sem'},
+        ],
+        esperado:'Online: 1-2 videos por semana subidos a la app. Presencial: correccion en sesion. Progresion de carga debe verse en e1RM semana a semana.',
+        ops:[
+          {v:'ok_video',l:'Progresa + mando video'},
+          {v:'ok_sin_video',l:'Progresa pero sin video'},
+          {v:'sin_progresion_video',l:'Sin progresion pero mando video'},
+          {v:'sin_progresion_sin_video',l:'Sin progresion y sin video'},
+        ]
+      },
     ];
-  },[bloqueKey2,lat,weeks,e1rmLat,semanasEnBloque,ultE,ultH,ultS,ultCtx,ultDolor]);
+  },[bloqueKey2,lat,weeks,e1rmLat,semanasEnBloque,ultE,ultH,ultS,ultCtx,ultDolor,pctComp,rutina]);
 
-  // Calcular sugerencia final basada en las 4 respuestas
+  // Generar mensaje para el asesorado + nota interna según respuestas
   function calcSugerencia(resps){
-    var q1=resps.q1||'';var q2=resps.q2||'';var q3=resps.q3||'';var q4=resps.q4||'';
-    // Health Phase: sensaciones muy mal + compliance muy bajo
-    if(q1==='todo_mal'&&q2==='muy_bajo')return 'Health Phase reactivo. Las sensaciones y el cumplimiento indican que el cuerpo necesita restauracion antes de cualquier ajuste.';
-    if(q1==='todo_mal')return 'Considerar Health Phase. Las sensaciones estan sostenidamente alteradas. Revisar factores externos antes de ajustar el plan.';
-    // Compliance bajo
-    if(q2==='muy_bajo')return 'Hablar primero. El compliance esta muy por debajo del minimo sin causas externas claras. No ajustar el plan hasta entender el porque.';
-    // Mediciones en direccion contraria + todo lo demas OK
-    if(q3==='contrario'&&q1!=='todo_mal'&&q2==='ok')return 'Las mediciones van en direccion contraria al objetivo con buen cumplimiento. Revisar el calorico — el plan puede estar fallando.';
-    // e1RM / especifico del bloque
-    if(q4==='3sem'||q4==='baja_lejos')return 'Estancamiento confirmado en 3+ semanas sin factores externos. Evaluar Fase 1.';
-    if(q4==='2sem'||q4==='baja')return 'Sin progresion en 2 semanas. Revisar DOMS, contexto y tecnica antes de ajustar carga. Proxima sem es decision.';
-    if(q4==='mejor2'||q4==='ctx_mejor')return 'Criterio de salida cumplido. Iniciar Fase 1 — bloque activo.';
-    // Todo bien
-    if(q1!=='todo_mal'&&q2!=='muy_bajo'&&q3!=='contrario')return 'Todo dentro de lo esperado. Continuar el plan sin cambios. Proximo checkpoint la semana que viene.';
-    return 'Revision necesaria. Analizar el contexto completo antes de decidir.';
+    var q1=resps.q1||'';
+    var q2=resps.q2||'';
+    var q3=resps.q3||'';
+    var q4=resps.q4||'';
+    var objetivo=String(rutina&&rutina.Objetivo||'mantenimiento').toLowerCase();
+    var nivelAse=String(rutina&&rutina.Nivel||'online').toLowerCase();
+
+    var notaInterna='';
+    var mjeAsesorado='';
+
+    // P1: No reportó — fin del árbol
+    if(q1==='no'){
+      notaInterna='Sin reporte esta semana. No hay datos para trabajar. Pendiente: reporte del asesorado.';
+      mjeAsesorado='Hola! Esta semana no me llego tu reporte y sin esos datos no puedo revisar ni ajustar tu plan.\n\nEl reporte es tu parte: es lo que me permite hacer la mia. Sin eso no puedo saber si el plan esta funcionando, si hay que ajustar algo, ni orientarte para la semana que viene.\n\nEstas a tiempo: pesate, medi tu cintura y complete el registro en la app. Cuanto antes lo mandes, antes puedo trabajar con eso.\n\nPauta de esta semana: registra cada entreno + sube 1 foto o video de un ejercicio.';
+      return {mje:mjeAsesorado,nota:notaInterna,tipo:'sin_reporte'};
+    }
+
+    // P2: Cumplimiento bajo — fin del árbol
+    if(q2==='muy_bajo'){
+      notaInterna='Cumplimiento muy bajo (<50%) sin causas externas claras. No ajustar plan. Hablar primero sobre barreras.';
+      mjeAsesorado='Hola! Revise tu reporte y el cumplimiento de esta semana estuvo muy por debajo del minimo.\n\nSin un cumplimiento base (≥70% en comidas y descanso) las mediciones no me dicen nada util para ajustar tu plan. El plan puede estar bien, pero si no se ejecuta no hay forma de saberlo.\n\nMi parte es ajustar cuando los datos lo indican. Tu parte es registrar y cumplir para que esos datos existan.\n\nEsta semana el foco es uno solo: '+( pctComp<50?'llegar a 3 de 4 comidas por dia, todos los dias':'dormir 7hs al menos 4 noches')+'. El resto lo vemos cuando eso este resuelto.';
+      return {mje:mjeAsesorado,nota:notaInterna,tipo:'cumplimiento_bajo'};
+    }
+
+    if(q2==='bajo_ctx'){
+      notaInterna='Cumplimiento bajo con factores externos. El contexto explica parte del resultado. Plan sin cambios esta semana.';
+      mjeAsesorado='Hola! Vi tu reporte. El cumplimiento estuvo un poco bajo pero entiendo que la semana tuvo sus complicaciones.\n\nLos factores externos no son excusa pero si contexto: complican el cumplimiento y eso impacta en los resultados. Esta semana volvemos a la rutina normal.\n\nFoco: '+( pctComp<70?'comidas — apunta a 3 de 4 todos los dias':'descanso — prioriza 7hs al menos 4 noches')+'. El resto mantenerlo.';
+      return {mje:mjeAsesorado,nota:notaInterna,tipo:'cumplimiento_bajo_contexto'};
+    }
+
+    // P3: Mediciones
+    var medMsg='';
+    if(q3==='contrario'){
+      notaInterna='Mediciones en direccion contraria al objetivo con cumplimiento OK. Revisar calorico — posible ajuste de plan necesario.';
+      medMsg='Las mediciones estan yendo en la direccion contraria al objetivo ('+objetivo+'). Con buen cumplimiento esto indica que el plan necesita un ajuste. Esta semana reviso el calorico y te cuento los cambios.';
+    }else if(q3==='estancado'){
+      notaInterna='Mediciones estancadas sin factores externos. Evaluar ajuste calorico en proximo checkpoint.';
+      medMsg='Peso y cintura sin cambios en 2+ semanas con buen cumplimiento. Esto puede indicar que el calorico necesita un ajuste. Lo evaluo esta semana.';
+    }else if(q3==='estancado_ctx'){
+      notaInterna='Mediciones estancadas pero con factores externos presentes. No ajustar plan aun. Esperar semana normal.';
+      medMsg='El estancamiento de esta semana tiene explicacion: el contexto complica tanto el cumplimiento como las mediciones. En una semana normal esperamos ver el movimiento esperado.';
+    }else{
+      notaInterna='Mediciones en direccion correcta. Plan funcionando.';
+      medMsg='Las mediciones van en la direccion correcta. Seguimos igual.';
+    }
+
+    // P4: Videos y progresion
+    var entMsg='';var notaEnt='';
+    if(q4==='ok_video'){
+      notaEnt='Progresion + video enviado. Todo OK.';
+      entMsg='El entreno va bien y el video me llego. Reviso la tecnica y te mando feedback.';
+    }else if(q4==='ok_sin_video'){
+      notaEnt='Progresion OK pero sin video. Pedir video esta semana.';
+      entMsg=(nivelAse==='presencial'?'El entreno va bien. La proxima sesion presencial revisamos tecnica juntos.':'El entreno va bien. Esta semana grabate 1-2 series de cualquier ejercicio y subilo a la app. Me ayuda a ver la tecnica y darte un feedback mas preciso.');
+    }else if(q4==='sin_progresion_video'){
+      notaEnt='Sin progresion pero mando video. Revisar tecnica antes de ajustar carga.';
+      entMsg='El video me llego, gracias. Esta semana lo reviso en detalle porque antes de ajustar carga quiero ver como esta la tecnica. Te mando devolucion.';
+    }else{
+      notaEnt='Sin progresion y sin video. Pedir video urgente.';
+      entMsg=(nivelAse==='presencial'?'Esta semana nos vemos y revisamos tecnica en sesion.':'Esta semana necesito que me mandes 1-2 videos de algun ejercicio. Subilo a la app o mandamelo por aca. Sin verlo no puedo saber si el estancamiento es de carga, de tecnica o de recuperacion.');
+    }
+
+    notaInterna=notaInterna+' | Entreno: '+notaEnt;
+    mjeAsesorado='Hola! Revise tu reporte de esta semana.\n\n'+medMsg+'\n\n'+entMsg+'\n\nCualquier duda en el momento me avisas.';
+    return {mje:mjeAsesorado,nota:notaInterna,tipo:'completo'};
   }
-  // Decisiones finales por respuesta
-  function getDecision(blq,step,resp){
-    const DECS={
-      volumen:{
-        dolor:{si:'Bajar carga 10-15% en ese ejercicio. No cambiar bloque. Monitorear proximo checkpoint.'},
-        sens:{no:'Health Phase reactivo. Override inmediato.'},
-        comp:{no:'Hablar con el asesorado antes de ajustar el plan. No tocar nada esta semana.'},
-        e1rm:{si:'Bloque funciona. Continuar igual.',si_serie:'Bloque funciona. Considerar +1 serie al ejercicio principal.','1sem':'Esperar 1 semana mas. No tocar nada.','2sem':'Rotar o ajustar ejercicio puntual. Registrar motivo.','3sem':'Estancamiento confirmado. Ir a Fase 1.'}
-      },
-      fuerza:{
-        dolor:{si:'Reducir porcentaje y revisar tecnica. Si persiste ir a Fase 1.'},
-        sens:{no:'Health Phase reactivo.'},
-        comp:{no:'Hablar primero. No ajustar protocolo.'},
-        pesos:{si:'Continuar. Ajustar onda del proximo ciclo.','2sem_ctx':'Esperar 1 semana mas. Contexto exigente.','2sem':'Bajar 5% el peso de trabajo. Reiniciar ciclo.','3sem':'Estancamiento confirmado. Ir a Fase 1.'}
-      },
-      health:{
-        mejora:{si2:'Criterio de salida cumplido. Ir a Fase 1.',si1:'Continuar Health Phase. Una semana mas.',no_ctx:'Continuar. Abordar causa externa si es posible.',no_4sem:'Investigar causa medica o clinica. Derivar si corresponde.',no:'Continuar. El cuerpo necesita mas tiempo.'}
-      },
-      base:{
-        dolor:{si:'Revisar ejercicio especifico. Modificar variante.',generalizado:'Health Phase.'},
-        sens:{no:'Health Phase.'},
-        rir:{si:'Criterio de salida cumplido. Ir a Fase 1 (habitualmente Volumen).',no_4:'Continuar. Es temprano.',no_48:'Reformular instruccion tecnica.',no_8:'Ir a Fase 1. Revisar si NM es el bloque correcto.'}
-      },
-      man:{
-        ctx:{si:'Ir a Fase 1 con bloque activo.'},
-        e1rm:{no_sens:'Health Phase.',no_comp:'Revisar compliance con el asesorado.'},
-        peso:{si:'Continuar. Todo en orden.',cintura:'Ajustar calorico. No tocar entrenamiento.'}
-      },
-      deporte:{
-        sens:{no:'Descarga tactica 1 semana. El plan no se cancela, se pausa.'},
-        comp:{no:'Hablar primero. No ajustar hasta entender el porque.'},
-        test:{si:'Ajustar onda del proximo mes. Mantener todo lo demas.',no_8:'Recalibrar 1RM y rehacer la onda.',no_48:'No cambiar. Maximizar compliance y recuperacion.',no_4:'No tocar nada. Puesta a punto.'}
-      },
-    };
-        return((DECS[blq]||{})[step]||{})[resp]||null;
-  }
+
 
   function saveDecision(decision){
     setArbolSaving(true);
-    const latSemanID=lat?.SemanID||'';
-    const payload={action:'decision',asesorado:name,bloque:bloqueActual,semanaEnBloque:semanasEnBloque,decision,nota:arbolNota,SemanID:latSemanID};
+    var decStr=typeof decision==='object'?(decision.nota||decision.mje||''):decision;
+    var latSemanID=lat?lat.SemanID:'';
+    var payload={action:'decision',asesorado:name,bloque:bloqueActual,semanaEnBloque:semanasEnBloque,decision:decStr,nota:typeof decision==='object'?decision.mje:'',SemanID:latSemanID};
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-      .finally(()=>{
+      .finally(function(){
         setArbolSaving(false);
-        setArbolDone(decision);
-        // Guardar flag local: este asesorado+sem ya fue revisado
+        setArbolDone(typeof decision==='object'?decision:{mje:decision,nota:decision,tipo:''});
         try{
           var key='coach_cp_'+name.trim().toLowerCase()+'_'+latSemanID;
-          sessionStorage.setItem(key,'1');
-          localStorage.setItem(key,'1'); // también en localStorage para persistir
+          localStorage.setItem(key,'1');
         }catch(e){}
       });
   }
@@ -743,14 +782,115 @@ function ClientDetail({name,weeks,rutina,onBack}){
   // Checkpoint semanal — 4 preguntas siempre
   function ArbolCheckpoint(){
     var preguntas=PREGUNTAS_CP;
-    var totalPreg=preguntas.length; // siempre 4
-    var todasRespondidas=preguntas.every(function(p){return arbolResp[p.id];});
+    var totalPreg=preguntas.length;
 
-    if(arbolDone)return h('div',{style:{...card,background:'#EAF7F2',border:'1px solid #A3DFC8'}},
-      h('div',{style:{fontSize:'14px',fontWeight:'800',color:G,marginBottom:'8px'}},'Decision registrada'),
-      h('div',{style:{fontSize:'13px',color:'#333',lineHeight:'1.5',marginBottom:'12px'}},arbolDone),
-      h('button',{onClick:function(){setArbolStep(0);setArbolResp({});setArbolDone(null);setArbolNota('');setFactoresAlert(null);},style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Nuevo checkpoint')
+    // Determinar si el arbol debe terminar antes
+    var q1resp=arbolResp['q1']||'';
+    var q2resp=arbolResp['q2']||'';
+    var finTemprano=(q1resp==='no')||(q2resp==='muy_bajo'&&arbolStep>=2);
+    var todasRespondidas=finTemprano||(preguntas.every(function(p){return arbolResp[p.id];}));
+
+    if(arbolDone){
+      var sugerencia=typeof arbolDone==='object'?arbolDone:{mje:arbolDone,nota:'',tipo:''};
+      return h('div',null,
+        h('div',{style:{...card,background:'#EAF7F2',border:'1px solid #A3DFC8',marginBottom:'8px'}},
+          h('div',{style:{fontSize:'13px',fontWeight:'800',color:G,marginBottom:'8px'}},'Decision registrada'),
+          h('div',{style:{fontSize:'11px',color:'#555',marginBottom:'4px',fontWeight:'700',letterSpacing:'0.06em'}},'NOTA INTERNA'),
+          h('div',{style:{fontSize:'12px',color:'#333',marginBottom:'12px',lineHeight:'1.5'}},sugerencia.nota||sugerencia.mje),
+          h('div',{style:{height:'1px',background:'rgba(0,0,0,0.08)',marginBottom:'12px'}}),
+          h('div',{style:{fontSize:'11px',color:'#555',marginBottom:'4px',fontWeight:'700',letterSpacing:'0.06em'}},'MENSAJE PARA COPIAR'),
+          h('div',{style:{fontSize:'12px',color:'#333',whiteSpace:'pre-line',lineHeight:'1.6',background:'#F8F8F8',borderRadius:'8px',padding:'10px',marginBottom:'10px'}},sugerencia.mje||sugerencia.nota),
+          h('button',{onClick:function(){
+            navigator.clipboard.writeText(sugerencia.mje||sugerencia.nota).catch(function(){});
+          },style:{width:'100%',background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'10px',fontSize:'12px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}},'Copiar mensaje')
+        ),
+        h('button',{onClick:function(){setArbolStep(0);setArbolResp({});setArbolDone(null);setArbolNota('');setFactoresAlert(null);},style:{background:'rgba(0,0,0,0.06)',border:'none',borderRadius:'8px',padding:'10px 16px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Nuevo checkpoint')
+      );
+    }
+
+    var paso=preguntas[arbolStep];
+    if(!paso)return null;
+
+    return h('div',null,
+      h('div',{style:{...card,background:'#0A0A0A',border:'none'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase'}},'Checkpoint · '+bloqueActual),
+          h('div',{style:{display:'flex',gap:'4px'}},
+            preguntas.map(function(p,i){
+              return h('span',{key:i,style:{color:arbolResp[p.id]?(arbolStep===i?AC:G):'rgba(255,255,255,0.2)',fontSize:'16px'}},'●');
+            })
+          )
+        ),
+        h('div',{style:{fontSize:'15px',fontWeight:'800',color:'#fff',marginBottom:'14px',lineHeight:'1.4'}},paso.q),
+        h('div',{style:{background:'rgba(255,255,255,0.06)',borderRadius:'8px',padding:'10px',marginBottom:'10px'}},
+          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',marginBottom:'6px',letterSpacing:'0.06em'}},'DATOS DEL REPORTE'),
+          paso.datos.map(function(d,i){return h('div',{key:i,style:{display:'flex',justifyContent:'space-between',padding:'3px 0',fontSize:'12px'}},
+            h('span',{style:{color:'rgba(255,255,255,0.5)'}},d.l),
+            h('span',{style:{fontWeight:'700',color:d.c||'#fff'}},d.v)
+          );})
+        ),
+        h('div',{style:{borderLeft:'3px solid '+AC,paddingLeft:'10px',marginBottom:'14px'}},
+          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',marginBottom:'4px',letterSpacing:'0.06em'}},'LO ESPERADO'),
+          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.65)',lineHeight:'1.5'}},paso.esperado)
+        ),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
+          paso.ops.map(function(op){
+            var sel=arbolResp[paso.id]===op.v;
+            return h('button',{key:op.v,onClick:function(){
+              var newResp=Object.assign({},arbolResp);
+              newResp[paso.id]=op.v;
+              setArbolResp(newResp);
+              // Fin temprano si no reporto o cumplimiento muy bajo
+              var esFin=(paso.id==='q1'&&op.v==='no')||(paso.id==='q2'&&op.v==='muy_bajo');
+              if(esFin||arbolStep>=totalPreg-1){
+                // no avanzar — esperar confirmacion
+              }else{
+                setTimeout(function(){setArbolStep(arbolStep+1);},150);
+              }
+            },style:{padding:'10px 14px',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',textAlign:'left',color:sel?'#fff':'rgba(255,255,255,0.6)',background:sel?AC:'rgba(255,255,255,0.06)',borderColor:sel?AC:'rgba(255,255,255,0.1)',transition:'all 0.15s'}},op.l);
+          })
+        )
+      ),
+      // Navegacion y resultado
+      arbolResp[paso.id]&&h('div',{style:{marginTop:'8px'}},
+        (function(){
+          var esFin=(paso.id==='q1'&&arbolResp[paso.id]==='no')||(paso.id==='q2'&&arbolResp[paso.id]==='muy_bajo');
+          var esUltimo=arbolStep>=totalPreg-1;
+          if(esFin||esUltimo){
+            var sug=calcSugerencia(arbolResp);
+            return h('div',null,
+              h('div',{style:{...card,background:'#EAF7F2',border:'1px solid #A3DFC8',marginBottom:'8px'}},
+                h('div',{style:{fontSize:'10px',fontWeight:'700',color:G,marginBottom:'4px',letterSpacing:'0.06em'}},'NOTA INTERNA'),
+                h('div',{style:{fontSize:'12px',color:'#333',marginBottom:'10px',lineHeight:'1.5'}},sug.nota),
+                h('div',{style:{height:'1px',background:'rgba(0,0,0,0.08)',marginBottom:'10px'}}),
+                h('div',{style:{fontSize:'10px',fontWeight:'700',color:G,marginBottom:'4px',letterSpacing:'0.06em'}},'MENSAJE PARA EL ASESORADO'),
+                h('div',{style:{fontSize:'12px',color:'#333',whiteSpace:'pre-line',lineHeight:'1.6',background:'#F0F9F0',borderRadius:'6px',padding:'8px'}},sug.mje)
+              ),
+              h('textarea',{placeholder:'Agregar nota personal (opcional)',id:'cp-nota-'+name,
+                onChange:function(e){setArbolNota(e.target.value);},
+                style:Object.assign({},inp,{height:'50px',resize:'none',fontSize:'12px',marginBottom:'8px'})
+              }),
+              h('div',{style:{display:'flex',gap:'8px'}},
+                arbolStep>0&&!esFin&&h('button',{onClick:function(){setArbolStep(arbolStep-1);},style:{background:'rgba(0,0,0,0.06)',border:'none',borderRadius:'8px',padding:'10px',fontSize:'12px',cursor:'pointer'}},'← Atras'),
+                h('button',{onClick:function(){
+                  var ta=document.getElementById('cp-nota-'+name);
+                  var notaExtra=ta?ta.value:'';
+                  var notaFinal=sug.nota+(notaExtra?'\nNota: '+notaExtra:'');
+                  saveDecision({mje:sug.mje,nota:notaFinal,tipo:sug.tipo});
+                },disabled:arbolSaving,style:{flex:1,background:GRAD,color:'#fff',border:'none',borderRadius:'8px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},
+                  arbolSaving?'Guardando...':'Confirmar y guardar decision'
+                )
+              )
+            );
+          }
+          return h('div',{style:{display:'flex',gap:'8px'}},
+            arbolStep>0&&h('button',{onClick:function(){setArbolStep(arbolStep-1);},style:{flex:1,background:'rgba(0,0,0,0.06)',border:'none',borderRadius:'8px',padding:'10px',fontSize:'12px',cursor:'pointer'}},'← Atras'),
+            h('button',{onClick:function(){setArbolStep(arbolStep+1);},style:{flex:2,background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'10px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Siguiente →')
+          );
+        })()
+      )
     );
+  }
 
     var paso=preguntas[arbolStep];
     if(!paso)return null;
@@ -989,7 +1129,6 @@ function ClientDetail({name,weeks,rutina,onBack}){
       )
     )
   );
-}
 
 function VideoPanel({name}){
   const [videos,setVideos]=useState([]);
