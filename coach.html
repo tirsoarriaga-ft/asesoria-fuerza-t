@@ -238,7 +238,23 @@ function ClientList({data,rutinas,decisiones,onSelect,onRefresh}){
   const [soloSinRevisar,setSoloSinRevisar]=useState(false);
   const getObj=name=>{const r=rutinas.find(rt=>String(rt.Asesorado||'').trim().toLowerCase()===name.toLowerCase());return String(r?.Objetivo||'mantenimiento').toLowerCase().trim()||'mantenimiento';};
 
-  // hasCPA: check local localStorage flag first (más confiable que el sheet)
+  // Calcular los 2 SemanIDs más recientes de todos los reportes
+  var semsRecientes=useMemo(function(){
+    var allSems={};
+    Object.values(data).forEach(function(weeks){
+      if(weeks&&weeks.length){
+        var lat=weeks[weeks.length-1];
+        if(lat&&lat.SemanID)allSems[lat.SemanID]=1;
+      }
+    });
+    var unique=Object.keys(allSems).sort(function(a,b){
+      var na=parseInt(String(a).replace('sem_','')||0);
+      var nb=parseInt(String(b).replace('sem_','')||0);
+      return nb-na;
+    });
+    return unique.slice(0,2);
+  },[data]);
+
   function hasCPCheck(name,semId){
     var key='coach_cp_'+name.trim().toLowerCase()+'_'+semId;
     try{if(localStorage.getItem(key))return true;}catch(e){}
@@ -263,6 +279,8 @@ function ClientList({data,rutinas,decisiones,onSelect,onRefresh}){
     const weeks=data[name];
     const lat=weeks[weeks.length-1];
     const semId=lat?.SemanID||'';
+    // Solo mostrar si es de las ultimas 2 semanas Y no tiene checkpoint
+    if(!semsRecientes.includes(semId))return false;
     return !hasCPCheck(name,semId);
   });
   const statusBg={red:'#FEF2F2',yellow:'#FFFBEB',green:'#F0FDF4',grey:'#F9F9F9'};
