@@ -974,12 +974,11 @@ function ClientDetail({name,weeks,rutina,onBack}){
             )
       )
     );
-  }
+  // end ArbolCheckpoint
 
   const DTABS=[{id:'med',l:' Tendencias'},{id:'ent',l:' Entreno'},{id:'cp',l:' Checkpoint'},{id:'diag',l:' Diagnostico'}];
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
-    // Header
     h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'14px 18px',position:'sticky',top:0,zIndex:10}},
       h('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'4px'}},
         h('button',{onClick:onBack,style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',color:'#111',padding:0}},'←'),
@@ -1129,6 +1128,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
       )
     )
   );
+}
 
 function VideoPanel({name}){
   const [videos,setVideos]=useState([]);
