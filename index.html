@@ -324,6 +324,36 @@ function AjustarSemana({onClose}){
       else setMsg('No hizo falta migrar.');
     }).catch(function(){setMsg('Error trayendo ejercicios del sheet.');});
   }
+  var [backupText,setBackupText]=useState('');
+  function verBackup(){
+    var u=nombre.trim();if(!u){setMsg('Cargá un asesorado primero');return;}
+    var p='ase_'+u+'_';
+    // Reunir TODO lo del usuario: estado actual + backups de migración
+    var out={usuario:u,fecha:new Date().toISOString(),actual:{},backups:{}};
+    try{
+      for(var i=0;i<localStorage.length;i++){
+        var k=localStorage.key(i);
+        if(k&&k.indexOf(p)===0){
+          if(k.indexOf(p+'migbackup_')===0){out.backups[k]=localStorage.getItem(k);}
+          else{out.actual[k]=localStorage.getItem(k);}
+        }
+      }
+    }catch(e){}
+    var txt=JSON.stringify(out);
+    setBackupText(txt);
+    // Intentar descargar como archivo
+    try{
+      var blob=new Blob([txt],{type:'application/json'});
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');
+      a.href=url;a.download='fuerzat_backup_'+u+'_'+Date.now()+'.json';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      setTimeout(function(){URL.revokeObjectURL(url);},2000);
+      setMsg('Backup descargado. Si no bajó, copiá el texto de abajo.');
+    }catch(e){
+      setMsg('No se pudo descargar. Copiá el texto de abajo y pasámelo.');
+    }
+  }
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#0A0A0A',minHeight:'100vh',padding:'24px',overflowY:'auto'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'24px'}},
@@ -355,7 +385,9 @@ function AjustarSemana({onClose}){
               h('input',{type:'date',value:startDate,onChange:function(e){setStartDate(e.target.value);},style:Object.assign({},dark,{marginBottom:'12px'})}),
               h('button',{onClick:guardar,style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'14px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}},'Guardar corrección'),
               h('button',{onClick:limpiarDrafts,style:{width:'100%',background:'rgba(255,255,255,0.06)',color:'rgba(255,255,255,0.6)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}},'🗑 Limpiar drafts y reiniciar sem'),
-              h('button',{onClick:migrarManual,style:{width:'100%',background:AC,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}},'🔧 Migrar a IDs estables del sheet')
+              h('button',{onClick:migrarManual,style:{width:'100%',background:AC,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}},'🔧 Migrar a IDs estables del sheet'),
+              h('button',{onClick:verBackup,style:{width:'100%',background:'#378ADD',color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}},'💾 Ver / exportar backup'),
+              backupText&&h('textarea',{readOnly:true,value:backupText,onFocus:function(e){e.target.select();},style:{width:'100%',height:'120px',marginTop:'8px',fontSize:'10px',fontFamily:'monospace',background:'rgba(255,255,255,0.06)',color:'rgba(255,255,255,0.7)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'8px',padding:'8px'}})
             ),
             seccion==='datos'&&h('div',null,
               h('div',{style:box},
@@ -1732,8 +1764,9 @@ function App(){
               low:parseInt(r.RepMin||r['Rep Min'])||8,hi:parseInt(r.RepMax||r['Rep Max'])||12,kg:null,url:String(r.Tutorial||r.TUTORIAL||''),r1:'',r2:''};
           });
           setExes(exData);exesRef.current=exData;
-          // Migración una sola vez por dispositivo (backup local previo). Reorganiza kg/reps a IDs del sheet.
-          try{migrarIDsEstables(user,rows,false);}catch(e){}
+          // Migración automática DESACTIVADA — se corre a mano desde ?ajustar=true cuando el mapeo sea confiable.
+          // No borrar migrarIDsEstables: el botón manual del panel la usa.
+          // try{migrarIDsEstables(user,rows,false);}catch(e){}
           // Recargar sessKg ya migrado al estado
           try{
             const sk2=localStorage.getItem(`ase_${user}_sessKg`);
