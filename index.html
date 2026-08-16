@@ -687,9 +687,12 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     return sessionKg&&sessionKg[activeSess]?(sessionKg[activeSess][ex.id]||sessionKg[activeSess][String(ex.id)]||undefined):undefined;
   };
   const getRep=(sess,exId,k)=>{
-    const stored=sessionReps?.[sess]?.[exId]?.[k]||'';
+    // Buscar con la clave tal cual, como string y como int (post-migración ex.id es int del sheet,
+    // pero el draft cargado del JSON trae claves string). Mismo criterio que getKg.
+    const ss=sessionReps?.[sess]||{};
+    const cell=ss[exId]||ss[String(exId)]||ss[parseInt(exId)]||null;
+    const stored=cell?(cell[k]||''):'';
     if(stored)return stored;
-    // Para bloque base: pre-cargar con la mitad del rango
     if(bloque==='base'){const ex=exes.find(e=>e.id==exId);if(ex)return String(Math.round((ex.low+ex.hi)/2));}
     return '';
   };
@@ -722,7 +725,17 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     return null;
   };
   const setRep=(sess,exId,k,v)=>{
-    setSessionReps(prev=>{const next={...prev};if(!next[sess])next[sess]={};if(!next[sess][exId])next[sess][exId]={};next[sess][exId][k]=v;return next;});
+    setSessionReps(prev=>{
+      const next={...prev};
+      if(!next[sess])next[sess]={};
+      // Reusar la clave existente (string o int) para no duplicar; si no existe, usar int.
+      let key=exId;
+      if(next[sess][exId]===undefined&&next[sess][String(exId)]!==undefined)key=String(exId);
+      else if(next[sess][exId]===undefined&&next[sess][parseInt(exId)]!==undefined)key=parseInt(exId);
+      if(!next[sess][key])next[sess][key]={};
+      next[sess][key]={...next[sess][key],[k]:v};
+      return next;
+    });
     setSaved(false);
   };
   const canIncreaseKg=ex=>{
