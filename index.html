@@ -248,21 +248,26 @@ function AjustarSemana({onClose}){
 
   // Cargar nombres de ejercicios para mostrar en lugar de IDs
   var [exNames,setExNames]=useState({});
+  var [nameToSheetId,setNameToSheetId]=useState({});
   useEffect(function(){
     fetch(SCRIPT_URL+'?action=ejercicios')
       .then(function(r){return r.json();})
       .then(function(data){
-        var map={};
+        var map={};var n2i={};
+        var norm=function(x){return String(x||'').trim().toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');};
         (data||[]).forEach(function(ex){
           // El sheet tiene columna "ID" (mayúsculas) y "Nombre"
           var exId=ex.ID||ex.id;
           var exName=ex.Nombre||ex.NOMBRE||ex.nombre||ex.n;
-          if(exId!==undefined&&exName)map[String(exId)]=String(exName);
+          if(exId!==undefined&&exName){map[String(exId)]=String(exName);n2i[norm(exName)]=String(exId);}
         });
-        setExNames(map);
+        setExNames(map);setNameToSheetId(n2i);
       })
       .catch(function(){});
   },[]);
+  // IDs de ejercicios de la rutina ACTUAL del asesorado (para filtrar el panel de kg).
+  // Si no se puede cargar, queda vacío y NO se filtra (se muestran todos).
+  var [rutinaIds,setRutinaIds]=useState(null);
 
   function cargar(){
     var u=nombre.trim();if(!u)return;
@@ -279,23 +284,24 @@ function AjustarSemana({onClose}){
     var wkId='sem_'+(ls(p+'wknum')||'1');
     var draft=lsj(p+'draft_'+wkId,'null');
     setDatos({kg:kg,sems:sems,draft:draft,draftId:wkId});
+    // Cargar la rutina actual del asesorado para filtrar los ejercicios editables.
+    fetch(SCRIPT_URL+'?action=rutinas').then(function(r){return r.json();}).then(function(rutinas){
+      var norm=function(x){return String(x||'').trim().toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');};
+      var fila=(rutinas||[]).find(function(r){return norm(r.Asesorado)===norm(u);});
+      if(!fila){setRutinaIds(null);return;}
+      var ids={};
+      ['A','B','C','D'].forEach(function(sn){
+        String(fila['Sesion'+sn]||'').split(',').forEach(function(nom){
+          nom.split('+').forEach(function(part){
+            var sid=nameToSheetId[norm(part)];
+            if(sid)ids[sid]=true;
+          });
+        });
+      });
+      setRutinaIds(Object.keys(ids).length?ids:null);
+    }).catch(function(){setRutinaIds(null);});
   }
 
-  function restaurar(sem){
-    var u=nombre.trim();if(!u||!sem)return;
-    var p=pref(u);
-    var key=p+sem.id;
-    // Releer fresco del localStorage (para no pisar ediciones inline recién hechas)
-    var fresh=lsj(key,'null')||sem;
-    lsSet(key,JSON.stringify(fresh));
-    lsSet(p+'draft_'+sem.id,JSON.stringify({sr:fresh.sr,n:fresh.n,h:fresh.h,hiit:fresh.hiit}));
-    // NO tocar sessKg: ver/restaurar una sem pasada no cambia el kg de la sem actual.
-    // La sem pasada muestra su propio skUsed; la actual mantiene su kg vivo.
-    var semNum=parseInt(sem.id.replace('sem_',''))||1;
-    lsSet(p+'wknum',String(semNum));
-    setMsg('Semana '+semNum+' lista. Recargando...');
-    setTimeout(function(){window.location.href=window.location.pathname;},1200);
-  }
 
   function guardar(){
     var u=nombre.trim();if(!u)return;
@@ -305,14 +311,6 @@ function AjustarSemana({onClose}){
     setMsg('✅ Guardado.');
   }
 
-  function limpiarDrafts(){
-    var u=nombre.trim();if(!u)return;
-    var p=pref(u);var num=parseInt(wkNum)||1;
-    for(var i=1;i<=20;i++){lsRm(p+'draft_sem_'+i);lsRm(p+'reporteSent_sem_'+i);}
-    lsSet(p+'wknum',String(num));lsSet(p+'maxWkNum',String(num));lsRm(p+'hadAdvanced');
-    if(startDate)lsSet(p+'startdate',startDate);
-    setMsg('✅ Drafts limpiados. Cerrá y volvé a abrir la app.');
-  }
   function restaurarManual(){
     var u=nombre.trim();if(!u){setMsg('Cargá un asesorado primero');return;}
     if(!window.confirm('RESTAURAR los datos de '+u+' desde el backup original (previo a la migración). Reemplaza el estado actual. Se guarda una copia de seguridad antes. ¿Seguir?'))return;
@@ -393,7 +391,6 @@ function AjustarSemana({onClose}){
               h('div',{style:Object.assign({},tag,{marginTop:'8px'})},'Fecha de inicio (YYYY-MM-DD)'),
               h('input',{type:'date',value:startDate,onChange:function(e){setStartDate(e.target.value);},style:Object.assign({},dark,{marginBottom:'12px'})}),
               h('button',{onClick:guardar,style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'14px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}},'Guardar corrección'),
-              h('button',{onClick:limpiarDrafts,style:{width:'100%',background:'rgba(255,255,255,0.06)',color:'rgba(255,255,255,0.6)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}},'🗑 Limpiar drafts y reiniciar sem'),
               h('button',{onClick:restaurarManual,style:{width:'100%',background:'#1D9E75',color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}},'♻️ Restaurar desde backup original'),
               h('button',{onClick:migrarManual,style:{width:'100%',background:AC,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}},'🔧 Migrar a IDs estables del sheet'),
               h('button',{onClick:verBackup,style:{width:'100%',background:'#378ADD',color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}},'💾 Ver / exportar backup'),
@@ -439,6 +436,9 @@ function AjustarSemana({onClose}){
                       var skEntries=[];
                       Object.keys(skU).forEach(function(sess){
                         Object.keys(skU[sess]||{}).forEach(function(exId){
+                          // Filtrar: solo ejercicios de la rutina actual del sheet.
+                          // Si rutinaIds es null (no se pudo cargar), no se filtra.
+                          if(rutinaIds&&!rutinaIds[String(exId)])return;
                           skEntries.push({sess:sess,exId:exId,kg:skU[sess][exId]});
                         });
                       });
@@ -448,7 +448,6 @@ function AjustarSemana({onClose}){
                             h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#fff'}},sem.id),
                             h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'2px'}},tags.join(' · ')||'sin datos')
                           ),
-                          h('button',{onClick:function(){restaurar(sem);},style:{background:AC,color:'#fff',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Restaurar')
                         ),
                         skEntries.length>0&&h('div',{style:{background:'rgba(255,255,255,0.04)',borderRadius:'8px',padding:'8px'}},
                           h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.3)',marginBottom:'6px',letterSpacing:'0.08em'}},'KG USADOS ESTA SEM (skUsed) — toca para editar'),
