@@ -1700,6 +1700,18 @@ function migrarIDsEstables(user,rows,force){
     w.e=w.e.map(function(ex){var nid=ex&&ex.n?nameToId[_ftNorm(ex.n)]:undefined;return Object.assign({},ex,{id:nid!==undefined?nid:ex.id});});
     w._migrated2=true;
     _ftSet(p+semId,JSON.stringify(w));
+    // MIGRAR TAMBIÉN EL DRAFT de esta semana: la app lee el draft primero al abrir.
+    // El draft no tiene su propio `e`, así que se traduce con el oldToName de ESTA semana.
+    var draftKey=p+'draft_'+semId;
+    var draftRaw=getRaw(draftKey);
+    if(draftRaw){
+      try{
+        var dr=JSON.parse(draftRaw);
+        if(dr&&dr.sr)dr.sr=remap(dr.sr);
+        dr._migrated2=true;
+        _ftSet(draftKey,JSON.stringify(dr));
+      }catch(e){}
+    }
   });
   // Asegurar que hist esté repuesto (viene del backup)
   var histRaw=getRaw(p+'hist');if(histRaw)_ftSet(p+'hist',histRaw);
