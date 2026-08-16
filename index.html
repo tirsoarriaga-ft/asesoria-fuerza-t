@@ -313,15 +313,24 @@ function AjustarSemana({onClose}){
     if(startDate)lsSet(p+'startdate',startDate);
     setMsg('✅ Drafts limpiados. Cerrá y volvé a abrir la app.');
   }
+  function restaurarManual(){
+    var u=nombre.trim();if(!u){setMsg('Cargá un asesorado primero');return;}
+    if(!window.confirm('RESTAURAR los datos de '+u+' desde el backup original (previo a la migración). Reemplaza el estado actual. Se guarda una copia de seguridad antes. ¿Seguir?'))return;
+    var res=restaurarBackupOriginal(u);
+    if(res&&res.ok)setMsg('✅ Restaurado desde backup. Claves repuestas: '+res.claves+'. Ahora RECARGÁ la app. Después podés correr la migración.');
+    else if(res&&res.error)setMsg('Error: '+res.error);
+    else setMsg('No se pudo restaurar.');
+    cargar();
+  }
   function migrarManual(){
     var u=nombre.trim();if(!u){setMsg('Cargá un asesorado primero');return;}
-    if(!window.confirm('Reorganizar kg/reps de '+u+' a IDs estables del sheet. Se hace backup local antes. ¿Seguir?'))return;
+    if(!window.confirm('Reorganizar kg/reps de '+u+' a IDs estables del sheet (usa el backup original como fuente). Se guarda copia antes. ¿Seguir?'))return;
     setMsg('Migrando...');
     fetch(SCRIPT_URL+'?action=ejercicios').then(function(r){return r.json();}).then(function(rows){
       var res=migrarIDsEstables(u,rows,true);
-      if(res&&res.ok)setMsg('Migración OK. Semanas: '+res.semanas+(res.unmapped?'. Entradas omitidas (backup guardado): '+res.unmapped:'')+'. Recargá la app.');
+      if(res&&res.ok)setMsg('✅ Migración OK. Semanas: '+res.semanas+' · mapeados: '+res.mapped+' · sin mapear: '+res.unmapped+' (preservados) · fuente: '+res.fuente+'. RECARGÁ la app.');
       else if(res&&res.error)setMsg('Error: '+res.error);
-      else setMsg('No hizo falta migrar.');
+      else setMsg('No hizo falta migrar (ya estaba migrado).');
     }).catch(function(){setMsg('Error trayendo ejercicios del sheet.');});
   }
   var [backupText,setBackupText]=useState('');
@@ -385,6 +394,7 @@ function AjustarSemana({onClose}){
               h('input',{type:'date',value:startDate,onChange:function(e){setStartDate(e.target.value);},style:Object.assign({},dark,{marginBottom:'12px'})}),
               h('button',{onClick:guardar,style:{width:'100%',background:GRAD,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'14px',fontWeight:'700',cursor:'pointer',marginBottom:'8px'}},'Guardar corrección'),
               h('button',{onClick:limpiarDrafts,style:{width:'100%',background:'rgba(255,255,255,0.06)',color:'rgba(255,255,255,0.6)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'600',cursor:'pointer'}},'🗑 Limpiar drafts y reiniciar sem'),
+              h('button',{onClick:restaurarManual,style:{width:'100%',background:'#1D9E75',color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}},'♻️ Restaurar desde backup original'),
               h('button',{onClick:migrarManual,style:{width:'100%',background:AC,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}},'🔧 Migrar a IDs estables del sheet'),
               h('button',{onClick:verBackup,style:{width:'100%',background:'#378ADD',color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'700',cursor:'pointer',marginTop:'8px'}},'💾 Ver / exportar backup'),
               backupText&&h('textarea',{readOnly:true,value:backupText,onFocus:function(e){e.target.select();},style:{width:'100%',height:'120px',marginTop:'8px',fontSize:'10px',fontFamily:'monospace',background:'rgba(255,255,255,0.06)',color:'rgba(255,255,255,0.7)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:'8px',padding:'8px'}})
@@ -1591,39 +1601,81 @@ function CameraModal({onCapture,onClose}){
   );
 }
 
-// ── MIGRACIÓN A IDs ESTABLES DEL SHEET ────────────────────────────────
-// Reorganiza sr/skUsed/sk de cada semana (guardados bajo i+1 viejo) a la
-// columna ID del sheet, usando el snapshot `e` de cada semana. Backup local antes.
+// ── HELPERS DE BACKUP / MIGRACIÓN ─────────────────────────────────────
+function _ftNorm(s){return String(s||'').trim().toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');}
+function _ftGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
+function _ftSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+// Devuelve el contenido del backup pre-migración más ANTIGUO (el original limpio), como objeto {clave:valor}.
+function _ftBackupOriginal(user){
+  var p='ase_'+user+'_';
+  var keys=[];
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf(p+'migbackup_')===0)keys.push(k);}}catch(e){}
+  if(!keys.length)return null;
+  // el más antiguo = timestamp menor = estado más limpio (pre primera migración)
+  keys.sort(function(a,b){var ta=parseInt(a.split('migbackup_')[1])||0;var tb=parseInt(b.split('migbackup_')[1])||0;return ta-tb;});
+  try{return {key:keys[0],data:JSON.parse(_ftGet(keys[0])||'{}')};}catch(e){return null;}
+}
+// Guarda un backup del estado ACTUAL antes de cualquier operación (por si acaso).
+function _ftSnapshot(user,tagPrefix){
+  var p='ase_'+user+'_';var snap={};
+  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf(p)===0&&k.indexOf(p+'migbackup_')!==0)snap[k]=localStorage.getItem(k);}}catch(e){}
+  _ftSet(p+(tagPrefix||'migbackup')+'_'+Date.now(),JSON.stringify(snap));
+}
+
+// ── RESTAURAR desde el backup original (pre-migración) ────────────────
+// Repone TODAS las claves del usuario tal como estaban antes de migrar.
+function restaurarBackupOriginal(user){
+  var p='ase_'+user+'_';
+  var bk=_ftBackupOriginal(user);
+  if(!bk||!bk.data||Object.keys(bk.data).length===0)return {error:'no hay backup para restaurar'};
+  // Snapshot del estado actual antes de pisarlo (por seguridad)
+  _ftSnapshot(user,'prerestore');
+  var count=0;
+  Object.keys(bk.data).forEach(function(k){
+    // No reponer los propios backups dentro del backup (no debería haberlos, pero por si acaso)
+    if(k.indexOf(p+'migbackup_')===0)return;
+    _ftSet(k,bk.data[k]);count++;
+  });
+  // Al restaurar, quitamos la marca de migrado para poder re-migrar limpio
+  try{localStorage.removeItem(p+'migrated_v1');}catch(e){}
+  return {ok:true,claves:count,backup:bk.key};
+}
+
+// ── MIGRACIÓN A IDs ESTABLES DEL SHEET (v2 — por semana, desde backup) ─
+// Traduce sr/skUsed/sk de cada semana usando el snapshot `e` de ESA MISMA
+// semana (cada semana tiene su propio orden), tomando SIEMPRE como fuente
+// el backup original (nunca datos ya migrados). Idempotente.
 function migrarIDsEstables(user,rows,force){
   var p='ase_'+user+'_';
-  var lget=function(k){try{return localStorage.getItem(k);}catch(e){return null;}};
-  var lset=function(k,v){try{localStorage.setItem(k,v);}catch(e){}};
-  if(!force&&lget(p+'migrated_v1'))return {skipped:true};
-  var norm=function(s){return String(s||'').trim().toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');};
+  if(!force&&_ftGet(p+'migrated_v2'))return {skipped:true};
   var nameToId={};
-  (rows||[]).forEach(function(r){var id=parseInt(r.ID!==undefined?r.ID:r.id);var nm=norm(r.Nombre||r.NOMBRE||r.nombre);if(!isNaN(id)&&nm)nameToId[nm]=id;});
+  (rows||[]).forEach(function(r){var id=parseInt(r.ID!==undefined?r.ID:r.id);var nm=_ftNorm(r.Nombre||r.NOMBRE||r.nombre);if(!isNaN(id)&&nm)nameToId[nm]=id;});
   if(Object.keys(nameToId).length===0)return {error:'sin ejercicios del sheet'};
-  var backup={};
-  try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf(p)===0)backup[k]=localStorage.getItem(k);}}catch(e){}
-  lset(p+'migbackup_'+Date.now(),JSON.stringify(backup));
-  var histIds=[];try{histIds=JSON.parse(lget(p+'hist')||'[]');}catch(e){}
-  var unmapped=0;
+  // FUENTE: backup original si existe (datos limpios); si no, estado actual (solo si no migrado v2).
+  var bk=_ftBackupOriginal(user);
+  var source=bk?bk.data:null;
+  var getRaw=function(k){return source?source[k]:_ftGet(k);};
+  // Snapshot del estado actual antes de sobrescribir (por seguridad)
+  _ftSnapshot(user,'premig2');
+  var histIds=[];try{histIds=JSON.parse(getRaw(p+'hist')||'[]');}catch(e){}
+  var unmapped=0, mapped=0;
   histIds.forEach(function(semId){
-    var raw=lget(p+semId);if(!raw)return;
+    var raw=getRaw(p+semId);if(!raw)return;
     var w;try{w=JSON.parse(raw);}catch(e){return;}
-    if(!w.e||w.e.length===0)return;
-    var oldIdToName={};
-    (w.e||[]).forEach(function(ex){if(ex&&ex.id!==undefined&&ex.n)oldIdToName[String(ex.id)]=norm(ex.n);});
+    if(!w.e||!w.e.length)return; // sin snapshot no se puede traducir: dejar como está
+    // diccionario de ESTA semana: id_viejo -> nombre
+    var oldToName={};
+    w.e.forEach(function(ex){if(ex&&ex.id!==undefined&&ex.n)oldToName[String(ex.id)]=_ftNorm(ex.n);});
     var remap=function(obj){
       if(!obj)return obj;
       var out={};
       Object.keys(obj).forEach(function(sess){
         out[sess]={};
         Object.keys(obj[sess]||{}).forEach(function(oldId){
-          var nm=oldIdToName[String(oldId)];
+          var nm=oldToName[String(oldId)];
           var nid=nm?nameToId[nm]:undefined;
-          if(nid!==undefined)out[sess][nid]=obj[sess][oldId];
-          else unmapped++;
+          if(nid!==undefined){out[sess][nid]=obj[sess][oldId];mapped++;}
+          else{out[sess][oldId]=obj[sess][oldId];unmapped++;} // preservar huérfano tal cual
         });
       });
       return out;
@@ -1631,15 +1683,19 @@ function migrarIDsEstables(user,rows,force){
     w.sr=remap(w.sr);
     w.skUsed=remap(w.skUsed);
     w.sk=remap(w.sk);
-    w.e=(w.e||[]).map(function(ex){var nid=nameToId[norm(ex.n)];return Object.assign({},ex,{id:nid!==undefined?nid:ex.id});});
-    w._migrated=true;
-    lset(p+semId,JSON.stringify(w));
+    // e nuevo con ids del sheet (para que la app lo lea coherente)
+    w.e=w.e.map(function(ex){var nid=ex&&ex.n?nameToId[_ftNorm(ex.n)]:undefined;return Object.assign({},ex,{id:nid!==undefined?nid:ex.id});});
+    w._migrated2=true;
+    _ftSet(p+semId,JSON.stringify(w));
   });
+  // Asegurar que hist esté repuesto (viene del backup)
+  var histRaw=getRaw(p+'hist');if(histRaw)_ftSet(p+'hist',histRaw);
+  // Reconstruir sessKg vivo desde las semanas ya migradas (más nueva -> más vieja)
   var newSessKg={};
   histIds.slice().reverse().forEach(function(semId){
-    var raw=lget(p+semId);if(!raw)return;
+    var raw=_ftGet(p+semId);if(!raw)return;
     var w;try{w=JSON.parse(raw);}catch(e){return;}
-    if(!w._migrated)return;
+    if(!w._migrated2)return;
     var src=w.skUsed||w.sk||{};
     Object.keys(src).forEach(function(sess){
       if(!newSessKg[sess])newSessKg[sess]={};
@@ -1648,9 +1704,9 @@ function migrarIDsEstables(user,rows,force){
       });
     });
   });
-  lset(p+'sessKg',JSON.stringify(newSessKg));
-  lset(p+'migrated_v1','1');
-  return {ok:true,semanas:histIds.length,unmapped:unmapped};
+  _ftSet(p+'sessKg',JSON.stringify(newSessKg));
+  _ftSet(p+'migrated_v2','1');
+  return {ok:true,semanas:histIds.length,mapped:mapped,unmapped:unmapped,fuente:bk?'backup':'actual'};
 }
 
 function App(){
