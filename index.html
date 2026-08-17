@@ -1349,13 +1349,14 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
   var aguaMinStr=aguaMinL.toFixed(1)+'L ('+Math.round(aguaMinL/0.25)+' vasos)';
   var bannerKey='ase_misemana_v2';
   var [showBanner,setShowBanner]=useState(function(){return !localStorage.getItem(bannerKey);});
+  var [mealPanel,setMealPanel]=useState(null);
   function closeBanner(){localStorage.setItem(bannerKey,'1');setShowBanner(false);}
-  function cycleMeal(di,meal){
-    var cur=(nut[di].m[meal])||'';
-    var idx=MEAL_STATES.findIndex(function(s){return s.v===cur;});
-    var next=MEAL_STATES[(idx+1)%MEAL_STATES.length].v;
-    var newN=nut.map(function(d,i){return i===di?Object.assign({},d,{m:Object.assign({},d.m,{[meal]:next})}):d;});
-    setNut(newN);setSaved(false);
+  function openMealPanel(di,meal){
+    setMealPanel({di:di,meal:meal});
+  }
+  function setMealState(di,meal,val){
+    var newN=nut.map(function(d,i){return i===di?Object.assign({},d,{m:Object.assign({},d.m,{[meal]:val})}):d;});
+    setNut(newN);setSaved(false);setMealPanel(null);
   }
   function cycleAgua(di){
     var cur=(nut[di].agua)||'';
@@ -1375,8 +1376,8 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
   var dolorInt=(hab.sens||{}).dolorIntensidad||'';
   var ctx=(hab.sens||{}).contextoVida||'';
   // Helper: burbuja clickeable
-  function Bub(color,bg,ic,onClick){
-    return h('button',{onClick:onClick,style:{width:'100%',aspectRatio:'1',borderRadius:'50%',border:'2px solid '+color,background:bg,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',padding:0}},ic);
+  function Bub(color,bg,ic,onClick,active){
+    return h('button',{onClick:onClick,style:{width:'100%',aspectRatio:'1',borderRadius:'50%',border:(active?'3px':'2px')+' solid '+(active?AC:color),background:active?AC+'18':bg,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',padding:0}},ic);
   }
   // Header row de dias
   var diaHeader=h('div',{style:{display:'grid',gridTemplateColumns:'72px repeat(6,1fr)',gap:'2px',marginBottom:'4px',alignItems:'center'}},
@@ -1418,11 +1419,34 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
           nut.slice(0,6).map(function(d,di){
             var cur=(d.m[meal])||'';
             var st=MEAL_STATES.find(function(s){return s.v===cur;})||MEAL_STATES[0];
-            return Bub(st.color,cur?st.color+'22':'transparent',st.ic,function(){cycleMeal(di,meal);});
+            return Bub(st.color,cur?st.color+'22':'transparent',st.ic,function(){openMealPanel(di,meal);},mealPanel&&mealPanel.di===di&&mealPanel.meal===meal);
           })
         );
       })
     ),
+    mealPanel&&(function(){
+      var mlabels={desayuno:'Desayuno',almuerzo:'Almuerzo',merienda:'Merienda',cena:'Cena'};
+      var mdias=['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
+      var mcur=(nut[mealPanel.di].m[mealPanel.meal])||'';
+      var mopts=MEAL_STATES.slice(1);
+      return h('div',{style:Object.assign({},card,{border:'1.5px solid '+AC,marginTop:'-4px'})},
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
+          h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#111'}},mdias[mealPanel.di]+' · '+mlabels[mealPanel.meal]),
+          h('button',{onClick:function(){setMealPanel(null);},style:{background:'none',border:'none',fontSize:'18px',color:'#999',cursor:'pointer',padding:'0 0 0 8px'}},'x')
+        ),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},
+          mopts.map(function(ms){
+            var sel=mcur===ms.v;
+            return h('button',{key:ms.v,onClick:function(){setMealState(mealPanel.di,mealPanel.meal,ms.v);},
+              style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 13px',border:'1.5px solid '+(sel?ms.color:'rgba(0,0,0,0.1)'),borderRadius:'10px',background:sel?ms.color+'15':'#fff',cursor:'pointer',textAlign:'left',width:'100%'}},
+              h('span',{style:{width:'22px',height:'22px',borderRadius:'50%',background:ms.color,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',flexShrink:0}},ms.ic),
+              h('span',{style:{fontSize:'14px',color:sel?'#111':'#333'}},ms.label)
+            );
+          }),
+          mcur&&h('button',{onClick:function(){setMealState(mealPanel.di,mealPanel.meal,'');},style:{background:'none',border:'none',color:'#999',fontSize:'12px',cursor:'pointer',padding:'4px',marginTop:'2px'}},'Quitar marca')
+        )
+      );
+    })(),
     // AGUA
     h('div',{style:card},
       h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Agua'),
