@@ -450,20 +450,41 @@ function AjustarSemana({onClose}){
                           ),
                         ),
                         skEntries.length>0&&h('div',{style:{background:'rgba(255,255,255,0.04)',borderRadius:'8px',padding:'8px'}},
-                          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.3)',marginBottom:'6px',letterSpacing:'0.08em'}},'KG USADOS ESTA SEM (skUsed) — toca para editar'),
+                          h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.3)',marginBottom:'6px',letterSpacing:'0.08em'}},'REPS (serie 1) Y KG DE ESTA SEM — toca para editar'),
                           skEntries.map(function(entry,ei){
                             return h('div',{key:ei,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'4px 0',borderBottom:ei<skEntries.length-1?'1px solid rgba(255,255,255,0.06)':'none'}},
                               h('span',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)'}},
                                 'Ses.'+entry.sess+' · '+(exNames[String(entry.exId)]||'Ej.'+entry.exId)
                               ),
                               h('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
-                                h('input',{type:'number',defaultValue:entry.kg,style:{width:'60px',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',color:'#fff',borderRadius:'6px',padding:'3px 6px',fontSize:'12px',textAlign:'right'},
+                                // REPS (serie 1) — editable
+                                h('input',{type:'number',defaultValue:((sem.sr&&sem.sr[entry.sess]&&(sem.sr[entry.sess][entry.exId]||sem.sr[entry.sess][String(entry.exId)]))||{}).r1||'',placeholder:'reps',style:{width:'48px',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',color:'#fff',borderRadius:'6px',padding:'3px 6px',fontSize:'12px',textAlign:'right'},
+                                  onBlur:function(e){
+                                    var v=e.target.value.trim();
+                                    var u=nombre.trim();if(!u)return;
+                                    var p=pref(u);
+                                    var raw=ls(p+sem.id);if(!raw)return;
+                                    try{
+                                      var d=JSON.parse(raw);
+                                      if(!d.sr)d.sr={};
+                                      if(!d.sr[entry.sess])d.sr[entry.sess]={};
+                                      if(!d.sr[entry.sess][entry.exId])d.sr[entry.sess][entry.exId]={};
+                                      d.sr[entry.sess][entry.exId].r1=v;
+                                      lsSet(p+sem.id,JSON.stringify(d));
+                                      // Mantener el draft alineado para que la app no muestre lo viejo
+                                      var dk=p+'draft_'+sem.id;var drw=ls(dk);
+                                      if(drw){try{var dr=JSON.parse(drw);if(!dr.sr)dr.sr={};if(!dr.sr[entry.sess])dr.sr[entry.sess]={};if(!dr.sr[entry.sess][entry.exId])dr.sr[entry.sess][entry.exId]={};dr.sr[entry.sess][entry.exId].r1=v;lsSet(dk,JSON.stringify(dr));}catch(e2){}}
+                                      setMsg('reps actualizadas en '+sem.id+'. Recargá la app para ver el cambio.');
+                                    }catch(err){}
+                                  }
+                                }),
+                                h('span',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)'}},'rep'),
+                                h('input',{type:'number',defaultValue:entry.kg,style:{width:'56px',background:'rgba(255,255,255,0.1)',border:'1px solid rgba(255,255,255,0.2)',color:'#fff',borderRadius:'6px',padding:'3px 6px',fontSize:'12px',textAlign:'right'},
                                   onBlur:function(e){
                                     var newKg=parseFloat(e.target.value);
                                     if(isNaN(newKg)||newKg<=0)return;
                                     var u=nombre.trim();if(!u)return;
                                     var p=pref(u);
-                                    // Update skUsed in the stored sem
                                     var raw=ls(p+sem.id);
                                     if(!raw)return;
                                     try{
@@ -472,7 +493,7 @@ function AjustarSemana({onClose}){
                                       if(!d.skUsed[entry.sess])d.skUsed[entry.sess]={};
                                       d.skUsed[entry.sess][entry.exId]=newKg;
                                       lsSet(p+sem.id,JSON.stringify(d));
-                                      setMsg('kg actualizado en '+sem.id+'. Recarga la app para ver el grafico corregido.');
+                                      setMsg('kg actualizado en '+sem.id+'. Recargá la app para ver el cambio.');
                                     }catch(err){}
                                   }
                                 }),
@@ -593,6 +614,21 @@ function Login({onLogin}){
 
 // ── TRAINING ──────────────────────────────────────────────────────────
 function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum}){
+  // SNAPSHOT DE RUTINA POR SEMANA: si se está viendo una semana pasada que guardó su propia
+  // rutina, usar ESA para armar la vista (ejercicios, bloque, series) en vez de la rutina actual.
+  // Semanas viejas sin snapshot -> se usa la rutina actual (fallback, comportamiento previo).
+  if(isViewingPast&&hist&&wk){
+    var _wSnap=hist.find(function(w){return w.wi===wk.id||w.id===wk.id;});
+    if(_wSnap&&_wSnap.rutina&&_wSnap.rutina.assign){
+      cfg=Object.assign({},cfg,{
+        num:_wSnap.rutina.num||cfg.num,
+        assign:_wSnap.rutina.assign,
+        bloque:_wSnap.rutina.bloque||cfg.bloque,
+        series:_wSnap.rutina.series||cfg.series,
+        bloqueInicio:_wSnap.rutina.bloqueInicio||cfg.bloqueInicio
+      });
+    }
+  }
   const BLOQUES={
     volumen:    {label:'Volumen',        color:'#1D9E75',emoji:'📈',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. Cada 2 semanas la app te agregará una serie efectiva extra.'},
     intensidad: {label:'Intensidad',     color:'#378ADD',emoji:'🏋️',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. En la última serie de cada ejercicio, aplicá una técnica de intensidad.'},
@@ -619,6 +655,8 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const [kgVal,setKgVal]=useState('');
   const [exEquiv,setExEquiv]=useState(null); // exercise to show equivalents for
   const [swapVerEx,setSwapVerEx]=useState(0);
+  const [correcting,setCorrecting]=useState(false); // modo corrección de datos en semana pasada
+  const [corrMsg,setCorrMsg]=useState('');
   const [videos,setVideos]=useState(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_videos`)||'{}')}catch(e){return{};}});
   const [uploading,setUploading]=useState({});
   const [showCamera,setShowCamera]=useState(null); // {sessId,exId}
@@ -821,6 +859,64 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
         h('span',{style:{fontSize:'18px',fontWeight:'900'}},s),
         h('span',{style:{fontSize:'9px',color:'#999'}},(cfg.assign[s]||[]).length+' ej.')
       )))
+    ),
+    // ── ENTREGA C: corrección de datos en SEMANA PASADA (solo lectura + modo corrección) ──
+    // Escribe directo a sem_N y su draft en localStorage. NO toca sessionReps/sessionKg/auto-save.
+    isViewingPast&&h('div',{style:{...card,background:'#FFF7ED',border:'1px solid #FED7AA'}},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+        h('div',null,
+          h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#9A3412'}},'✏️ Corregir datos de esta semana'),
+          h('div',{style:{fontSize:'11px',color:'#B45309',marginTop:'2px'}},'Solo si la app muestra un rep o kg equivocado')
+        ),
+        h('button',{onClick:function(){setCorrecting(function(v){return !v;});setCorrMsg('');},style:{background:correcting?'#9A3412':'#EA580C',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},correcting?'Cerrar':'Corregir')
+      ),
+      correcting&&h('div',{style:{marginTop:'12px'}},
+        (function(){
+          var semData=(hist||[]).find(function(w){return w.wi===wk.id||w.id===wk.id;});
+          if(!semData)return h('div',{style:{fontSize:'12px',color:'#9A3412'}},'No hay datos guardados de esta semana en este dispositivo.');
+          var groups=sessGroups; // ejercicios de la sesión activa (según snapshot de esa semana)
+          if(!groups||groups.length===0)return h('div',{style:{fontSize:'12px',color:'#9A3412'}},'Esta sesión no tiene ejercicios.');
+          return h('div',null,
+            h('div',{style:{fontSize:'11px',color:'#B45309',marginBottom:'8px'}},'Sesión '+activeSess+' — editá rep (serie 1) o kg y tocá fuera del campo.'),
+            groups.flat().map(function(ex){
+              var srCell=(semData.sr&&semData.sr[activeSess])?(semData.sr[activeSess][ex.id]||semData.sr[activeSess][String(ex.id)]):null;
+              var skCell=(semData.skUsed&&semData.skUsed[activeSess])?(semData.skUsed[activeSess][ex.id]||semData.skUsed[activeSess][String(ex.id)]):null;
+              var curR1=srCell?(srCell.r1||''):'';
+              var curKg=skCell!=null?skCell:'';
+              function writeField(field,val){
+                var raw=localStorage.getItem('ase_'+user+'_'+wk.id);if(!raw)return;
+                try{
+                  var d=JSON.parse(raw);
+                  if(field==='r1'){
+                    if(!d.sr)d.sr={};if(!d.sr[activeSess])d.sr[activeSess]={};
+                    if(!d.sr[activeSess][ex.id])d.sr[activeSess][ex.id]={};
+                    d.sr[activeSess][ex.id].r1=val;
+                  }else{
+                    var kg=parseFloat(val);if(isNaN(kg)||kg<=0)return;
+                    if(!d.skUsed)d.skUsed={};if(!d.skUsed[activeSess])d.skUsed[activeSess]={};
+                    d.skUsed[activeSess][ex.id]=kg;
+                  }
+                  localStorage.setItem('ase_'+user+'_'+wk.id,JSON.stringify(d));
+                  // Alinear el draft para que la app no muestre lo viejo al reabrir
+                  var dk='ase_'+user+'_draft_'+wk.id;var drw=localStorage.getItem(dk);
+                  if(drw){try{var dr=JSON.parse(drw);if(field==='r1'){if(!dr.sr)dr.sr={};if(!dr.sr[activeSess])dr.sr[activeSess]={};if(!dr.sr[activeSess][ex.id])dr.sr[activeSess][ex.id]={};dr.sr[activeSess][ex.id].r1=val;}localStorage.setItem(dk,JSON.stringify(dr));}catch(e){}}
+                  setCorrMsg('Guardado en '+wk.id+'. Recargá la app (cerrá y abrí) para ver el cambio.');
+                }catch(e){}
+              }
+              return h('div',{key:ex.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid rgba(154,52,18,0.12)'}},
+                h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#7C2D12',flex:1,paddingRight:'8px'}},ex.n),
+                h('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
+                  h('input',{type:'number',defaultValue:curR1,placeholder:'rep',onBlur:function(e){writeField('r1',e.target.value.trim());},style:{width:'50px',border:'1px solid #FDBA74',borderRadius:'6px',padding:'4px 6px',fontSize:'13px',textAlign:'right',color:'#7C2D12'}}),
+                  h('span',{style:{fontSize:'11px',color:'#B45309'}},'rep'),
+                  h('input',{type:'number',defaultValue:curKg,placeholder:'kg',onBlur:function(e){writeField('kg',e.target.value.trim());},style:{width:'58px',border:'1px solid #FDBA74',borderRadius:'6px',padding:'4px 6px',fontSize:'13px',textAlign:'right',color:'#7C2D12'}}),
+                  h('span',{style:{fontSize:'11px',color:'#B45309'}},'kg')
+                )
+              );
+            }),
+            corrMsg&&h('div',{style:{marginTop:'10px',fontSize:'12px',color:'#166534',background:'#DCFCE7',borderRadius:'8px',padding:'8px 10px',fontWeight:'600'}},corrMsg)
+          );
+        })()
+      )
     ),
     h('div',{style:{...card,marginBottom:'10px',background:'#0A0A0A',border:'none'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
@@ -2062,7 +2158,10 @@ function App(){
       const normSK={};
       Object.entries(sessionKg).forEach(([sess,exMap])=>{normSK[sess]={};Object.entries(exMap||{}).forEach(([exId,kg])=>{normSK[sess][parseInt(exId)]=kg;});});
       localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(normSK));
-      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,skUsed,sk:usedSK,e:exes,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
+      // Snapshot de rutina de ESTA semana (para que al verla en el futuro muestre su rutina, no la actual).
+      // Se guarda con IDs del sheet (ya estables). Incluye bloque/series para reflejar la semana tal cual era.
+      const rutinaSnap={num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio};
+      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,skUsed,sk:usedSK,e:exes,rutina:rutinaSnap,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
       localStorage.setItem(SK(wk.id,user),JSON.stringify(d));
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
       if(!list.includes(wk.id)){list.push(wk.id);localStorage.setItem(HK(user),JSON.stringify(list));}
