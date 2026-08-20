@@ -265,6 +265,7 @@ function ClientList({data,rutinas,decisiones,onSelect,onRefresh}){
              (String(d.SemanID||'')).trim()===semId;
     });
   }
+  const semNum=(s)=>parseInt(String(s||'').replace('sem_',''))||0;
   const clients=Object.keys(data).sort((a,b)=>{
     const wa=data[a],wb=data[b];
     const latA=wa[wa.length-1],latB=wb[wb.length-1];
@@ -273,13 +274,16 @@ function ClientList({data,rutinas,decisiones,onSelect,onRefresh}){
     const hasCPA=hasCPCheck(a,semA);
     const hasCPB=hasCPCheck(b,semB);
     if(hasCPA!==hasCPB)return hasCPA?1:-1;
-    return semA.localeCompare(semB);
+    // Sin revisar primero, ordenados de más ANTIGUO a más reciente (el que espera hace más tiempo, arriba)
+    return semNum(semA)-semNum(semB);
   }).filter(name=>{
     if(!soloSinRevisar)return true;
     const weeks=data[name];
     const lat=weeks[weeks.length-1];
     const semId=lat?.SemanID||'';
-    // Solo mostrar si es de las ultimas 2 semanas Y no tiene checkpoint
+    // "Sin revisar" = reportó en una de las últimas 2 semanas Y todavía no tiene checkpoint.
+    // Quien NO reportó reciente (su último SemanID no está entre los recientes) queda fuera:
+    // no llegó su reporte, así que va al grupo "No reportó", no a "Sin revisar".
     if(!semsRecientes.includes(semId))return false;
     return !hasCPCheck(name,semId);
   });
@@ -1108,7 +1112,8 @@ function ClientDetail({name,weeks,rutina,onBack}){
                     )
                   :h('div',{style:{textAlign:'center',color:'#bbb',padding:'20px',fontSize:'12px'}},'Guardá al menos 2 semanas con reps cargadas')
               )
-            )
+            ),
+            h(VideoPanel,{name})
       ),
 
       // TAB: SENSACIONES
@@ -1180,11 +1185,29 @@ function SemanaPanel({data,rutinas}){
   const [copied,setCopied]=useState(null);
   const [view,setView]=useState('lun');
   const TIPS={
-    nutricion:{volumen:'Sin las comidas no hay energia para construir. Apunta a 4 comidas aunque sean simples.',fuerza:'La fuerza necesita energia disponible. Esta semana mantene las comidas aunque el dia este cargado.',health:'La recuperacion empieza en la cocina. Esta semana priorizá comer regular aunque sea poco.',man:'Sostener las comidas es lo que evita perder lo ganado. Aunque sea simple, no salteés.',base:'Establece el habito de las 4 comidas. Todo el proceso depende de eso.',deporte:'Segui el plan de alimentacion. El rendimiento depende directamente de esto.'},
-    sueno:{volumen:'Con menos de 7hs la construccion muscular se frena. Esta semana priorizá dormir.',fuerza:'La fuerza se construye mientras dormis, no mientras entrenás. Priorizá el descanso.',health:'El descanso ES el objetivo de este bloque. Priorizalo por encima de todo.',man:'El sueno es lo que sostiene la recuperacion sin perder lo ganado.',base:'Establece una rutina de sueno. Todo el proceso depende de eso.',deporte:'El rendimiento en competencia depende del descanso previo. Dormí bien.'},
-    entreno:{volumen:'Completa todas las sesiones esta semana. Sin el volumen de entrenamiento no hay estimulo.',fuerza:'No salteés ninguna sesion. La progresion de carga necesita estimulo consistente.',health:'Realiza las sesiones pautadas sin forzar. El movimiento ayuda a la recuperacion.',man:'Mantene la frecuencia. Es lo que sostiene lo que construiste.',base:'Priorizá la tecnica en cada rep. El control del esfuerzo es el objetivo ahora.',deporte:'No salteés sesiones. Cada una tiene un proposito especifico para la fecha que se viene.'},
+    nutricion:{
+      volumen:'Sumá una comida más esta semana, aunque sea simple: la construcción muscular necesita ese aporte extra de energía.',
+      fuerza:'Asegurá comer antes de cada sesión de fuerza. Sin energía disponible el sistema nervioso no rinde y el peso se siente más pesado.',
+      intensidad:'Llegá a las sesiones bien alimentado: las técnicas de intensidad exigen más y sin energía no vas a sostenerlas.',
+      base:'Fijá las 4 comidas en horarios estables esta semana. El objetivo del bloque es que el hábito quede firme.',
+      rehabilitacion:'Comé completo y regular: la reparación de tejidos empieza en la comida, no en el ejercicio.'
+    },
+    sueno:{
+      volumen:'Apuntá a 7hs mínimo esta semana. El músculo se construye durmiendo; con menos, el estímulo del entreno se desperdicia.',
+      fuerza:'Cuidá el descanso como si fuera una serie más: la fuerza se consolida durmiendo, no entrenando.',
+      intensidad:'Dormí bien las noches previas a las sesiones duras. Sin descanso, la intensidad se vuelve contraproducente.',
+      base:'Ordená el horario de sueño esta semana. Es la base sobre la que se apoya todo lo demás.',
+      rehabilitacion:'Priorizá el sueño: los tejidos se reparan mientras dormís. Es parte del tratamiento, no un extra.'
+    },
+    entreno:{
+      volumen:'Completá las sesiones pautadas esta semana, aunque alguna sea corta. Sin volumen no hay estímulo para crecer.',
+      fuerza:'No salteés ninguna sesión: el protocolo de carga necesita continuidad para que la progresión funcione.',
+      intensidad:'Hacé todas las sesiones y cargá la técnica que te indiqué. El registro me deja ver cómo venís.',
+      base:'Enfocate en que cada rep salga controlada. En este bloque la técnica vale más que el peso.',
+      rehabilitacion:'Hacé los ejercicios con control y sin dolor. Registrá cómo te sentís para poder ajustar.'
+    },
   };
-  function getBloqueKey(rutina){var b=String((rutina&&rutina.Bloque)||'volumen').toLowerCase();if(b.includes('health'))return 'health';if(b.includes('fuerza'))return 'fuerza';if(b.includes('man'))return 'man';if(b.includes('base')||b.includes('conexion')||b.includes('nm'))return 'base';if(b.includes('deporte')||b.includes('intensidad'))return 'deporte';return 'volumen';}
+  function getBloqueKey(rutina){var b=String((rutina&&rutina.Bloque)||'volumen').toLowerCase();if(b.includes('fuerza'))return 'fuerza';if(b.includes('intensidad'))return 'intensidad';if(b.includes('rehab'))return 'rehabilitacion';if(b.includes('base'))return 'base';if(b.includes('volumen'))return 'volumen';return 'base';}
   function getPilarScores(weeks,rutina){
     if(!weeks||!weeks.length)return null;
     var lat=weeks[weeks.length-1];
