@@ -1131,25 +1131,49 @@ function ClientDetail({name,weeks,rutina,onBack}){
 function VideoPanel({name}){
   const [videos,setVideos]=useState([]);
   const [loading,setLoading]=useState(true);
+  const [fb,setFb]=useState({});      // feedback en edición por índice
+  const [saving,setSaving]=useState(null);
+  const [savedIdx,setSavedIdx]=useState({});
   useEffect(()=>{
     fetch(SCRIPT_URL+'?action=videos')
       .then(r=>r.json())
       .then(rows=>{
         const vids=rows.filter(r=>String(r.Asesorado||'').trim().toLowerCase()===name.trim().toLowerCase());
         setVideos(vids);
+        // precargar feedback existente en los campos
+        const init={};
+        vids.slice().reverse().forEach((v,i)=>{ if(v.Feedback)init[i]=v.Feedback; });
+        setFb(init);
       }).catch(()=>{}).finally(()=>setLoading(false));
   },[name]);
+  function guardarFeedback(v,i){
+    const texto=(fb[i]||'').trim();
+    if(!texto)return;
+    setSaving(i);
+    // Identificamos el video por Asesorado + Sesion + Ejercicio + URL (clave estable)
+    const payload={action:'videofeedback',asesorado:name,sesion:v.Sesion||'',ejercicio:v.Ejercicio||'',url:v.URL||'',feedback:texto,fecha:v.Fecha||''};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .finally(()=>{ setSaving(null); setSavedIdx(s=>({...s,[i]:true})); });
+  }
   if(loading)return null;
   if(!videos.length)return null;
+  const revList=videos.slice().reverse();
   return h('div',{style:card},
-    h('div',{style:{...lbl,marginBottom:'10px'}},' Videos subidos'),
-    videos.slice().reverse().map((v,i)=>h('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:i<videos.length-1?'1px solid rgba(0,0,0,0.05)':'none'}},
-      h('div',null,
-        h('div',{style:{fontWeight:'600',fontSize:'13px'}},'Ses. '+(v.Sesion||''),' — ',v.Ejercicio||''),
-        h('div',{style:{fontSize:'10px',color:'#999'}},v.Fecha||'')
-      ),
-      h('a',{href:v.URL,target:'_blank',rel:'noreferrer',style:{background:'#EAF7F2',color:G,borderRadius:'8px',padding:'6px 12px',fontSize:'12px',fontWeight:'700',textDecoration:'none'}},'▶ Ver')
-    ))
+    h('div',{style:{...lbl,marginBottom:'10px'}},'Videos subidos — revisá y dejá tu corrección'),
+    revList.map((v,i)=>{
+      const yaRevisado=String(v.Revisado||'').toLowerCase()==='si'||savedIdx[i];
+      return h('div',{key:i,style:{padding:'10px 0',borderBottom:i<revList.length-1?'1px solid rgba(0,0,0,0.08)':'none'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+          h('div',null,
+            h('div',{style:{fontWeight:'600',fontSize:'13px'}},'Ses. '+(v.Sesion||''),' — ',v.Ejercicio||''),
+            h('div',{style:{fontSize:'10px',color:'#999'}},(v.Fecha||''),yaRevisado?h('span',{style:{marginLeft:'6px',color:G,fontWeight:'700'}},'✓ revisado'):null)
+          ),
+          h('a',{href:v.URL,target:'_blank',rel:'noreferrer',style:{background:'#EAF7F2',color:G,borderRadius:'8px',padding:'6px 12px',fontSize:'12px',fontWeight:'700',textDecoration:'none',flexShrink:0}},'▶ Ver')
+        ),
+        h('textarea',{value:fb[i]||'',onChange:e=>{const val=e.target.value;setFb(s=>({...s,[i]:val}));},placeholder:'Corrección técnica para el asesorado…',rows:2,style:{width:'100%',boxSizing:'border-box',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'8px',fontSize:'13px',resize:'vertical',fontFamily:'inherit'}}),
+        h('button',{onClick:()=>guardarFeedback(v,i),disabled:saving===i||!((fb[i]||'').trim()),style:{marginTop:'6px',background:saving===i?'#ccc':AC,color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:saving===i?'default':'pointer'}},saving===i?'Guardando…':savedIdx[i]?'✓ Enviado — reenviar':'Enviar corrección')
+      );
+    })
   );
 }
 function SemanaPanel({data,rutinas}){
