@@ -34,7 +34,7 @@ const inp={width:'100%',padding:'11px 12px',border:'1.5px solid rgba(0,0,0,0.1)'
 const TEMPLATES=[1500,1800,2100,2400,2700];
 const BASE_T=2000;
 function toFrac(n){if(n<=0)return'0';const w=Math.floor(n),d=n-w;const fs=[[0,''],[0.25,'¼'],[0.333,'⅓'],[0.5,'½'],[0.667,'⅔'],[0.75,'¾']];let best=fs[0];fs.forEach(f=>{if(Math.abs(d-f[0])<Math.abs(d-best[0]))best=f;});if(Math.abs(d-1)<Math.abs(d-best[0]))return String(w+1);return(w>0?String(w):'')+best[1]||'0';}
-function calcP(item,tmpl){if(item.fx)return{v:item.vB+' '+item.vU,g:null};const f=tmpl/BASE_T;return{v:toFrac(item.vB*f)+' '+item.vU,g:Math.round(item.gB*f)+'g'};}
+function calcP(item,tmpl){const sh=(item.share!=null?item.share:1);if(item.fx)return{v:toFrac(item.vB*sh)+' '+item.vU,g:null};const f=(tmpl/BASE_T)*sh;return{v:toFrac(item.vB*f)+' '+item.vU,g:Math.round(item.gB*f)+'g'};}
 const TECNICAS=[
   {id:'rp',n:'Rest-pause',d:'Llegás al fallo, descansás 10-15 seg con la barra en mano y hacés más reps con el mismo peso.'},
   {id:'ds',n:'Drop set',d:'Al llegar al fallo, bajás el peso un 20-30% y continuás sin descanso.'},
@@ -125,23 +125,40 @@ function buildFoodDB(rows){
 
 // Construye el array de comidas desde la fila de Dietas + food DB
 function parseDietas(row,foodDB){
+  // PostEntreno eliminado (spec nutrición). Estructura base: 4 comidas.
   const MEALS=[
     {id:'desayuno',nom:'Desayuno',ic:'☀️',cols:['DesayunoA','DesayunoB','DesayunoC']},
     {id:'almuerzo',nom:'Almuerzo',ic:'🌞',cols:['AlmuerzoA','AlmuerzoB','AlmuerzoC']},
     {id:'merienda',nom:'Merienda',ic:'☕',cols:['MeriendaA','MeriendaB','MeriendaC']},
     {id:'cena',nom:'Cena',ic:'🌙',cols:['CenaA','CenaB','CenaC']},
-    {id:'postentreno',nom:'Post-Entreno',ic:'💪',cols:['PostEntrenoA','PostEntrenoB','PostEntrenoC']},
   ];
   const OPT=['A','B','C'];
+  const OPT_NOM={A:'Óptima',B:'Práctica',C:'Flexible'};
+  // Calcula shares: si hay 2 alimentos de la misma categoría -> 0.5 c/u; 1 -> share 1.
+  // Máximo 2 por categoría (los extras se descartan para no romper la lógica de porción).
+  function withShares(items){
+    const byCat={};
+    items.forEach(it=>{(byCat[it.cat]=byCat[it.cat]||[]).push(it);});
+    const out=[];
+    Object.keys(byCat).forEach(cat=>{
+      const arr=byCat[cat].slice(0,2); // máx 2 por categoría
+      const share=arr.length===2?0.5:1;
+      arr.forEach(it=>out.push(Object.assign({},it,{share,
+        // cantidad final = individual × share
+        gB:it.gB, vB:it.vB
+      })));
+    });
+    return out;
+  }
   return MEALS.map(meal=>{
     const ops=meal.cols.map((col,i)=>{
       const val=String(row[col]||'').trim();if(!val)return null;
-      const items=val.split(',').map(k=>k.trim().toLowerCase()).filter(Boolean).map(k=>{
+      const raw=val.split(',').map(k=>k.trim().toLowerCase()).filter(Boolean).map(k=>{
         const food=foodDB[k];if(!food)return null;
         return{...food,key:k};
       }).filter(Boolean);
-      if(!items.length)return null;
-      return{id:OPT[i],nom:'Opción '+OPT[i],items};
+      if(!raw.length)return null;
+      return{id:OPT[i],nom:'Opción '+OPT[i]+' · '+OPT_NOM[OPT[i]],items:withShares(raw)};
     }).filter(Boolean);
     if(!ops.length)return null;
     return{...meal,ops};
@@ -515,11 +532,12 @@ function AjustarSemana({onClose}){
 // ── MI BLOQUE ─────────────────────────────────────────────────────────
 const BLOQUE_INFO={
   'volumen':{titulo:'Bloque Triple Progresion',sub:'rep → kg → series',texto:'Cada semana intentar superar la marca anterior. Cuando llegas al techo, el peso sube solo. En deficit: cintura baja, peso baja lento (0.3-0.5 kg cada 2 sem), la cintura no sube. En superavit: peso sube lento (0.1-0.3 kg/sem), cintura estable. Si la cintura sube: revisar el cumplimiento de porciones. Sin las 4 comidas no hay crecimiento.'},
-  'fuerza':{titulo:'Bloque Fuerza',sub:'tension maxima',texto:'Los kg suben cada 2 sem, las reps son siempre al fallo. El sueno es clave — sin descanso el sistema nervioso no responde. Necesitas energia disponible antes de cada sesion. En deficit: cintura baja, peso baja lento (0.3-0.5 kg cada 2 sem). En superavit: peso sube lento (0.1-0.3 kg/sem), cintura estable. Si la cintura sube: revisar el cumplimiento de porciones. Sin las 4 comidas no hay fuerza.'},
+  'fuerza':{titulo:'Bloque Fuerza',sub:'tension maxima',texto:'La primera sesion del bloque establecés tu referencia (test de RM). De ahí la app calcula tus kg del ejercicio principal por porcentaje: semanas 1-2 al 80%, 3-4 al 85%, 5-6 al 90%. Los accesorios y finalizadores progresan por reps (doble progresion). El sueno es clave — sin descanso el sistema nervioso no responde. Necesitas energia disponible antes de cada sesion. Sin las 4 comidas no hay fuerza.'},
   'intensidad':{titulo:'Bloque Intensidad',sub:'eficiencia neuromuscular',texto:'Velocidad de ejecucion antes que peso. En deficit: cintura baja, peso puede quedarse igual — eso es buena senal. Contexto de vida estable es clave, este bloque no tolera estres acumulado. Sin buen descanso, saciedad y recuperacion optimas, no hay tal intensidad.'},
   'man':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Mismos pesos, misma nutricion. Peso y cintura estables (+/-0.5 kg/sem). Si el contexto de vida mejora, es momento de evaluar un bloque activo.'},
   'mantenimiento':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Mismos pesos, misma nutricion. Peso y cintura estables (+/-0.5 kg/sem). Si el contexto de vida mejora, es momento de evaluar un bloque activo.'},
   'base':{titulo:'Bloque Base',sub:'calibracion del esfuerzo',texto:'Tecnica antes que peso. Las series y kg son fijos — lo que cuenta es que cada rep salga controlada. Nutricion estable, 4 comidas con alimentos de calidad (que recomienda la app). El peso y la cintura no son el foco por ahora. Pero si que no pases hambre, que estes con energia, y mejores tu descanso.'},
+  'rehabilitacion':{titulo:'Bloque Rehabilitacion',sub:'recuperacion controlada',texto:'Interfaz manual: registrás kg y reps de cada ejercicio, sin progresion automatica. El objetivo es recuperar sin forzar. El feedback lo da el coach en los checkpoints, no la app. Priorizá calidad de movimiento y ausencia de dolor por encima de cualquier carga.'},
   'conexion':{titulo:'Bloque Base',sub:'calibracion del esfuerzo',texto:'Tecnica antes que peso. Las series y kg son fijos — lo que cuenta es que cada rep salga controlada. Nutricion estable, 4 comidas con alimentos de calidad (que recomienda la app). El peso y la cintura no son el foco por ahora. Pero si que no pases hambre, que estes con energia, y mejores tu descanso.'},
   'health':{titulo:'Bloque Restauracion',sub:'recuperacion activa',texto:'Haces exactamente lo pautado, ni mas ni menos. Come regular, sin restriccion. La energia deberia mejorar semana a semana — si no mejora, hay que investigar que la bloquea.'},
   'deporte':{titulo:'Bloque Deporte',sub:'rendimiento especifico',texto:'Protocolo fijo: pesos, reps y descansos exactos. Carbohidrato antes de entrenar siempre. Sueno y recuperacion entre sesiones son mas importantes que en cualquier otro bloque.'},
@@ -532,6 +550,7 @@ const FOCO_MSGS={
     'intensidad':'Asegurate de hacer cada sesión con velocidad y calidad. La eficiencia se construye con práctica.',
     'man':'Mantené la frecuencia de entrenamiento. Es lo que sostiene lo que construiste.',
     'base':'Priorizá la técnica en cada rep. El control del esfuerzo es el objetivo ahora.',
+    'rehabilitacion':'Hacé cada ejercicio con control y sin dolor. La recuperación va antes que la carga.',
     'health':'Realizá las sesiones pautadas sin forzar. El movimiento ayuda a la recuperación.',
     'deporte':'No saltees sesiones. Cada una tiene un propósito específico para la fecha que se viene.',
   },
@@ -541,6 +560,7 @@ const FOCO_MSGS={
     'intensidad':'Sostené la alimentación. La transición no requiere más pero sí constancia.',
     'man':'Priorizá llegar a las comidas. Es lo que evita perder lo ganado.',
     'base':'Establecé el hábito de las 4 comidas. Es la base de todo lo que viene.',
+    'rehabilitacion':'Comé regular y completo. La recuperación de tejidos empieza en la nutrición.',
     'health':'Comé regular y consistente. La recuperación empieza en la nutrición.',
     'deporte':'Seguí el plan de alimentación. El rendimiento depende directamente de esto.',
   },
@@ -550,6 +570,7 @@ const FOCO_MSGS={
     'intensidad':'El descanso es parte del bloque. Sin él la eficiencia no mejora.',
     'man':'Priorizá el sueño. Es lo que sostiene la recuperación sin perder lo ganado.',
     'base':'Establecé una rutina de sueño. Todo el proceso depende de eso.',
+    'rehabilitacion':'El descanso es parte del tratamiento. Los tejidos se reparan mientras dormís.',
     'health':'El descanso ES el objetivo de este bloque. Priorizalo por encima de todo.',
     'deporte':'Dormí bien. El rendimiento en competencia depende del descanso previo.',
   },
@@ -574,7 +595,7 @@ function getFoco(lastSem,bloqueKey,numSessPaut){
   var pctH=suenoOk/6;
   var mn=Math.min(pctE,pctN,pctH);
   var focoKey=mn===pctE?'entreno':mn===pctN?'nutricion':'habitos';
-  var bk=bloqueKey==='man'||bloqueKey==='mantenimiento'?'man':bloqueKey;
+  var bk=bloqueKey; // bloques viejos ya normalizados a los 5 válidos; fallback visual abajo
   var msg=(FOCO_MSGS[focoKey]||{})[bk]||(FOCO_MSGS[focoKey]||{})['volumen']||'Seguí igual. La consistencia es la variable más importante.';
   if(mn>=0.8)return{msg:'Seguí igual. La consistencia es la variable más importante.',pilar:null};
   return{msg:msg,pilar:focoKey};
@@ -632,9 +653,10 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const BLOQUES={
     volumen:    {label:'Volumen',        color:'#1D9E75',emoji:'📈',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. Cada 2 semanas la app te agregará una serie efectiva extra.'},
     intensidad: {label:'Intensidad',     color:'#378ADD',emoji:'🏋️',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. En la última serie de cada ejercicio, aplicá una técnica de intensidad.'},
-    fuerza:     {label:'Fuerza',         color:'#DC2626',emoji:'💪',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cada 2 semanas la app aumentará los kg con el fin de progresar en carga. Intentá no perder reps con el peso nuevo.'},
+    fuerza:     {label:'Fuerza',         color:'#DC2626',emoji:'💪',hint:'La primera sesion cargás un test de RM y la app fija tu referencia. El ejercicio principal sigue un protocolo por porcentaje (80/85/90% según la semana). Los accesorios y finalizadores progresan por reps.'},
     man:        {label:'Mantenimiento',  color:'#6B7280',emoji:'🔄',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión.'},
     base:       {label:'Progresión Base',color:'#F59E0B',emoji:'🌱',hint:'Las series y reps son fijas. Los kg los elegís vos: el peso no debe generarte dolor, pérdida de técnica ni desconfianza. Solo cuando lo sentís fácil, agregás peso — pero no series ni reps.'},
+    rehabilitacion:{label:'Rehabilitación',color:'#0EA5E9',emoji:'🩹',hint:'La semana 1 del bloque anotás reps y kg de cada ejercicio; eso fija la pauta. Las semanas siguientes las reps quedan fijas y solo cargás el kg, confirmando si completaste con buena técnica y sin dolor.'},
     deporte:    {label:'Deporte',        color:'#8B5CF6',emoji:'🏀',hint:'El protocolo series-reps-kg ya está pautado. El objetivo es respetar lo indicado por la app y ejecutar cada rep a máxima velocidad. Si perdés velocidad, frenás la serie. Si te quedan series, podés sacar peso.'},
   };
   const bloque=(cfg?.bloque||'volumen').toLowerCase();
@@ -642,7 +664,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const bloqueInicio=cfg?.bloqueInicio||1;
   const wkNum=wk?.num||1;
   const weeksInBlock=Math.max(0,wkNum-bloqueInicio);
-  const hasProgression=bloque==='volumen'||bloque==='intensidad'||bloque==='man'||bloque==='fuerza';
+  const hasProgression=bloque==='volumen'||bloque==='intensidad'||bloque==='fuerza';
   const hasAutoSeries=bloque==='volumen';
   const seriesBase=Math.min(4,Math.max(2,cfg?.series||2));
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
@@ -664,6 +686,36 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const uploadTarget=useRef(null);
 
   function getVideoKey(sessId,exId){return sessId+'_'+exId;}
+  // ── FEEDBACK del coach (Entrega 6) ──
+  // Se carga de la hoja Videos (columna Feedback). Se muestra en el ejercicio hasta que el asesorado
+  // toca "Entendido" (se guarda en localStorage por fecha, así reaparece si el coach deja uno nuevo).
+  const [feedbacks,setFeedbacks]=useState({}); // {sess_exId:{texto,fecha}}
+  useEffect(function(){
+    fetch(SCRIPT_URL+'?action=videos').then(function(r){return r.json();}).then(function(rows){
+      var norm=function(x){return String(x||'').trim().toLowerCase();};
+      var map={};
+      (rows||[]).forEach(function(v){
+        if(norm(v.Asesorado)!==norm(user))return;
+        if(!v.Feedback||!String(v.Feedback).trim())return;
+        // clave por sesión+ejercicio (el ejercicio en la hoja es el ID)
+        var key=String(v.Sesion||'').trim()+'_'+String(v.Ejercicio||'').trim();
+        map[key]={texto:String(v.Feedback).trim(),fecha:String(v.FechaRevision||v.Fecha||'')};
+      });
+      setFeedbacks(map);
+    }).catch(function(){});
+  },[user]);
+  const fbVistoKey=(sess,exId,fecha)=>`ase_${user}_fbvisto_${sess}_${exId}_${fecha}`;
+  const getFeedback=(sess,exId)=>{
+    const fb=feedbacks[sess+'_'+exId];
+    if(!fb)return null;
+    try{ if(localStorage.getItem(fbVistoKey(sess,exId,fb.fecha)))return null; }catch(e){}
+    return fb;
+  };
+  const [fbHidden,setFbHidden]=useState({});
+  const marcarFbVisto=(sess,exId,fecha)=>{
+    try{localStorage.setItem(fbVistoKey(sess,exId,fecha),'1');}catch(e){}
+    setFbHidden(h=>({...h,[sess+'_'+exId]:true}));
+  };
   function getVideo(sessId,exId){return videos[getVideoKey(sessId,exId)];}
   function saveVideoUrl(sessId,exId,url){
     const nv={...videos,[getVideoKey(sessId,exId)]:url};
@@ -735,12 +787,23 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   };
 
   const numSeries=(()=>{
-    if(bloque==='base')return 4;
+    if(bloque==='base')return 3; // base: 3 series efectivas fijas siempre (no depende del sheet)
+    if(bloque==='rehabilitacion')return 3; // rehab: 3 series fijas (pauta se fija en sem 1)
     if(hasAutoSeries)return Math.min(4,seriesBase+Math.floor(weeksInBlock/2));
     return seriesBase;
   })();
   const semanasParaSiguienteSerie=(hasAutoSeries&&numSeries<4)?(2-(weeksInBlock%2)||2):null;
   const SERIES_KEYS=['r1','r2','r3','r4'].slice(0,numSeries);
+  // Series por ejercicio. En fuerza dependen del rol: principal=protocolo, accesorio=2, finalizador=1.
+  const seriesKeysEx=(ex)=>{
+    if(bloque!=='fuerza')return SERIES_KEYS;
+    const rol=rolFuerza(ex);
+    let n;
+    if(rol==='principal')n=protoActual().series;      // 4, 4, 5 según semana
+    else if(rol==='accesorio')n=2;
+    else n=1;                                          // finalizador
+    return ['r1','r2','r3','r4','r5'].slice(0,n);
+  };
 
   const prevBestSet=(ex)=>{
     if(!hist||hist.length===0)return null;
@@ -784,10 +847,65 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     }
     return true; // volumen, intensidad, man: sube al alcanzar techo
   };
+  // ── PROTOCOLO DE FUERZA (Entrega 3) ──────────────────────────────────
+  // Protocolo fijo por par de semanas del bloque. Editable acá si hace falta cambiarlo.
+  const FUERZA_PROTOCOLO=[
+    {sems:[1,2],series:4,reps:3,pct:80},
+    {sems:[3,4],series:4,reps:2,pct:85},
+    {sems:[5,6],series:5,reps:1,pct:90}
+  ];
+  // Semana dentro del bloque (1-based). weeksInBlock=0 -> semana 1 del bloque.
+  const semEnBloque=weeksInBlock+1;
+  // Rol del ejercicio por POSICIÓN en la sesión: 0=principal, 1-2=accesorio, 3+=finalizador.
+  const rolFuerza=(ex)=>{
+    const lista=(cfg.assign[activeSess]||[]);
+    // posición del ejercicio en la sesión (aplanando biseries)
+    let pos=-1, count=0;
+    for(const item of lista){
+      const ids=Array.isArray(item)?item:[item];
+      for(const id of ids){ if(String(id)===String(ex.id)){pos=count;} count++; }
+    }
+    if(pos===0)return 'principal';
+    if(pos===1||pos===2)return 'accesorio';
+    return 'finalizador';
+  };
+  // ¿Es el día 1 del bloque de fuerza? (test de RM)
+  const esDia1Fuerza=bloque==='fuerza'&&semEnBloque===1;
+  // ── REHABILITACIÓN (Entrega ajuste) ──
+  // Semana 1 del bloque: se anotan reps + kg (fija la pauta). Semanas siguientes: reps fijas, solo kg.
+  const esDia1Rehab=bloque==='rehabilitacion'&&semEnBloque===1;
+  const rehabRepsKey=(ex)=>`ase_${user}_rehabReps_${activeSess}_${ex.id}`;
+  const getRehabReps=(ex)=>{const v=localStorage.getItem(rehabRepsKey(ex));return v?String(v):'';};
+  const setRehabReps=(ex,val)=>{try{localStorage.setItem(rehabRepsKey(ex),String(val));}catch(e){}};
+  // Clave localStorage del e1RM de referencia (por sesión+ejercicio). NO va al sheet.
+  const rmRefKey=(ex)=>`ase_${user}_rmRef_${activeSess}_${ex.id}`;
+  const getRmRef=(ex)=>{const v=parseFloat(localStorage.getItem(rmRefKey(ex)));return isNaN(v)?0:v;};
+  const setRmRef=(ex,val)=>{try{localStorage.setItem(rmRefKey(ex),String(val));}catch(e){}};
+  // Epley: e1RM = kg × (1 + reps/30)
+  const epley=(kg,reps)=>Math.round(kg*(1+reps/30));
+  // Esquema del protocolo para la semana actual del bloque
+  const protoActual=()=>FUERZA_PROTOCOLO.find(p=>p.sems.includes(semEnBloque))||FUERZA_PROTOCOLO[FUERZA_PROTOCOLO.length-1];
+  // kg objetivo del principal esta semana = e1RM_ref × %
+  const kgPrincipal=(ex)=>{const rm=getRmRef(ex);if(!rm)return 0;const p=protoActual();return Math.round(rm*p.pct/100/2.5)*2.5;};
   const nKg=ex=>{
     const curKg=getKg(ex);if(!curKg)return null;
+    if(bloque==='rehabilitacion'){
+      // rehab: sugerir subir solo en semanas 2+ y si confirmó el protocolo (Sí). En sem1 no sugiere.
+      if(esDia1Rehab)return null;
+      return baseProto[ex.id]==='si'?rKg(curKg*1.05):null;
+    }
+    if(bloque==='base'){
+      // base: sugerir subir SOLO si el asesorado confirmó el protocolo (Sí). No depende de reps (son fijas).
+      return baseProto[ex.id]==='si'?rKg(curKg*1.05):null;
+    }
+    if(bloque==='fuerza'){
+      // El principal sigue el protocolo (kg = %RM), no se sugiere subir por reps.
+      // Accesorios y finalizadores: doble progresión normal (subir al llegar al techo).
+      if(rolFuerza(ex)==='principal')return null;
+      const r1f=parseInt(sessionReps?.[activeSess]?.[ex.id]?.r1)||0;
+      return r1f>=ex.hi?rKg(curKg*1.05):null;
+    }
     if(!canIncreaseKg(ex))return null;
-    if(bloque==='fuerza')return rKg(curKg*1.05); // fuerza: sube siempre al cumplir 2 sem
     const r1=parseInt(sessionReps?.[activeSess]?.[ex.id]?.r1)||0;
     return r1>=ex.hi?rKg(curKg*1.05):null;
   };
@@ -803,6 +921,31 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     const curKg=getKg(ex);if(!curKg)return null;
     return Math.floor(curKg*0.9/2.5)*2.5;
   };
+  // ── APROXIMACIONES (filas de lectura, calculadas del kg efectivo cargado) ──
+  // volumen: 50% y 75% sin rep. intensidad: 50%x15 y 75%x8 (reps fijas). base: 50% sin rep.
+  // rehabilitacion/fuerza: sin aproximaciones.
+  const APROX_REPS={intensidad:[15,8]}; // reps fijas de aproximación por bloque (si aplica)
+  const getAproximaciones=(ex)=>{
+    // Fuerza principal: aproximaciones del kg OBJETIVO del protocolo (no del kg cargado).
+    if(bloque==='fuerza'&&rolFuerza(ex)==='principal'&&!esDia1Fuerza){
+      const kgObj=kgPrincipal(ex);
+      if(!kgObj||kgObj<=0)return [];
+      return [{pct:50,kg:rKg(kgObj*0.5)},{pct:75,kg:rKg(kgObj*0.75)}];
+    }
+    const curKg=getKg(ex);
+    if(!curKg||curKg<=0)return [];
+    if(bloque==='volumen')return [{pct:50,kg:rKg(curKg*0.5)},{pct:75,kg:rKg(curKg*0.75)}];
+    if(bloque==='intensidad')return [{pct:50,kg:rKg(curKg*0.5),reps:15},{pct:75,kg:rKg(curKg*0.75),reps:8}];
+    if(bloque==='base')return [{pct:50,kg:rKg(curKg*0.5)}];
+    // Fuerza accesorios/finalizadores: aproximaciones 50%/75% del kg cargado, sin reps.
+    if(bloque==='fuerza')return [{pct:50,kg:rKg(curKg*0.5)},{pct:75,kg:rKg(curKg*0.75)}];
+    return []; // rehabilitacion: sin aproximaciones
+  };
+  // Estado: confirmación de protocolo en base (por ejercicio) — modula la sugerencia, NO se guarda.
+  const [baseProto,setBaseProto]=useState({});
+  const [rmTest,setRmTest]=useState({}); // fuerza día1: {exId:{kg,reps}} test de RM (se convierte en e1RM ref)
+  // Estado: técnica cargada por el asesorado en intensidad (texto libre, por ejercicio) — local.
+  const [tecInput,setTecInput]=useState({});
   const doSaveKg=(ex,val)=>{
     const kg=parseFloat(val);if(isNaN(kg)||kg<=0)return setEditKg(null);
     const newSK={...sessionKg};
@@ -1041,6 +1184,16 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   return rows;
                 })()
               ),
+              // ── FEEDBACK del coach (Entrega 6): corrección técnica sobre el video ──
+              (function(){
+                const fb=getFeedback(activeSess,ex.id);
+                if(!fb||fbHidden[activeSess+'_'+ex.id])return null;
+                return h('div',{style:{marginBottom:'10px',background:'#EEF2FF',border:'1px solid #C7D2FE',borderRadius:'10px',padding:'12px'}},
+                  h('div',{style:{fontSize:'11px',fontWeight:'800',color:'#4338CA',marginBottom:'4px',letterSpacing:'0.04em'}},'📝 CORRECCIÓN DE TU COACH'),
+                  h('div',{style:{fontSize:'13px',color:'#3730A3',lineHeight:'1.5',marginBottom:'8px'}},fb.texto),
+                  h('button',{onClick:()=>marcarFbVisto(activeSess,ex.id,fb.fecha),style:{background:'#4338CA',color:'#fff',border:'none',borderRadius:'8px',padding:'6px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Entendido')
+                );
+              })(),
               h('div',{style:{marginBottom:'8px'}},
                 getVideo(activeSess,ex.id)
                   ?h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
@@ -1055,33 +1208,129 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                         h('button',{onClick:()=>triggerGallery(activeSess,ex.id),style:{flex:1,background:'#F5F5F5',border:'1px dashed rgba(0,0,0,0.15)',borderRadius:'8px',padding:'7px 10px',fontSize:'12px',cursor:'pointer',color:'#666',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px'}},h('span',null,'🖼️'),'Galería')
                       )
               ),
+              // ── FUERZA: día 1 (test RM) o info de protocolo (principal) ──
+              (bloque==='fuerza'&&(function(){
+                var rol=rolFuerza(ex);
+                // DÍA 1 del bloque + ejercicio PRINCIPAL -> test de RM
+                if(esDia1Fuerza&&rol==='principal'){
+                  var t=rmTest[ex.id]||{};
+                  var e1rmCalc=(parseFloat(t.kg)>0&&parseInt(t.reps)>0)?epley(parseFloat(t.kg),parseInt(t.reps)):0;
+                  return h('div',{style:{marginBottom:'12px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'10px',padding:'12px'}},
+                    h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE',marginBottom:'2px'}},'Primera sesión del bloque · establecer referencia'),
+                    h('div',{style:{fontSize:'11px',color:'#9333EA',marginBottom:'10px'}},'Hacé un test (normalmente 3-5RM) y cargalo. De acá sale tu referencia para todo el bloque.'),
+                    h('div',{style:{display:'flex',gap:'8px',marginBottom:'8px'}},
+                      h('div',{style:{flex:1}},h('div',{style:lbl},'Kg del test'),h('input',{type:'text',inputMode:'numeric',placeholder:'Kg',value:t.kg||'',onChange:function(e){var v=e.target.value;setRmTest(function(p){var n=Object.assign({},p);n[ex.id]=Object.assign({},n[ex.id],{kg:v});return n;});},style:{...inp,textAlign:'center',fontSize:'20px',fontWeight:'700'}})),
+                      h('div',{style:{flex:1}},h('div',{style:lbl},'Reps del test'),h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:t.reps||'',onChange:function(e){var v=e.target.value;setRmTest(function(p){var n=Object.assign({},p);n[ex.id]=Object.assign({},n[ex.id],{reps:v});return n;});},style:{...inp,textAlign:'center',fontSize:'20px',fontWeight:'700'}}))
+                    ),
+                    e1rmCalc>0&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#fff',borderRadius:'8px',padding:'8px 10px'}},
+                      h('span',{style:{fontSize:'12px',color:'#7E22CE',fontWeight:'700'}},'Tu 1RM estimado (Epley)'),
+                      h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
+                        h('span',{style:{fontWeight:'800',color:'#7E22CE',fontSize:'16px'}},e1rmCalc+' kg'),
+                        h('button',{onClick:function(){setRmRef(ex,e1rmCalc);setSaved(false);alert('Referencia guardada: '+e1rmCalc+' kg. A partir de la próxima semana la app calcula tus pesos.');},style:{background:'#7E22CE',color:'#fff',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Guardar referencia')
+                      )
+                    )
+                  );
+                }
+                // PRINCIPAL en semanas de protocolo -> mostrar esquema y kg objetivo
+                if(rol==='principal'){
+                  var rm=getRmRef(ex);var pr=protoActual();var kgObj=kgPrincipal(ex);
+                  return h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
+                    h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'Principal · Semana '+semEnBloque+' del bloque'),
+                    rm>0
+                      ? h('div',{style:{fontSize:'13px',color:'#6B21A8',marginTop:'4px'}},'Protocolo: '+pr.series+' series × '+pr.reps+' reps · '+pr.pct+'% → '+kgObj+' kg (referencia '+rm+' kg)')
+                      : h('div',{style:{fontSize:'12px',color:'#B91C1C',marginTop:'4px'}},'Todavía no cargaste tu RM de referencia (se carga la semana 1 del bloque).')
+                  );
+                }
+                // ACCESORIO / FINALIZADOR -> etiqueta de rol
+                return h('div',{style:{marginBottom:'8px',fontSize:'11px',fontWeight:'700',color:'#9333EA',letterSpacing:'0.04em'}},
+                  rol==='accesorio'?'ACCESORIO · 2 series · progresá reps y kg':'FINALIZADOR · 1 serie al fallo técnico'
+                );
+              })()),
+              // ── APROXIMACIONES (filas de lectura, no registran) ──
+              (function(){
+                // En día 1 de fuerza + principal, no mostrar aproximaciones (es solo test).
+                if(bloque==='fuerza'&&esDia1Fuerza&&rolFuerza(ex)==='principal')return null;
+                var aprox=getAproximaciones(ex);
+                if(!aprox.length)return null;
+                return h('div',{style:{marginBottom:'10px',background:'#FAFAF8',border:'1px solid rgba(0,0,0,0.06)',borderRadius:'8px',padding:'8px 10px'}},
+                  h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#999',letterSpacing:'0.08em',marginBottom:'6px'}},'ENTRADA EN CALOR (no registrar)'),
+                  aprox.map(function(a,ai){
+                    return h('div',{key:'ap'+ai,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'3px 0',fontSize:'12px',color:'#666'}},
+                      h('span',null,'Aprox. '+(ai+1)+' · '+a.pct+'%'),
+                      h('span',{style:{fontWeight:'700',color:'#444'}},(a.reps?a.reps+' reps × ':'')+a.kg+' kg')
+                    );
+                  })
+                );
+              })(),
+              // ── REHABILITACIÓN: pauta ──
+              (bloque==='rehabilitacion'&&(function(){
+                if(esDia1Rehab){
+                  return h('div',{style:{marginBottom:'10px',background:'#E0F2FE',border:'1px solid #7DD3FC',borderRadius:'8px',padding:'8px 10px',fontSize:'12px',color:'#0369A1'}},
+                    h('span',{style:{fontWeight:'700'}},'Semana 1 del bloque: '),'anotá las reps y el kg que hacés en cada serie. Esto fija tu pauta para el resto del bloque.'
+                  );
+                }
+                var repFijaR=getRehabReps(ex);
+                return h('div',{style:{marginBottom:'10px',background:'#E0F2FE',border:'1px solid #7DD3FC',borderRadius:'8px',padding:'8px 10px',fontSize:'12px',color:'#0369A1'}},
+                  h('span',{style:{fontWeight:'700'}},'Tu pauta: '),(repFijaR?('3 series × '+repFijaR+' reps'):'3 series')+'. Cargá solo el kg y confirmá si pudiste completarlo.'
+                );
+              })()),
+              // ── SERIES EFECTIVAS ── (en día 1 de fuerza el principal no registra series, solo test)
+              (bloque==='fuerza'&&esDia1Fuerza&&rolFuerza(ex)==='principal')?null:
               h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
-                SERIES_KEYS.map((k,i)=>{
+                seriesKeysEx(ex).map((k,i)=>{
                   const sug=suggestedKg(ex,i);
+                  const repFija=bloque==='base'||(bloque==='rehabilitacion'&&!esDia1Rehab); // base y rehab-posterior: reps fijas
+                  // Fuerza principal: reps precargadas del protocolo (editables).
+                  const esFuerzaPrincipal=(bloque==='fuerza'&&rolFuerza(ex)==='principal');
+                  const repProto=esFuerzaPrincipal?String(protoActual().reps):'';
+                  let repVal;
+                  if(esFuerzaPrincipal){
+                    const stored=getRep(activeSess,ex.id,k);
+                    const mitadBase=String(Math.round((ex.low+ex.hi)/2)); // residuo de bloque base
+                    // Ignorar residuos de base (mitad de rango); mostrar protocolo. Respetar ediciones reales.
+                    repVal=(stored&&stored!==mitadBase)?stored:repProto;
+                  }else if(bloque==='rehabilitacion'&&!esDia1Rehab){
+                    // rehab semanas 2+: rep fija guardada en sem1 (fallback: medio del rango)
+                    repVal=getRehabReps(ex)||String(Math.round((ex.low+ex.hi)/2));
+                  }else{
+                    repVal=getRep(activeSess,ex.id,k);
+                  }
                   return h('div',{key:k},
                     h('div',{style:{...lbl,display:'flex',justifyContent:'space-between'}},h('span',null,'Serie '+(i+1)),sug&&h('span',{style:{color:'#F59E0B',fontWeight:'700',fontSize:'10px'}},'↓ '+sug+' kg')),
-                    h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:getRep(activeSess,ex.id,k),onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:sug?'#F59E0B':'rgba(0,0,0,0.1)'}})
+                    repFija
+                      ? h('div',{style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',background:'#F5F5F5',color:'#666',display:'flex',alignItems:'center',justifyContent:'center'}},repVal||String(Math.round((ex.low+ex.hi)/2)))
+                      : h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:repVal,onChange:e=>{setRep(activeSess,ex.id,k,e.target.value);if(bloque==='rehabilitacion'&&esDia1Rehab&&e.target.value)setRehabReps(ex,e.target.value);},style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:sug?'#F59E0B':'rgba(0,0,0,0.1)'}})
                   );
                 })
               ),
-              nk&&h('div',{style:{background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},h('span',{style:{fontSize:'12px',color:G,fontWeight:'600'}},'Próxima sesión'),h('span',{style:{fontWeight:'800',color:G,fontSize:'15px'}},'↑ '+nk+' kg'))
+              // ── BASE / REHAB: confirmar protocolo (modula la sugerencia, no se guarda) ──
+              ((bloque==='base'||(bloque==='rehabilitacion'&&!esDia1Rehab))&&getKg(ex)>0&&(function(){
+                var estado=baseProto[ex.id];
+                return h('div',{style:{marginBottom:'10px',background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:'8px',padding:'10px'}},
+                  h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#9A3412',marginBottom:'8px'}},'¿Completaste las '+Math.round((ex.low+ex.hi)/2)+' reps con buena técnica?'),
+                  h('div',{style:{display:'flex',gap:'8px'}},
+                    h('button',{onClick:function(){setBaseProto(function(p){var n=Object.assign({},p);n[ex.id]='si';return n;});},style:{flex:1,padding:'8px',borderRadius:'8px',border:'1px solid '+(estado==='si'?G:'rgba(0,0,0,0.12)'),background:estado==='si'?G:'#fff',color:estado==='si'?'#fff':'#666',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Sí'),
+                    h('button',{onClick:function(){setBaseProto(function(p){var n=Object.assign({},p);n[ex.id]='no';return n;});},style:{flex:1,padding:'8px',borderRadius:'8px',border:'1px solid '+(estado==='no'?'#B42318':'rgba(0,0,0,0.12)'),background:estado==='no'?'#FEF3F2':'#fff',color:estado==='no'?'#B42318':'#666',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'No, me costó')
+                  )
+                );
+              })()),
+              // ── INTENSIDAD: técnica que carga el asesorado (texto libre, no va al sheet) ──
+              (bloque==='intensidad'&&(function(){
+                return h('div',{style:{marginBottom:'10px'}},
+                  h('div',{style:{...lbl,marginBottom:'4px'}},'Técnica aplicada (la que te indicó tu coach)'),
+                  h('input',{type:'text',placeholder:'Ej: rest-pause, drop set...',value:tecInput[ex.id]||'',onChange:function(e){var v=e.target.value;setTecInput(function(p){var n=Object.assign({},p);n[ex.id]=v;return n;});},style:{...inp,fontSize:'13px'}})
+                );
+              })()),
+              nk&&h('div',{style:{background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},h('span',{style:{fontSize:'12px',color:G,fontWeight:'600'}},bloque==='base'?'Confirmaste el protocolo':'Próxima sesión'),h('span',{style:{fontWeight:'800',color:G,fontSize:'15px'}},'↑ '+nk+' kg'))
             );
           };
-          const tecBanner=bloque==='intensidad'&&h('div',{style:{marginTop:'10px',background:'#EBF4FF',border:'1px solid rgba(55,138,221,0.2)',borderRadius:'10px',padding:'12px'}},
-            h('div',{style:{fontSize:'12px',fontWeight:'800',color:B,marginBottom:'8px'}},'💥 Técnica de intensidad — última serie'),
-            h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'4px'}},
-              TECNICAS.map(t=>h('button',{key:t.id,onClick:()=>setOpenTec(openTec===t.id?null:t.id),style:{background:openTec===t.id?B:'#fff',color:openTec===t.id?'#fff':B,border:'1px solid '+B,borderRadius:'20px',padding:'4px 10px',fontSize:'11px',fontWeight:'600',cursor:'pointer'}},t.n))
-            ),
-            openTec&&h('div',{style:{marginTop:'8px',fontSize:'12px',color:'#555',lineHeight:'1.5',padding:'8px',background:'#fff',borderRadius:'6px'}},TECNICAS.find(t=>t.id===openTec)?.d)
-          );
           if(isBiserie){
             return h('div',{key:'g'+gi,style:card},
               h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}},h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}}),h('span',{style:{fontSize:'10px',fontWeight:'800',color:'#999',letterSpacing:'0.1em'}},group.length>2?'SERIE GIGANTE':'BISERIE'),h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}})),
-              group.map(ex=>exCard(ex)),
-              tecBanner
+              group.map(ex=>exCard(ex))
             );
           }
-          return h('div',{key:'g'+gi,style:card},exCard(group[0]),tecBanner);
+          return h('div',{key:'g'+gi,style:card},exCard(group[0]));
         })
   );
 }
@@ -1118,14 +1367,14 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
                     var origKey=item.origKey||item.key;
                     // Check swap permanente usando la key original
                     if(perms[origKey]){
-                      return Object.assign({},perms[origKey],{key:origKey,origKey:origKey,_swapped:true});
+                      return Object.assign({},perms[origKey],{key:origKey,origKey:origKey,curKey:(perms[origKey].key||perms[origKey].curKey),share:item.share,_swapped:true});
                     }
                     // Check swap solo hoy
                     try{
                       var hoyStr=sessionStorage.getItem('ase_'+user+'_food_hoy_'+origKey);
                       if(hoyStr){
                         var hoyItem=JSON.parse(hoyStr);
-                        return Object.assign({},hoyItem,{key:origKey,origKey:origKey,_swappedHoy:true});
+                        return Object.assign({},hoyItem,{key:origKey,origKey:origKey,curKey:(hoyItem.key||hoyItem.curKey),share:item.share,_swappedHoy:true});
                       }
                     }catch(e3){}
                     return item;
@@ -1161,7 +1410,10 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
         if(!seen.has(item.key)){seen.add(item.key);allFoods.push(item);}
       })));
     }
-    return allFoods.filter(item=>item.cat===swapItem.cat&&item.key!==swapItem.key);
+    // Excluir el alimento ACTUALMENTE mostrado (curKey si el item fue reemplazado, sino key),
+    // para que el original siempre aparezca como opción para volver.
+    const excluir=swapItem.curKey||swapItem.key;
+    return allFoods.filter(item=>item.cat===swapItem.cat&&item.key!==excluir);
   },[swapItem,comidas,user]);
 
   // SVG plato para nivel 1
@@ -1261,16 +1513,22 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
                 h('div',{style:{display:'flex',gap:'8px'}},
                   h('button',{onClick:function(e){
                     e.stopPropagation();
-                    try{sessionStorage.setItem('ase_'+user+'_food_hoy_'+swapItem.key,JSON.stringify(item));}catch(err){}
+                    var slotKey=swapItem.origKey||swapItem.key;
+                    try{
+                      if(item.key===slotKey){sessionStorage.removeItem('ase_'+user+'_food_hoy_'+slotKey);} // volver al original
+                      else{sessionStorage.setItem('ase_'+user+'_food_hoy_'+slotKey,JSON.stringify(item));}
+                    }catch(err){}
                     setSwapItem(null);
                     setSwapVersion(function(v){return v+1;});
                   },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.12)',background:'#fff',color:'#333'}},'Solo hoy'),
                   h('button',{onClick:function(e){
                     e.stopPropagation();
+                    var slotKey=swapItem.origKey||swapItem.key;
                     try{
                       var permKey='ase_'+user+'_food_perm';
                       var perms=JSON.parse(localStorage.getItem(permKey)||'{}');
-                      perms[swapItem.key]=item;
+                      if(item.key===slotKey){delete perms[slotKey];} // volver al original
+                      else{perms[slotKey]=item;}
                       localStorage.setItem(permKey,JSON.stringify(perms));
                     }catch(err){}
                     setSwapItem(null);
@@ -1330,9 +1588,9 @@ const CONTEXTO_VIDA=[
 // ── MI SEMANA ─────────────────────────────────────────────────────────
 var MEAL_STATES=[
   {v:'',ic:'○',color:'#E0E0E0',label:''},
-  {v:'ok',ic:'✅',color:'#1D9E75',label:'Cumpli menu y cantidades'},
-  {v:'par',ic:'↔',color:'#D97706',label:'Cumpli menu, no cantidades'},
-  {v:'no',ic:'❌',color:'#EF4444',label:'Comi por fuera del menu'},
+  {v:'ok',ic:'✅',color:'#1D9E75',label:'Sí, comí esto'},
+  {v:'par',ic:'↔',color:'#D97706',label:'Comí esto, pero no las cantidades'},
+  {v:'no',ic:'❌',color:'#EF4444',label:'Comí otra cosa'},
 ];
 var AGUA_STATES=[
   {v:'',ic:'○',color:'#E0E0E0'},
@@ -2069,9 +2327,13 @@ function App(){
             return{id:s,nom,detalle:String(fila['HIIT'+s+'Detalle']||'').trim(),ritmo:String(fila['HIIT'+s+'Ritmo']||'').trim()};
           }).filter(Boolean);
           const normBloque=s=>{
-            const n=s.toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');
-            const MAP={'mantenimiento':'man','mant':'man','manteniment':'man','deportivo':'deporte','rehabilitacion':'base','rehab':'base','progresion base':'base','progresionbase':'base','base':'base','intensidad':'intensidad','volumen':'volumen','deporte':'deporte','man':'man','fuerza':'fuerza'};
-            return MAP[n]||n;
+            const n=String(s||'').toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');
+            // 5 bloques finales. Todo lo demás (man/health/deporte/mantenimiento/vacío/desconocido) -> base.
+            const VALIDOS={'volumen':1,'fuerza':1,'intensidad':1,'base':1,'rehabilitacion':1};
+            // sinónimos aceptados que mapean a un válido
+            const SINON={'rehab':'rehabilitacion','rehabilitación':'rehabilitacion','progresion base':'base','progresionbase':'base'};
+            var m=SINON[n]||n;
+            return VALIDOS[m]?m:'base';
           };
           const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess,pesoRef:parseFloat(fila.PesoRef)||0};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
           // FechaInicio: fecha de arranque para calcular semanas (lunes de esa semana)
@@ -2234,6 +2496,12 @@ function App(){
       }catch(err){}
       // Solo enviar al sheet al guardar semana completa (no en Guardar progreso)
       if(completeWeek){
+        // Consolidar datos de HIIT de todas las sesiones (A, B...) en un resumen por campo.
+        var hiitRegs=(hiitData&&hiitData.regs)||{};
+        var hiitSessIds=Object.keys(hiitRegs);
+        var joinHiit=function(field){
+          return hiitSessIds.map(function(sid){var v=hiitRegs[sid]&&hiitRegs[sid][field];return v?(sid+': '+v):'';}).filter(Boolean).join(' · ');
+        };
         fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
           user,wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
@@ -2242,7 +2510,12 @@ function App(){
           dolorZona:(hab.sens||{}).dolorZona||'',
           dolorIntensidad:(hab.sens||{}).dolorIntensidad||'',
           contextoVida:(hab.sens||{}).contextoVida||'',
-          e1rm:e1rmSnap
+          e1rm:e1rmSnap,
+          hiitCumplio:joinHiit('cumple'),
+          hiitExigencia:joinHiit('exig'),
+          hiitFatiga:joinHiit('fatiga'),
+          hiitDolorMuscular:joinHiit('dolor'),
+          hiitNota:joinHiit('nota')
         })}).catch(()=>{});
       }
     }catch(e){}
@@ -2311,7 +2584,7 @@ function App(){
     if(nextNum>maxWkNum)return;
     // ── PROGRESIÓN DE CARGA: se aplica SOLO acá, al pasar a la semana nueva ──
     const bloqueActual=(cfg?.bloque||'volumen').toLowerCase();
-    const hasProg=bloqueActual==='volumen'||bloqueActual==='intensidad'||bloqueActual==='man'||bloqueActual==='fuerza';
+    const hasProg=bloqueActual==='volumen'||bloqueActual==='intensidad'||bloqueActual==='fuerza';
     if(hasProg){
       const newSK=JSON.parse(JSON.stringify(sessionKg));
       Object.entries(sessionReps).forEach(([sessId,sessData])=>{
