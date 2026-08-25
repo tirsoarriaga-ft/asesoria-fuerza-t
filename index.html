@@ -1378,27 +1378,44 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
           const permKey='ase_'+user+'_food_perm';
           var perms={};
           try{perms=JSON.parse(localStorage.getItem(permKey)||'{}');}catch(e2){}
+          // Splits (dividir/unir): {origKey: segundoAlimento}. Perm en localStorage, hoy en sessionStorage.
+          var splitsPerm={};
+          try{splitsPerm=JSON.parse(localStorage.getItem('ase_'+user+'_food_split')||'{}');}catch(e4){}
+          function getSplit(origKey){
+            // solo hoy tiene prioridad sobre permanente
+            try{var h=sessionStorage.getItem('ase_'+user+'_food_split_hoy_'+origKey);if(h)return JSON.parse(h);}catch(e5){}
+            return splitsPerm[origKey]||null;
+          }
           return p.map(function(comida){
             return Object.assign({},comida,{
               ops:comida.ops.map(function(op){
-                return Object.assign({},op,{
-                  items:op.items.map(function(item){
-                    var origKey=item.origKey||item.key;
-                    // Check swap permanente usando la key original
-                    if(perms[origKey]){
-                      return Object.assign({},perms[origKey],{key:origKey,origKey:origKey,curKey:(perms[origKey].key||perms[origKey].curKey),share:item.share,_swapped:true});
-                    }
-                    // Check swap solo hoy
+                var nuevosItems=[];
+                op.items.forEach(function(item){
+                  var origKey=item.origKey||item.key;
+                  var resuelto=item;
+                  // 1) swap permanente
+                  if(perms[origKey]){
+                    resuelto=Object.assign({},perms[origKey],{key:origKey,origKey:origKey,curKey:(perms[origKey].key||perms[origKey].curKey),share:item.share,_swapped:true});
+                  }else{
+                    // 2) swap solo hoy
                     try{
                       var hoyStr=sessionStorage.getItem('ase_'+user+'_food_hoy_'+origKey);
                       if(hoyStr){
                         var hoyItem=JSON.parse(hoyStr);
-                        return Object.assign({},hoyItem,{key:origKey,origKey:origKey,curKey:(hoyItem.key||hoyItem.curKey),share:item.share,_swappedHoy:true});
+                        resuelto=Object.assign({},hoyItem,{key:origKey,origKey:origKey,curKey:(hoyItem.key||hoyItem.curKey),share:item.share,_swappedHoy:true});
                       }
                     }catch(e3){}
-                    return item;
-                  })
+                  }
+                  // 3) split: si este slot está dividido, mostrar 2 items (0.5 c/u)
+                  var sp=getSplit(origKey);
+                  if(sp&&(item.share===1||item.share==null)){
+                    nuevosItems.push(Object.assign({},resuelto,{share:0.5,_splitPrimario:true,origKey:origKey}));
+                    nuevosItems.push(Object.assign({},sp,{share:0.5,_splitSecundario:true,origKey:origKey,curKey:sp.key}));
+                  }else{
+                    nuevosItems.push(resuelto);
+                  }
                 });
+                return Object.assign({},op,{items:nuevosItems});
               })
             });
           });
@@ -1516,10 +1533,35 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
   }
   return h('div',null,
     swapItem&&h('div',{onClick:()=>setSwapItem(null),style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:100,display:'flex',alignItems:'flex-end'}},
-      h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 16px 32px',maxHeight:'70vh',overflowY:'auto'}},
+      h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 16px 32px',maxHeight:'75vh',overflowY:'auto'}},
         h('div',{style:{width:'36px',height:'4px',background:'#E0E0E0',borderRadius:'2px',margin:'0 auto 16px'}}),
-        h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#999',marginBottom:'4px'}},'Equivalentes — '+(CAT[swapItem.cat]?.l||swapItem.cat)),
-        h('div',{style:{fontSize:'15px',fontWeight:'800',marginBottom:'14px'}},'No tenes '+swapItem.n+'? Reemplazalo con:'),
+        h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#999',marginBottom:'4px'}},'Opciones — '+(CAT[swapItem.cat]?.l||swapItem.cat)),
+        h('div',{style:{fontSize:'15px',fontWeight:'800',marginBottom:'14px'}},swapItem.n),
+        // ─── UNIR: si el item tocado es parte de un split (media porción) ───
+        (swapItem._splitPrimario||swapItem._splitSecundario)&&h('div',{style:{marginBottom:'16px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:'10px',padding:'12px'}},
+          h('div',{style:{fontSize:'13px',fontWeight:'700',color:B,marginBottom:'8px'}},'Esta porción está dividida en dos alimentos'),
+          h('div',{style:{display:'flex',gap:'8px'}},
+            h('button',{onClick:function(e){e.stopPropagation();var ok=swapItem.origKey||swapItem.key;try{sessionStorage.removeItem('ase_'+user+'_food_split_hoy_'+ok);}catch(er){}setSwapItem(null);setSwapVersion(function(v){return v+1;});},style:{flex:1,padding:'9px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid '+B,background:'#fff',color:B}},'Unir solo hoy'),
+            h('button',{onClick:function(e){e.stopPropagation();var ok=swapItem.origKey||swapItem.key;try{var sp=JSON.parse(localStorage.getItem('ase_'+user+'_food_split')||'{}');delete sp[ok];localStorage.setItem('ase_'+user+'_food_split',JSON.stringify(sp));sessionStorage.removeItem('ase_'+user+'_food_split_hoy_'+ok);}catch(er){}setSwapItem(null);setSwapVersion(function(v){return v+1;});},style:{flex:1,padding:'9px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:B,color:'#fff'}},'Unir siempre')
+          )
+        ),
+        // ─── DIVIDIR: si el item es porción entera (share 1) ───
+        (!swapItem._splitPrimario&&!swapItem._splitSecundario&&(swapItem.share===1||swapItem.share==null))&&h('div',{style:{marginBottom:'16px'}},
+          h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#111',marginBottom:'2px'}},'Dividir en dos alimentos (mitad y mitad)'),
+          h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'10px'}},'Elegí con qué combinar '+swapItem.n+'. Queda media porción de cada uno.'),
+          equivalents.length===0
+            ?h('div',{style:{fontSize:'12px',color:'#bbb',padding:'8px 0'}},'No hay otros alimentos de esta categoría para combinar')
+            :equivalents.map(function(item,i){
+                return h('div',{key:'sp'+i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',padding:'8px 0',borderBottom:i<equivalents.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
+                  h('span',{style:{fontSize:'13px',color:'#111',fontWeight:'600',flex:1}},item.n),
+                  h('button',{onClick:function(e){e.stopPropagation();var ok=swapItem.origKey||swapItem.key;try{sessionStorage.setItem('ase_'+user+'_food_split_hoy_'+ok,JSON.stringify(item));}catch(er){}setSwapItem(null);setSwapVersion(function(v){return v+1;});},style:{padding:'6px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.12)',background:'#fff',color:'#333'}},'Solo hoy'),
+                  h('button',{onClick:function(e){e.stopPropagation();var ok=swapItem.origKey||swapItem.key;try{var sp=JSON.parse(localStorage.getItem('ase_'+user+'_food_split')||'{}');sp[ok]=item;localStorage.setItem('ase_'+user+'_food_split',JSON.stringify(sp));}catch(er){}setSwapItem(null);setSwapVersion(function(v){return v+1;});},style:{padding:'6px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:AC,color:'#fff'}},'Siempre')
+                );
+              })
+        ),
+        // ─── REEMPLAZAR (siempre disponible) ───
+        h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#111',marginBottom:'2px'}},'Reemplazar por otro alimento'),
+        h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'10px'}},'Cambiá '+swapItem.n+' por un equivalente de la misma categoría.'),
         equivalents.length===0
           ?h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay otros alimentos de esta categoria en tu plan')
           :equivalents.map(function(item,i){
