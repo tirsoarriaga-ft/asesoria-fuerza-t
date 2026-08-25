@@ -943,7 +943,13 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   };
   // Estado: confirmación de protocolo en base (por ejercicio) — modula la sugerencia, NO se guarda.
   const [baseProto,setBaseProto]=useState({});
-  const [rmTest,setRmTest]=useState({}); // fuerza día1: {exId:{kg,reps}} test de RM (se convierte en e1RM ref)
+  // fuerza día1: {exId:{kg,reps}} test de RM. Se persiste en localStorage para no perderse al salir.
+  const rmTestLSKey=`ase_${user}_rmTest_${activeSess}`;
+  const [rmTest,setRmTest]=useState(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${activeSess}`)||'{}');}catch(e){return{};}});
+  // Recargar rmTest cuando cambia la sesión activa (cada sesión tiene su propio test)
+  useEffect(()=>{try{setRmTest(JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${activeSess}`)||'{}'));}catch(e){setRmTest({});}},[activeSess,user]);
+  // Guardar rmTest en localStorage cada vez que cambia
+  useEffect(()=>{try{localStorage.setItem(rmTestLSKey,JSON.stringify(rmTest));}catch(e){}},[rmTest,rmTestLSKey]);
   // Estado: técnica cargada por el asesorado en intensidad (texto libre, por ejercicio) — local.
   const [tecInput,setTecInput]=useState({});
   const doSaveKg=(ex,val)=>{
@@ -1147,7 +1153,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   ),
                   prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},'Sem. ant.: '+prev.reps+' × '+prev.kg+' kg')
                 ),
-                h('div',{style:{textAlign:'right'}},
+                !(bloque==='fuerza'&&esDia1Fuerza&&rolFuerza(ex)==='principal')&&h('div',{style:{textAlign:'right'}},
                   editing
                     ?h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('input',{type:'text',inputMode:'decimal',value:kgVal,onChange:e=>setKgVal(e.target.value),onKeyDown:e=>e.key==='Enter'&&doSaveKg(ex,kgVal),onBlur:()=>doSaveKg(ex,kgVal),autoFocus:true,style:{width:'64px',textAlign:'center',fontSize:'18px',fontWeight:'700',padding:'4px 6px',border:'2px solid '+G,borderRadius:'6px',color:'#111'}}),h('span',{style:{fontSize:'13px',color:'#999'}},'kg'))
                     :getKg(ex)!==undefined
@@ -2634,6 +2640,16 @@ function App(){
   }
   const draftReady=useRef(false);
   const dataLoaded=useRef(false); // true solo cuando el draft fue cargado completamente
+  // Fallback de seguridad: si tras 4s las guardias siguen en false (carga colgada/fallida),
+  // activarlas para que el auto-save no quede muerto. La protección anti-vacío del auto-save
+  // (no guardar vacío si ya hay datos) sigue vigente, así que esto no puede borrar nada.
+  useEffect(()=>{
+    const t=setTimeout(function(){
+      if(!dataLoaded.current)dataLoaded.current=true;
+      if(!draftReady.current)draftReady.current=true;
+    },4000);
+    return function(){clearTimeout(t);};
+  },[]);
 
   // Auto-guardar borrador — NUNCA corre hasta que dataLoaded sea true
   useEffect(()=>{
@@ -2652,6 +2668,30 @@ function App(){
     }
     var draft={sr:sessionReps,n:nut,h:hab,hiit:hiitData};
     localStorage.setItem('ase_'+user+'_draft_'+wk.id,JSON.stringify(draft));
+  },[sessionReps,nut,hab,hiitData,user,wk.id]);
+
+  // RED DE SEGURIDAD (móvil): guardar el draft cuando la app pasa a segundo plano o se cierra.
+  // En iOS/Safari este es el momento crítico — si no se persiste acá, los datos en memoria se pierden.
+  useEffect(()=>{
+    function persistNow(){
+      if(!user||!wk.id||!dataLoaded.current||!draftReady.current)return;
+      try{
+        var hasReps=Object.values(sessionReps).some(function(s){return Object.values(s||{}).some(function(e){return Object.values(e||{}).some(function(v){return v;});});});
+        var hasNut=nut.some(function(d){return Object.values(d.m||{}).some(function(v){return v&&v!=='';})||d.agua||d.ak;});
+        var hasHab=(hab.sleep||[]).some(Boolean)||(hab.actExtra||[]).some(Boolean)||(hab.meds||[]).some(function(m){return m.p||m.c;})||((hab.sens||{}).energia);
+        if(!hasReps&&!hasNut&&!hasHab)return;
+        localStorage.setItem('ase_'+user+'_draft_'+wk.id,JSON.stringify({sr:sessionReps,n:nut,h:hab,hiit:hiitData}));
+      }catch(e){}
+    }
+    function onVis(){if(document.visibilityState==='hidden')persistNow();}
+    document.addEventListener('visibilitychange',onVis);
+    window.addEventListener('pagehide',persistNow);
+    window.addEventListener('beforeunload',persistNow);
+    return function(){
+      document.removeEventListener('visibilitychange',onVis);
+      window.removeEventListener('pagehide',persistNow);
+      window.removeEventListener('beforeunload',persistNow);
+    };
   },[sessionReps,nut,hab,hiitData,user,wk.id]);
 
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
