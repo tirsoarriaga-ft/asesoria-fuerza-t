@@ -942,7 +942,11 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     return []; // rehabilitacion: sin aproximaciones
   };
   // Estado: confirmación de protocolo en base (por ejercicio) — modula la sugerencia, NO se guarda.
-  const [baseProto,setBaseProto]=useState({});
+  // base/rehab: confirmación de protocolo por ejercicio. Persiste en localStorage (por sesión+semana).
+  const baseProtoKey=`ase_${user}_baseProto_${wk.id}_${activeSess}`;
+  const [baseProto,setBaseProto]=useState(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${activeSess}`)||'{}');}catch(e){return{};}});
+  useEffect(()=>{try{setBaseProto(JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${activeSess}`)||'{}'));}catch(e){setBaseProto({});}},[activeSess,wk.id,user]);
+  useEffect(()=>{try{localStorage.setItem(baseProtoKey,JSON.stringify(baseProto));}catch(e){}},[baseProto,baseProtoKey]);
   // fuerza día1: {exId:{kg,reps}} test de RM. Se persiste en localStorage para no perderse al salir.
   const rmTestLSKey=`ase_${user}_rmTest_${activeSess}`;
   const [rmTest,setRmTest]=useState(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${activeSess}`)||'{}');}catch(e){return{};}});
@@ -951,7 +955,11 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   // Guardar rmTest en localStorage cada vez que cambia
   useEffect(()=>{try{localStorage.setItem(rmTestLSKey,JSON.stringify(rmTest));}catch(e){}},[rmTest,rmTestLSKey]);
   // Estado: técnica cargada por el asesorado en intensidad (texto libre, por ejercicio) — local.
-  const [tecInput,setTecInput]=useState({});
+  // intensidad: técnica cargada por el asesorado. Persiste en localStorage (por sesión+semana).
+  const tecInputKey=`ase_${user}_tecInput_${wk.id}_${activeSess}`;
+  const [tecInput,setTecInput]=useState(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_tecInput_${wk.id}_${activeSess}`)||'{}');}catch(e){return{};}});
+  useEffect(()=>{try{setTecInput(JSON.parse(localStorage.getItem(`ase_${user}_tecInput_${wk.id}_${activeSess}`)||'{}'));}catch(e){setTecInput({});}},[activeSess,wk.id,user]);
+  useEffect(()=>{try{localStorage.setItem(tecInputKey,JSON.stringify(tecInput));}catch(e){}},[tecInput,tecInputKey]);
   const doSaveKg=(ex,val)=>{
     const kg=parseFloat(val);if(isNaN(kg)||kg<=0)return setEditKg(null);
     const newSK={...sessionKg};
