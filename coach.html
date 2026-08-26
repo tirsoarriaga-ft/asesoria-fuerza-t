@@ -233,7 +233,7 @@ function PinScreen({onUnlock}){
 }
 
 // ── CLIENT LIST ───────────────────────────────────────────────────────
-function ClientList({data,rutinas,decisiones,onSelect,onRefresh}){
+function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
   const statusOrder={red:0,yellow:1,green:2,grey:3};
   const [soloSinRevisar,setSoloSinRevisar]=useState(false);
   const getObj=name=>{const r=rutinas.find(rt=>String(rt.Asesorado||'').trim().toLowerCase()===name.toLowerCase());return String(r?.Objetivo||'mantenimiento').toLowerCase().trim()||'mantenimiento';};
@@ -342,7 +342,8 @@ function ClientList({data,rutinas,decisiones,onSelect,onRefresh}){
                 lat?.Semana?h('span',{style:{color:hasCPA?'#999':O,fontWeight:hasCPA?'400':'700'}},lat.Semana):'Sin datos',
                 ' · ',tmpl,
                 !hasCPA&&h('span',{style:{marginLeft:'6px',background:O,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},'Sin revisar'),
-                esCP&&h('span',{style:{marginLeft:'4px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},'CP')
+                esCP&&h('span',{style:{marginLeft:'4px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},'CP'),
+                (videosPend&&videosPend[name.trim().toLowerCase()]>0)&&h('span',{style:{marginLeft:'4px',background:'#4338CA',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},'🎬 '+videosPend[name.trim().toLowerCase()]+' sin corregir')
               )
             ),
             h('div',{style:{textAlign:'right',display:'flex',gap:'4px',alignItems:'center'}},
@@ -1609,11 +1610,75 @@ function AuditoriaPanel({data,rutinas,decisiones}){
     )
   );
 }
+// ── PESTAÑA MADRE: Videos sin corregir de TODOS los asesorados, agrupados ──
+function VideosGlobal({onSelect}){
+  const [videos,setVideos]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [fb,setFb]=useState({});
+  const [saving,setSaving]=useState(null);
+  const [savedVk,setSavedVk]=useState({});
+  useEffect(()=>{
+    fetch(SCRIPT_URL+'?action=videos').then(r=>r.json()).then(rows=>{
+      setVideos(rows||[]);
+    }).catch(()=>{}).finally(()=>setLoading(false));
+  },[]);
+  function guardar(v,vk){
+    const texto=(fb[vk]||'').trim();
+    if(!texto)return;
+    setSaving(vk);
+    const payload={action:'videofeedback',asesorado:v.Asesorado||'',sesion:v.Sesion||'',ejercicio:v.Ejercicio||'',url:v.URL||'',feedback:texto,fecha:v.Fecha||''};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .finally(()=>{ setSaving(null); setSavedVk(s=>({...s,[vk]:true})); });
+  }
+  if(loading)return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'40px',textAlign:'center',color:'#999',fontSize:'13px'}},'Cargando videos…');
+  // Dedup por asesorado+ejercicio (más reciente = última fila), y solo pendientes (sin corregir)
+  const norm=x=>String(x||'').trim().toLowerCase();
+  const conIdx=videos.map((v,i)=>({...v,_ord:i}));
+  const porClave={};
+  conIdx.forEach(v=>{
+    const k=norm(v.Asesorado)+'|'+norm(v.Sesion)+'|'+norm(v.Ejercicio);
+    if(!porClave[k]||v._ord>porClave[k]._ord)porClave[k]=v;
+  });
+  const corregido=v=>String(v.Revisado||'').toLowerCase()==='si'||(v.Feedback&&String(v.Feedback).trim());
+  let pendientes=Object.values(porClave).filter(v=>!corregido(v)&&!savedVk[norm(v.Asesorado)+'|'+String(v.Sesion||'')+'|'+String(v.Ejercicio||'')+'|'+String(v.URL||'')]);
+  // Agrupar por asesorado
+  const porAsesorado={};
+  pendientes.forEach(v=>{const a=String(v.Asesorado||'').trim();if(!porAsesorado[a])porAsesorado[a]=[];porAsesorado[a].push(v);});
+  const asesorados=Object.keys(porAsesorado).sort();
+  const totalPend=pendientes.length;
+  return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'16px'}},
+    h('div',{style:{fontSize:'18px',fontWeight:'800',marginBottom:'4px'}},'Videos sin corregir'),
+    h('div',{style:{fontSize:'12px',color:'#999',marginBottom:'16px'}},totalPend===0?'Todo al día ✓':totalPend+' video'+(totalPend>1?'s':'')+' pendiente'+(totalPend>1?'s':'')+' · '+asesorados.length+' asesorado'+(asesorados.length>1?'s':'')),
+    totalPend===0
+      ?h('div',{style:{textAlign:'center',color:'#bbb',padding:'40px 0',fontSize:'14px'}},'No hay videos pendientes de corrección 🎉')
+      :asesorados.map(name=>h('div',{key:name,style:{marginBottom:'20px'}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+            h('div',{style:{fontSize:'15px',fontWeight:'800',color:'#111'}},name),
+            h('span',{style:{background:'#FEF3F2',color:'#B42318',borderRadius:'20px',padding:'2px 8px',fontSize:'10px',fontWeight:'800'}},porAsesorado[name].length+' sin revisar')
+          ),
+          porAsesorado[name].map((v,i)=>{
+            const vk=norm(v.Asesorado)+'|'+String(v.Sesion||'')+'|'+String(v.Ejercicio||'')+'|'+String(v.URL||'');
+            return h('div',{key:vk,style:{padding:'12px',marginBottom:'8px',borderRadius:'10px',border:'1px solid #FED7AA',background:'#FFFBEB'}},
+              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+                h('div',null,
+                  h('div',{style:{fontWeight:'600',fontSize:'13px'}},'Ses. '+(v.Sesion||''),' — ',v.Ejercicio||''),
+                  h('div',{style:{fontSize:'10px',color:'#999'}},v.Fecha||'')
+                ),
+                h('a',{href:v.URL,target:'_blank',rel:'noreferrer',style:{background:'#EAF7F2',color:G,borderRadius:'8px',padding:'6px 12px',fontSize:'12px',fontWeight:'700',textDecoration:'none',flexShrink:0}},'▶ Ver')
+              ),
+              h('textarea',{value:fb[vk]||'',onChange:e=>{const val=e.target.value;setFb(s=>({...s,[vk]:val}));},placeholder:'Corrección técnica…',rows:2,style:{width:'100%',boxSizing:'border-box',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'8px',fontSize:'13px',resize:'vertical',fontFamily:'inherit'}}),
+              h('button',{onClick:()=>guardar(v,vk),disabled:saving===vk||!((fb[vk]||'').trim()),style:{marginTop:'6px',background:saving===vk?'#ccc':AC,color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:saving===vk?'default':'pointer'}},saving===vk?'Guardando…':'Enviar corrección')
+            );
+          })
+        ))
+  );
+}
 function App(){
   const [unlocked,setUnlocked]=useState(()=>sessionStorage.getItem('coach_ok')==='1');
   const [loading,setLoading]=useState(false);
   const [data,setData]=useState({});
   const [rutinas,setRutinas]=useState([]);
+  const [videosPend,setVideosPend]=useState({}); // {nombreLower: cantidad} de videos sin corregir
   const [decisiones,setDecisiones]=useState([]);
   const [selected,setSelected]=useState(null);
   const [error,setError]=useState(null);
@@ -1625,8 +1690,9 @@ function App(){
       fetch(SCRIPT_URL+'?action=reportes').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=rutinas').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=decisiones').then(r=>r.json()).catch(()=>[]),
-      fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[])
-    ]).then(([reportes,ruts,decs,asesorados])=>{
+      fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=videos').then(r=>r.json()).catch(()=>[])
+    ]).then(([reportes,ruts,decs,asesorados,vids])=>{
       const grouped={};
       (reportes||[]).forEach(row=>{const name=String(row.Asesorado||'').trim();if(!name)return;if(!grouped[name])grouped[name]=[];grouped[name].push(row);});
       Object.values(grouped).forEach(w=>w.sort((a,b)=>String(a.SemanID||'').localeCompare(String(b.SemanID||''))));
@@ -1653,6 +1719,17 @@ function App(){
           AsesoradoID:f.AsesoradoID||''
         });
       });
+      // Videos sin corregir por asesorado (dedup por asesorado+ejercicio, más reciente)
+      const normV=x=>String(x||'').trim().toLowerCase();
+      const conIdxV=(vids||[]).map((v,i)=>({...v,_ord:i}));
+      const porClaveV={};
+      conIdxV.forEach(v=>{const k=normV(v.Asesorado)+'|'+normV(v.Sesion)+'|'+normV(v.Ejercicio);if(!porClaveV[k]||v._ord>porClaveV[k]._ord)porClaveV[k]=v;});
+      const pend={};
+      Object.values(porClaveV).forEach(v=>{
+        const corr=String(v.Revisado||'').toLowerCase()==='si'||(v.Feedback&&String(v.Feedback).trim());
+        if(!corr){const a=normV(v.Asesorado);pend[a]=(pend[a]||0)+1;}
+      });
+      setVideosPend(pend);
       setData(grouped);setRutinas(rutsEnriquecidas);setDecisiones(decs||[]);
     }).catch(()=>setError('Error al cargar datos.')).finally(()=>setLoading(false));
   };
@@ -1663,12 +1740,13 @@ function App(){
   if(selected)return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()),onBack:()=>setSelected(null)});
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
-      appTab==='lista'&&h(ClientList,{data,rutinas,decisiones,onSelect:setSelected,onRefresh:loadData}),
+      appTab==='lista'&&h(ClientList,{data,rutinas,decisiones,videosPend,onSelect:setSelected,onRefresh:loadData}),
+      appTab==='vids'&&h(VideosGlobal,{onSelect:setSelected}),
       appTab==='sem'&&h(SemanaPanel,{data,rutinas}),
       appTab==='aud'&&h(AuditoriaPanel,{data,rutinas,decisiones})
     ),
     h('div',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'#fff',borderTop:'1px solid rgba(0,0,0,0.08)',display:'flex',zIndex:20}},
-      [{v:'lista',l:'Asesorados',ic:'👥'},{v:'sem',l:'Semana',ic:'📅'},{v:'aud',l:'Auditoria',ic:'📊'}].map(t=>
+      [{v:'lista',l:'Asesorados',ic:'👥'},{v:'vids',l:'Videos',ic:'🎬'},{v:'sem',l:'Semana',ic:'📅'},{v:'aud',l:'Auditoria',ic:'📊'}].map(t=>
         h('button',{key:t.v,onClick:()=>setAppTab(t.v),style:{flex:1,padding:'10px 2px 14px',fontSize:'10px',background:'none',border:'none',borderTop:appTab===t.v?'2px solid #111':'2px solid transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',color:appTab===t.v?'#111':'#999',fontWeight:appTab===t.v?'700':'400'}},h('span',{style:{fontSize:'18px'}},t.ic),t.l)
       )
     )
