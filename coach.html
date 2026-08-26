@@ -979,7 +979,7 @@ function ClientDetail({name,weeks,rutina,onBack}){
     );
   }
 
-  const DTABS=[{id:'med',l:' Tendencias'},{id:'ent',l:' Entreno'},{id:'vid',l:' Videos'},{id:'cp',l:' Checkpoint'},{id:'diag',l:' Diagnostico'}];
+  const DTABS=[{id:'med',l:' Tendencias'},{id:'ent',l:' Entreno'},{id:'cp',l:' Checkpoint'},{id:'diag',l:' Diagnostico'}];
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
     h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'14px 18px',position:'sticky',top:0,zIndex:10}},
@@ -1115,9 +1115,6 @@ function ClientDetail({name,weeks,rutina,onBack}){
               )
             )
       ),
-
-      // TAB: VIDEOS (Mi parte — ver video + escribir corrección)
-      tab==='vid'&&h(VideoPanel,{name}),
 
       // TAB: SENSACIONES
       tab==='diag'&&h(DiagnosticoPanel,{rutina,weeks}),
@@ -1617,6 +1614,7 @@ function VideosGlobal({onSelect}){
   const [fb,setFb]=useState({});
   const [saving,setSaving]=useState(null);
   const [savedVk,setSavedVk]=useState({});
+  const [verRevisados,setVerRevisados]=useState(false);
   useEffect(()=>{
     fetch(SCRIPT_URL+'?action=videos').then(r=>r.json()).then(rows=>{
       setVideos(rows||[]);
@@ -1640,25 +1638,36 @@ function VideosGlobal({onSelect}){
     if(!porClave[k]||v._ord>porClave[k]._ord)porClave[k]=v;
   });
   const corregido=v=>String(v.Revisado||'').toLowerCase()==='si'||(v.Feedback&&String(v.Feedback).trim());
-  let pendientes=Object.values(porClave).filter(v=>!corregido(v)&&!savedVk[norm(v.Asesorado)+'|'+String(v.Sesion||'')+'|'+String(v.Ejercicio||'')+'|'+String(v.URL||'')]);
+  const yaGuardado=v=>savedVk[norm(v.Asesorado)+'|'+String(v.Sesion||'')+'|'+String(v.Ejercicio||'')+'|'+String(v.URL||'')];
+  // Por defecto solo pendientes. Con el toggle, se ven los revisados.
+  let mostrar=verRevisados
+    ? Object.values(porClave).filter(v=>corregido(v)||yaGuardado(v))
+    : Object.values(porClave).filter(v=>!corregido(v)&&!yaGuardado(v));
+  let pendientes=mostrar;
   // Agrupar por asesorado
   const porAsesorado={};
   pendientes.forEach(v=>{const a=String(v.Asesorado||'').trim();if(!porAsesorado[a])porAsesorado[a]=[];porAsesorado[a].push(v);});
   const asesorados=Object.keys(porAsesorado).sort();
   const totalPend=pendientes.length;
+  // contar pendientes reales (para el botón, aunque estemos viendo revisados)
+  const totalPendReal=Object.values(porClave).filter(v=>!corregido(v)&&!yaGuardado(v)).length;
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'16px'}},
-    h('div',{style:{fontSize:'18px',fontWeight:'800',marginBottom:'4px'}},'Videos sin corregir'),
-    h('div',{style:{fontSize:'12px',color:'#999',marginBottom:'16px'}},totalPend===0?'Todo al día ✓':totalPend+' video'+(totalPend>1?'s':'')+' pendiente'+(totalPend>1?'s':'')+' · '+asesorados.length+' asesorado'+(asesorados.length>1?'s':'')),
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}},
+      h('div',{style:{fontSize:'18px',fontWeight:'800'}},verRevisados?'Videos revisados':'Videos sin corregir'),
+      h('button',{onClick:()=>setVerRevisados(x=>!x),style:{fontSize:'11px',fontWeight:'700',color:AC,background:AC+'12',border:'none',borderRadius:'8px',padding:'6px 10px',cursor:'pointer'}},verRevisados?('← Pendientes'+(totalPendReal>0?' ('+totalPendReal+')':'')):'Ver revisados')
+    ),
+    h('div',{style:{fontSize:'12px',color:'#999',marginBottom:'16px'}},totalPend===0?(verRevisados?'Todavía no corregiste videos':'Todo al día ✓'):totalPend+' video'+(totalPend>1?'s':'')+' · '+asesorados.length+' asesorado'+(asesorados.length>1?'s':'')),
     totalPend===0
-      ?h('div',{style:{textAlign:'center',color:'#bbb',padding:'40px 0',fontSize:'14px'}},'No hay videos pendientes de corrección 🎉')
+      ?h('div',{style:{textAlign:'center',color:'#bbb',padding:'40px 0',fontSize:'14px'}},verRevisados?'No hay videos corregidos todavía':'No hay videos pendientes de corrección 🎉')
       :asesorados.map(name=>h('div',{key:name,style:{marginBottom:'20px'}},
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
             h('div',{style:{fontSize:'15px',fontWeight:'800',color:'#111'}},name),
-            h('span',{style:{background:'#FEF3F2',color:'#B42318',borderRadius:'20px',padding:'2px 8px',fontSize:'10px',fontWeight:'800'}},porAsesorado[name].length+' sin revisar')
+            h('span',{style:{background:verRevisados?'#EAF7F2':'#FEF3F2',color:verRevisados?G:'#B42318',borderRadius:'20px',padding:'2px 8px',fontSize:'10px',fontWeight:'800'}},porAsesorado[name].length+(verRevisados?' corregido'+(porAsesorado[name].length>1?'s':''):' sin revisar'))
           ),
           porAsesorado[name].map((v,i)=>{
             const vk=norm(v.Asesorado)+'|'+String(v.Sesion||'')+'|'+String(v.Ejercicio||'')+'|'+String(v.URL||'');
-            return h('div',{key:vk,style:{padding:'12px',marginBottom:'8px',borderRadius:'10px',border:'1px solid #FED7AA',background:'#FFFBEB'}},
+            const corr=verRevisados;
+            return h('div',{key:vk,style:{padding:'12px',marginBottom:'8px',borderRadius:'10px',border:'1px solid '+(corr?'rgba(0,0,0,0.08)':'#FED7AA'),background:corr?'#fff':'#FFFBEB'}},
               h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
                 h('div',null,
                   h('div',{style:{fontWeight:'600',fontSize:'13px'}},'Ses. '+(v.Sesion||''),' — ',v.Ejercicio||''),
@@ -1666,8 +1675,8 @@ function VideosGlobal({onSelect}){
                 ),
                 h('a',{href:v.URL,target:'_blank',rel:'noreferrer',style:{background:'#EAF7F2',color:G,borderRadius:'8px',padding:'6px 12px',fontSize:'12px',fontWeight:'700',textDecoration:'none',flexShrink:0}},'▶ Ver')
               ),
-              h('textarea',{value:fb[vk]||'',onChange:e=>{const val=e.target.value;setFb(s=>({...s,[vk]:val}));},placeholder:'Corrección técnica…',rows:2,style:{width:'100%',boxSizing:'border-box',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'8px',fontSize:'13px',resize:'vertical',fontFamily:'inherit'}}),
-              h('button',{onClick:()=>guardar(v,vk),disabled:saving===vk||!((fb[vk]||'').trim()),style:{marginTop:'6px',background:saving===vk?'#ccc':AC,color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:saving===vk?'default':'pointer'}},saving===vk?'Guardando…':'Enviar corrección')
+              h('textarea',{value:fb[vk]!==undefined?fb[vk]:(v.Feedback||''),onChange:e=>{const val=e.target.value;setFb(s=>({...s,[vk]:val}));},placeholder:'Corrección técnica…',rows:2,style:{width:'100%',boxSizing:'border-box',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'8px',fontSize:'13px',resize:'vertical',fontFamily:'inherit'}}),
+              h('button',{onClick:()=>guardar(v,vk),disabled:saving===vk||!((fb[vk]!==undefined?fb[vk]:(v.Feedback||'')).trim()),style:{marginTop:'6px',background:saving===vk?'#ccc':AC,color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:saving===vk?'default':'pointer'}},saving===vk?'Guardando…':corr?'Actualizar corrección':'Enviar corrección')
             );
           })
         ))
