@@ -286,30 +286,35 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
     });
   }
   const semNum=(s)=>parseInt(String(s||'').replace('sem_',''))||0;
-  const clients=Object.keys(data).sort((a,b)=>{
-    const wa=data[a],wb=data[b];
-    const latA=wa[wa.length-1],latB=wb[wb.length-1];
-    const semA=String(latA?.SemanID||'sem_0');
-    const semB=String(latB?.SemanID||'sem_0');
-    const hasCPA=hasCPCheck(a,semA);
-    const hasCPB=hasCPCheck(b,semB);
-    if(hasCPA!==hasCPB)return hasCPA?1:-1;
-    // Sin revisar primero, ordenados de más ANTIGUO a más reciente (el que espera hace más tiempo, arriba)
-    return semNum(semA)-semNum(semB);
+  // Lista de TODOS los asesorados: los de la maestra (rutinas enriquecidas) + los que tienen reportes.
+  // Así aparecen también los nuevos o los que aún no reportaron.
+  const nombresSet={};
+  (rutinas||[]).forEach(r=>{const n=String(r.Asesorado||'').trim();if(n&&String(r.Estado||'').toLowerCase()!=='baja')nombresSet[n]=1;});
+  Object.keys(data).forEach(n=>{if(n&&n.trim())nombresSet[n.trim()]=1;});
+  const semNumV=s=>parseInt(String(s||'').replace('sem_',''))||0;
+  const clients=Object.keys(nombresSet).sort((a,b)=>{
+    // Si el filtro "Sin revisar" está activo, prioriza pendientes; si no, orden alfabético.
+    if(soloSinRevisar){
+      const wa=data[a]||[],wb=data[b]||[];
+      const semA=String((wa[wa.length-1]||{}).SemanID||'sem_0');
+      const semB=String((wb[wb.length-1]||{}).SemanID||'sem_0');
+      const hasCPA=hasCPCheck(a,semA),hasCPB=hasCPCheck(b,semB);
+      if(hasCPA!==hasCPB)return hasCPA?1:-1;
+      return semNumV(semA)-semNumV(semB);
+    }
+    return a.toLowerCase().localeCompare(b.toLowerCase());
   }).filter(name=>{
     if(!soloSinRevisar)return true;
     const weeks=data[name];
+    if(!weeks||!weeks.length)return false; // sin reportes no puede estar "sin revisar"
     const lat=weeks[weeks.length-1];
     const semId=lat?.SemanID||'';
-    // "Sin revisar" = reportó en una de las últimas 2 semanas Y todavía no tiene checkpoint.
-    // Quien NO reportó reciente (su último SemanID no está entre los recientes) queda fuera:
-    // no llegó su reporte, así que va al grupo "No reportó", no a "Sin revisar".
     if(!semsRecientes.includes(semId))return false;
     return !hasCPCheck(name,semId);
   });
   const statusBg={red:'#FEF2F2',yellow:'#FFFBEB',green:'#F0FDF4',grey:'#F9F9F9'};
   const counts={red:0,yellow:0,green:0};
-  clients.forEach(c=>{const s=getStatus(data[c],getObj(c));if(counts[s]!==undefined)counts[s]++;});
+  clients.forEach(c=>{const s=getStatus(data[c]||[],getObj(c));if(counts[s]!==undefined)counts[s]++;});
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
     h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'16px 18px',position:'sticky',top:0,zIndex:10}},
@@ -340,7 +345,7 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
         h('div',{style:{fontSize:'12px',marginTop:'4px'}},'Los asesorados deben guardar al menos una semana')
       ),
       clients.map(name=>{
-        const weeks=data[name];const lat=weeks[weeks.length-1];
+        const weeks=data[name]||[];const lat=weeks[weeks.length-1];
         const obj=getObj(name);
         const status=getStatus(weeks,obj);const alerts=getAlerts(weeks,obj);
         const rutina=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===name.toLowerCase());
