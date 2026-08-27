@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Diagnóstico inicial — Fuerza T</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#F5F5F5;color:#111;}
+  #root{min-height:100vh;}
+  input,textarea,button{font-family:inherit;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect}=React;
+const h=React.createElement;
+const SCRIPT_URL='https://script.google.com/macros/s/AKfycbwAZIsXShtE0o74oCtCQ6KIAJTd87Qm31CnkDzFBRiemjleNrNTDcsU2hW3SHEVuFl2/exec';
+const G='#16A34A', AC='#7C3AED', B='#2563EB', O='#EA580C', RED='#DC2626';
+
+// ── Lógica de recomendación ──
+// Bloque: Rehab (dolor) > Deporte (competencia) > BASE por defecto.
+// Solo sugiere activo (volumen) si hay certezas fuertes, pero el coach siempre confirma.
+function recomendarBloque(e){
+  if(e.p1==='si')return{bloque:'rehabilitacion',motivo:'Referís dolor/molestia que limita un movimiento. Se prioriza reconstruir sin dolor antes de cargar.'};
+  if(e.p2==='si')return{bloque:'deporte',motivo:'Entrenás para un deporte/competencia. Se prioriza el trabajo orientado al rendimiento.'};
+  if(e.p3==='no')return{bloque:'base',motivo:'No entrenaste de forma regular los últimos 2 meses. Conviene construir base y técnica antes de progresar cargas.'};
+  // Entrenó regular: evaluar certezas
+  const registra=e.p4==='si';
+  const progreso=e.p5==='si';
+  const margen=e.p6==='1-3'||e.p6==='varias'; // le queda margen (no llega al fallo siempre)
+  const recupera=e.p7==='si';
+  if(registra&&progreso&&recupera){
+    return{bloque:'base',motivo:'Tenés referencias y buena recuperación. Igual arrancamos en BASE para confirmar técnica y cargas reales; el coach puede subirte a un bloque activo si corresponde.',sugerencia:'activo'};
+  }
+  return{bloque:'base',motivo:'Aún faltan certezas (registro/progresión/recuperación consolidados). BASE es el punto de partida más seguro.'};
+}
+// Estado nutricional: contar bases que fallan (No). 3+ No = deficitario, 1-2 = adecuado, 0-1 = deportivo.
+function recomendarNutri(n){
+  const bases=[n.n1,n.n2,n.n3,n.n4,n.n5,n.n6,n.n7];
+  const fallan=bases.filter(x=>x==='no').length;
+  if(fallan>=3)return{estado:'deficitario',motivo:'Varias bases nutricionales todavía no están consolidadas. El foco inicial es ordenar la estructura.'};
+  if(fallan>=1)return{estado:'adecuado',motivo:'Las bases están razonablemente cubiertas, con algunas variables por mejorar.'};
+  return{estado:'deportivo',motivo:'Las bases están consolidadas y estables. Tiene sentido optimizar variables más finas.'};
+}
+
+// ── Componentes de UI ──
+function Opcion({label,activo,onClick,color}){
+  return h('button',{onClick,style:{flex:1,padding:'13px 8px',borderRadius:'10px',border:'2px solid '+(activo?(color||G):'rgba(0,0,0,0.12)'),background:activo?(color||G):'#fff',color:activo?'#fff':'#444',fontSize:'14px',fontWeight:'700',cursor:'pointer',transition:'all 0.15s'}},label);
+}
+function Pregunta({num,texto,children,aclaracion}){
+  return h('div',{style:{marginBottom:'22px'}},
+    h('div',{style:{display:'flex',gap:'8px',marginBottom:aclaracion?'4px':'10px'}},
+      h('span',{style:{fontSize:'13px',fontWeight:'800',color:AC,flexShrink:0}},num),
+      h('span',{style:{fontSize:'14px',fontWeight:'600',color:'#111',lineHeight:'1.4'}},texto)
+    ),
+    aclaracion&&h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'10px',marginLeft:'22px',lineHeight:'1.4'}},aclaracion),
+    h('div',{style:{marginLeft:'22px'}},children)
+  );
+}
+
+function App(){
+  const params=new URLSearchParams(window.location.search);
+  const aseId=params.get('ase')||'';
+  const [ficha,setFicha]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [vista,setVista]=useState('inicio'); // inicio | entrenamiento | alimentacion | enviado
+  const [ent,setEnt]=useState({}); // respuestas entrenamiento
+  const [nut,setNut]=useState({}); // respuestas alimentacion
+  const [entOk,setEntOk]=useState(false);
+  const [nutOk,setNutOk]=useState(false);
+  const [enviando,setEnviando]=useState(false);
+
+  useEffect(()=>{
+    if(!aseId){setLoading(false);return;}
+    fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).then(rows=>{
+      const f=(rows||[]).find(a=>String(a.AsesoradoID||'').trim().toLowerCase()===aseId.trim().toLowerCase());
+      setFicha(f||null);
+    }).catch(()=>{}).finally(()=>setLoading(false));
+  },[aseId]);
+
+  // ── Validaciones de completitud ──
+  function validarEnt(e){
+    if(!e.p1)return false;
+    if(e.p1==='si'&&!(e.p1detalle||'').trim())return false;
+    if(!e.p2||!e.p3)return false;
+    if(e.p3==='si'){ if(!e.p4||!e.p5||!e.p6||!e.p7)return false; }
+    if(!e.dias)return false;
+    return true;
+  }
+  function validarNut(n){
+    if(!n.n1||!n.n2||!n.n3||!n.n4||!n.n5)return false;
+    if(n.n5==='no'&&!n.n5detalle)return false;
+    if(!n.n6||!n.n7)return false;
+    return true;
+  }
+
+  function enviar(){
+    if(!entOk||!nutOk)return;
+    setEnviando(true);
+    const recB=recomendarBloque(ent);
+    const recN=recomendarNutri(nut);
+    const campos={
+      Fecha:new Date().toISOString().split('T')[0],
+      P1_Dolor:ent.p1||'', P1_Detalle:ent.p1detalle||'',
+      P2_Deporte:ent.p2||'', P3_Regular:ent.p3||'',
+      P4_Registra:ent.p4||'', P5_Progreso:ent.p5||'', P6_Esfuerzo:ent.p6||'', P7_Recupera:ent.p7||'',
+      Dias:ent.dias||'',
+      N1:nut.n1||'', N2:nut.n2||'', N3:nut.n3||'', N4:nut.n4||'', N5:nut.n5||'', N5_Detalle:nut.n5detalle||'', N6:nut.n6||'', N7:nut.n7||'',
+      BloqueRecomendado:recB.bloque, NutriRecomendado:recN.estado,
+      EstadoDiag:'enviado'
+    };
+    const payload={action:'guardarDiagnostico',asesoradoId:aseId,asesorado:(ficha&&ficha.Asesorado)||'',campos:campos};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .finally(()=>{ setTimeout(()=>{ setEnviando(false); setVista('enviado'); },1400); });
+  }
+
+  if(loading)return h('div',{style:{padding:'60px 20px',textAlign:'center',color:'#999'}},'Cargando…');
+
+  // Sin ID válido o asesorado no encontrado
+  if(!aseId||!ficha){
+    return h('div',{style:{maxWidth:'440px',margin:'0 auto',padding:'40px 20px',textAlign:'center'}},
+      h('div',{style:{fontSize:'40px',marginBottom:'12px'}},'🔗'),
+      h('div',{style:{fontSize:'16px',fontWeight:'700',marginBottom:'8px'}},'Link no válido'),
+      h('div',{style:{fontSize:'13px',color:'#999',lineHeight:'1.5'}},'Este link de diagnóstico no es válido o expiró. Pedile a tu coach que te reenvíe el link correcto.')
+    );
+  }
+
+  const wrap=children=>h('div',{style:{maxWidth:'440px',margin:'0 auto',padding:'20px 16px 40px'}},children);
+
+  // ── VISTA: ENVIADO ──
+  if(vista==='enviado'){
+    return wrap(h('div',{style:{textAlign:'center',paddingTop:'40px'}},
+      h('div',{style:{fontSize:'52px',marginBottom:'16px'}},'✅'),
+      h('div',{style:{fontSize:'20px',fontWeight:'800',marginBottom:'10px'}},'¡Diagnóstico enviado!'),
+      h('div',{style:{fontSize:'14px',color:'#666',lineHeight:'1.6',marginBottom:'24px'}},'Gracias, '+(ficha.Asesorado||'')+'. Tu coach ya recibió tus respuestas y va a preparar tu punto de partida. Pronto vas a tener tu plan listo para arrancar.'),
+      h('div',{style:{fontSize:'12px',color:'#bbb'}},'Ya podés cerrar esta página.')
+    ));
+  }
+
+  // ── VISTA: INICIO (dos tarjetas) ──
+  if(vista==='inicio'){
+    return wrap(h('div',null,
+      h('div',{style:{marginBottom:'6px',fontSize:'12px',fontWeight:'700',color:AC,letterSpacing:'0.05em'}},'FUERZA T'),
+      h('div',{style:{fontSize:'22px',fontWeight:'800',marginBottom:'6px'}},'Hola, '+(ficha.Asesorado||'')+' 👋'),
+      h('div',{style:{fontSize:'14px',color:'#666',lineHeight:'1.5',marginBottom:'24px'}},'Antes de armar tu plan, necesito conocerte un poco. Son dos cuestionarios cortos. Podés hacer uno, volver, y después el otro.'),
+      // Tarjeta entrenamiento
+      h('div',{onClick:()=>setVista('entrenamiento'),style:{background:'#fff',borderRadius:'14px',border:'1px solid rgba(0,0,0,0.08)',padding:'18px',marginBottom:'12px',cursor:'pointer',display:'flex',alignItems:'center',gap:'14px'}},
+        h('div',{style:{fontSize:'32px'}},'🏋️'),
+        h('div',{style:{flex:1}},
+          h('div',{style:{fontSize:'16px',fontWeight:'800',marginBottom:'2px'}},'Entrenamiento'),
+          h('div',{style:{fontSize:'12px',color:'#999',lineHeight:'1.4'}},'Cómo estás entrenando hoy y qué conviene priorizar.')
+        ),
+        entOk?h('span',{style:{background:'#EAF7F2',color:G,borderRadius:'20px',padding:'3px 10px',fontSize:'11px',fontWeight:'800'}},'Completo ✓'):h('span',{style:{color:'#ccc',fontSize:'20px'}},'›')
+      ),
+      // Tarjeta alimentacion
+      h('div',{onClick:()=>setVista('alimentacion'),style:{background:'#fff',borderRadius:'14px',border:'1px solid rgba(0,0,0,0.08)',padding:'18px',marginBottom:'24px',cursor:'pointer',display:'flex',alignItems:'center',gap:'14px'}},
+        h('div',{style:{fontSize:'32px'}},'🥗'),
+        h('div',{style:{flex:1}},
+          h('div',{style:{fontSize:'16px',fontWeight:'800',marginBottom:'2px'}},'Alimentación'),
+          h('div',{style:{fontSize:'12px',color:'#999',lineHeight:'1.4'}},'Cómo estás comiendo hoy y qué tan ordenada está tu base nutricional.')
+        ),
+        nutOk?h('span',{style:{background:'#EAF7F2',color:G,borderRadius:'20px',padding:'3px 10px',fontSize:'11px',fontWeight:'800'}},'Completo ✓'):h('span',{style:{color:'#ccc',fontSize:'20px'}},'›')
+      ),
+      // Enviar
+      h('button',{onClick:enviar,disabled:!entOk||!nutOk||enviando,style:{width:'100%',padding:'16px',borderRadius:'12px',border:'none',background:(entOk&&nutOk&&!enviando)?G:'#D1D5DB',color:'#fff',fontSize:'15px',fontWeight:'800',cursor:(entOk&&nutOk)?'pointer':'default'}},enviando?'Enviando…':(entOk&&nutOk)?'Enviar diagnóstico':'Completá los dos cuestionarios'),
+      (!entOk||!nutOk)&&h('div',{style:{fontSize:'11px',color:'#999',textAlign:'center',marginTop:'8px'}},'Cuando los dos estén completos, se habilita el botón.')
+    ));
+  }
+
+  // ── VISTA: ENTRENAMIENTO ──
+  if(vista==='entrenamiento'){
+    const set=(k,v)=>setEnt(prev=>({...prev,[k]:v}));
+    const yn=(k,color)=>h('div',{style:{display:'flex',gap:'8px'}},
+      h(Opcion,{label:'Sí',activo:ent[k]==='si',onClick:()=>set(k,'si'),color:color}),
+      h(Opcion,{label:'No',activo:ent[k]==='no',onClick:()=>set(k,'no'),color:color})
+    );
+    return wrap(h('div',null,
+      h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'20px'}},
+        h('button',{onClick:()=>setVista('inicio'),style:{background:'none',border:'none',fontSize:'22px',cursor:'pointer',color:'#666'}},'‹'),
+        h('div',{style:{fontSize:'18px',fontWeight:'800'}},'🏋️ Entrenamiento')
+      ),
+      h(Pregunta,{num:'1',texto:'¿Tenés algún dolor o molestia que te limite en algún movimiento?'},yn('p1',RED)),
+      ent.p1==='si'&&h('div',{style:{marginLeft:'22px',marginTop:'-12px',marginBottom:'22px'}},
+        h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'6px'}},'¿Qué movimiento te duele, evitás o tenés que limitar?'),
+        h('input',{type:'text',value:ent.p1detalle||'',onChange:e=>set('p1detalle',e.target.value),placeholder:'Ej: sentadilla profunda, press de hombro…',style:{width:'100%',boxSizing:'border-box',padding:'11px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'10px',fontSize:'14px'}})
+      ),
+      h(Pregunta,{num:'2',texto:'¿Entrenás para mejorar el rendimiento en un deporte o competencia?'},yn('p2',O)),
+      h(Pregunta,{num:'3',texto:'¿Entrenaste de forma regular durante los últimos 2 meses?'},yn('p3')),
+      // P4-P7 solo si entrenó regular
+      ent.p3==='si'&&h('div',null,
+        h(Pregunta,{num:'4',texto:'¿Solés registrar los pesos y repeticiones que hacés?'},yn('p4')),
+        h(Pregunta,{num:'5',texto:'En estos últimos meses, ¿pudiste aumentar repeticiones o peso en varios ejercicios?'},
+          h('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},
+            h(Opcion,{label:'Sí',activo:ent.p5==='si',onClick:()=>set('p5','si')}),
+            h(Opcion,{label:'No',activo:ent.p5==='no',onClick:()=>set('p5','no')}),
+            h(Opcion,{label:'No sabría decirte',activo:ent.p5==='nose',onClick:()=>set('p5','nose')})
+          )
+        ),
+        h(Pregunta,{num:'6',texto:'En tus series más exigentes, ¿cómo suelen terminar?'},
+          h('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},
+            h(Opcion,{label:'Podría hacer varias repeticiones más',activo:ent.p6==='varias',onClick:()=>set('p6','varias')}),
+            h(Opcion,{label:'Podría hacer 1–3 más',activo:ent.p6==='1-3',onClick:()=>set('p6','1-3')}),
+            h(Opcion,{label:'No podría hacer otra',activo:ent.p6==='fallo',onClick:()=>set('p6','fallo')})
+          )
+        ),
+        h(Pregunta,{num:'7',texto:'Cuando volvés a entrenar el mismo músculo, ¿generalmente ya está recuperado?'},
+          h('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},
+            h(Opcion,{label:'Sí',activo:ent.p7==='si',onClick:()=>set('p7','si')}),
+            h(Opcion,{label:'No',activo:ent.p7==='no',onClick:()=>set('p7','no')}),
+            h(Opcion,{label:'No sabría decirte',activo:ent.p7==='nose',onClick:()=>set('p7','nose')})
+          )
+        )
+      ),
+      // Cierre: días
+      h(Pregunta,{num:'✓',texto:'¿Cuántos días por semana podés sostener realmente?'},
+        h('div',{style:{display:'flex',gap:'6px'}},
+          ['2','3','4','5'].map(d=>h('button',{key:d,onClick:()=>set('dias',d),style:{flex:1,padding:'14px',borderRadius:'10px',border:'2px solid '+(ent.dias===d?AC:'rgba(0,0,0,0.12)'),background:ent.dias===d?AC:'#fff',color:ent.dias===d?'#fff':'#444',fontSize:'16px',fontWeight:'800',cursor:'pointer'}},d))
+        )
+      ),
+      h('button',{onClick:()=>{const ok=validarEnt(ent);setEntOk(ok);if(ok)setVista('inicio');else alert('Completá todas las preguntas antes de continuar.');},style:{width:'100%',padding:'15px',borderRadius:'12px',border:'none',background:G,color:'#fff',fontSize:'15px',fontWeight:'800',cursor:'pointer',marginTop:'10px'}},'Listo, volver al inicio')
+    ));
+  }
+
+  // ── VISTA: ALIMENTACIÓN ──
+  if(vista==='alimentacion'){
+    const set=(k,v)=>setNut(prev=>({...prev,[k]:v}));
+    const yn=k=>h('div',{style:{display:'flex',gap:'8px'}},
+      h(Opcion,{label:'Sí',activo:nut[k]==='si',onClick:()=>set(k,'si')}),
+      h(Opcion,{label:'No',activo:nut[k]==='no',onClick:()=>set(k,'no')})
+    );
+    return wrap(h('div',null,
+      h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'20px'}},
+        h('button',{onClick:()=>setVista('inicio'),style:{background:'none',border:'none',fontSize:'22px',cursor:'pointer',color:'#666'}},'‹'),
+        h('div',{style:{fontSize:'18px',fontWeight:'800'}},'🥗 Alimentación')
+      ),
+      h(Pregunta,{num:'1',texto:'¿Normalmente hacés al menos 3–4 comidas completas por día?',aclaracion:'Completa = combina proteína, hidratos, grasas y frutas/verduras. Ej: pollo + papa + ensalada.'},yn('n1')),
+      h(Pregunta,{num:'2',texto:'¿Incluís una fuente de proteína en al menos 3 comidas del día?',aclaracion:'Ej: huevos, pollo, carne, pescado, lácteos, legumbres o proteína en polvo.'},yn('n2')),
+      h(Pregunta,{num:'3',texto:'¿Comés frutas y/o verduras al menos 2 veces por día?'},yn('n3')),
+      h(Pregunta,{num:'4',texto:'¿La mayoría de los días sabés más o menos qué vas a comer sin improvisar la mayoría de tus comidas?'},yn('n4')),
+      h(Pregunta,{num:'5',texto:'Después de comer, ¿generalmente quedás satisfecho hasta la siguiente comida?'},yn('n5')),
+      nut.n5==='no'&&h('div',{style:{marginLeft:'22px',marginTop:'-12px',marginBottom:'22px'}},
+        h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'6px'}},'¿Qué te pasa más seguido?'),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},
+          h(Opcion,{label:'Me quedo con hambre',activo:nut.n5detalle==='hambre',onClick:()=>set('n5detalle','hambre')}),
+          h(Opcion,{label:'Termino demasiado lleno/pesado',activo:nut.n5detalle==='lleno',onClick:()=>set('n5detalle','lleno')})
+        )
+      ),
+      h(Pregunta,{num:'6',texto:'¿Tu forma de comer se mantiene bastante parecida entre semana y fin de semana?'},yn('n6')),
+      h(Pregunta,{num:'7',texto:'En una semana normal, ¿tu energía, saciedad y digestión suelen ser buenas y estables?'},yn('n7')),
+      h('button',{onClick:()=>{const ok=validarNut(nut);setNutOk(ok);if(ok)setVista('inicio');else alert('Completá todas las preguntas antes de continuar.');},style:{width:'100%',padding:'15px',borderRadius:'12px',border:'none',background:G,color:'#fff',fontSize:'15px',fontWeight:'800',cursor:'pointer',marginTop:'10px'}},'Listo, volver al inicio')
+    ));
+  }
+  return null;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App,null));
+</script>
+</body>
+</html>
