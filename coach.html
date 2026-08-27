@@ -687,6 +687,24 @@ function ClientDetail({name,weeks,rutina,ejercicios,onRefresh,onBack}){
   const [tab,setTab]=useState('med');
   const [selEx,setSelEx]=useState(0);
   const [showBuilder,setShowBuilder]=useState(false);
+  const [showChecklist,setShowChecklist]=useState(false);
+  // ── Checklist de progreso (Fase 3B) — solo ítems con fuente de datos real ──
+  const checklist=(()=>{
+    const has=v=>v!==undefined&&v!==null&&String(v).trim()!==''&&String(v).trim()!=='—';
+    const algunReporteCon=campo=>(weeks||[]).some(w=>has(w[campo])&&parseFloat(w[campo])>0);
+    const ultReporte=(weeks||[])[weeks.length-1]||null;
+    return [
+      {k:'Cliente creado',ok:has(rutina&&rutina.AsesoradoID)||has(name),nota:has(rutina&&rutina.AsesoradoID)?String(rutina.AsesoradoID):''},
+      {k:'Datos personales',ok:has(rutina&&rutina.Sexo)&&has(rutina&&rutina.Edad)&&has(rutina&&rutina.Altura),nota:'sexo · edad · altura'},
+      {k:'Peso de referencia',ok:has(rutina&&rutina.PesoRef)||algunReporteCon('Peso'),nota:''},
+      {k:'Cintura',ok:algunReporteCon('Cintura'),nota:''},
+      {k:'Objetivo definido',ok:has(rutina&&rutina.Objetivo),nota:has(rutina&&rutina.Objetivo)?String(rutina.Objetivo):''},
+      {k:'Rutina cargada',ok:has(rutina&&(rutina.SesionA||rutina.Bloque)),nota:has(rutina&&rutina.Bloque)?String(rutina.Bloque):''},
+      {k:'Template calórico',ok:has(rutina&&rutina.Template),nota:has(rutina&&rutina.Template)?String(rutina.Template)+' kcal':''},
+      {k:'Reportó (último dato)',ok:!!ultReporte,nota:ultReporte?String(ultReporte.SemanID||'').replace('sem_','sem '):'sin reportes'}
+    ];
+  })();
+  const pendientes=checklist.filter(c=>!c.ok).length;
   const alerts=getAlerts(weeks,String(rutina?.Objetivo||'mantenimiento'));
   const lat=weeks[weeks.length-1]||{};
 
@@ -1083,6 +1101,26 @@ function ClientDetail({name,weeks,rutina,ejercicios,onRefresh,onBack}){
       )
     ),
     h('div',{style:{padding:'12px',paddingBottom:'20px'}},
+      // ── Checklist de progreso (Fase 3B) ──
+      h('div',{style:{background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.08)',marginBottom:'10px',overflow:'hidden'}},
+        h('div',{onClick:()=>setShowChecklist(s=>!s),style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',cursor:'pointer'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+            h('span',{style:{fontSize:'13px',fontWeight:'800',color:'#111'}},'Progreso del alta'),
+            pendientes===0
+              ?h('span',{style:{background:'#EAF7F2',color:G,borderRadius:'20px',padding:'2px 8px',fontSize:'10px',fontWeight:'800'}},'Completo ✓')
+              :h('span',{style:{background:'#FEF3F2',color:'#B42318',borderRadius:'20px',padding:'2px 8px',fontSize:'10px',fontWeight:'800'}},pendientes+' pendiente'+(pendientes>1?'s':''))
+          ),
+          h('span',{style:{color:'#ccc',fontSize:'14px'}},showChecklist?'▲':'▼')
+        ),
+        showChecklist&&h('div',{style:{padding:'0 14px 12px'}},
+          checklist.map((c,i)=>h('div',{key:i,style:{display:'flex',alignItems:'center',gap:'8px',padding:'7px 0',borderTop:'1px solid rgba(0,0,0,0.05)'}},
+            h('span',{style:{fontSize:'14px',width:'18px',color:c.ok?G:'#D1D5DB'}},c.ok?'✓':'○'),
+            h('span',{style:{flex:1,fontSize:'12px',color:c.ok?'#111':'#999',fontWeight:c.ok?'600':'400'}},c.k),
+            c.nota&&h('span',{style:{fontSize:'10px',color:'#bbb'}},c.nota)
+          )),
+          h('div',{style:{fontSize:'9px',color:'#ccc',marginTop:'8px',lineHeight:'1.4'}},'Diagnóstico, nutrición cuantificada y compliance se sumarán cuando esas piezas estén activas.')
+        )
+      ),
       // Alertas
       alerts.length>0&&h('div',{style:{marginBottom:'10px'}},
         alerts.map((a,i)=>h('div',{key:i,style:{background:ALERT_BG[a.lvl]||'#F8F8F8',border:'1px solid '+(ALERT_COLOR[a.lvl]||'#ddd'),borderRadius:'8px',padding:'10px 12px',marginBottom:'6px',display:'flex',gap:'8px',alignItems:'flex-start'}},
@@ -1802,6 +1840,18 @@ const BLOQUES_LISTA=[['base','Base'],['rehabilitacion','Rehabilitación'],['fuer
 function RutinaBuilder({name,rutina,ejercicios,onClose,onSaved}){
   const norm=x=>String(x||'').trim().toLowerCase();
   const normB=b=>{var n=norm(b);if(n.includes('fuerza'))return'fuerza';if(n.includes('intensidad'))return'intensidad';if(n.includes('rehab'))return'rehabilitacion';if(n.includes('volumen'))return'volumen';return'base';};
+  // Semana actual del asesorado (desde FechaInicio, misma fórmula que la app: ancla al lunes)
+  const semActual=(()=>{
+    const fi=String((rutina&&rutina.FechaInicio)||'').trim();
+    if(!fi)return null;
+    const d=new Date(fi+'T00:00:00');
+    if(isNaN(d.getTime()))return null;
+    const day=d.getDay();const diff=(day===0?-6:1-day);
+    const lunes=new Date(d);lunes.setDate(d.getDate()+diff);
+    const hoy=new Date();hoy.setHours(0,0,0,0);
+    const semanas=Math.floor((hoy-lunes)/(7*24*60*60*1000))+1;
+    return semanas>0?semanas:1;
+  })();
   // Precargar si ya tiene rutina
   const yaExiste=!!(rutina&&rutina.Asesorado);
   const [bloque,setBloque]=useState(yaExiste?normB(rutina.Bloque):'base');
@@ -1892,8 +1942,17 @@ function RutinaBuilder({name,rutina,ejercicios,onClose,onSaved}){
       // BloqueInicio
       h('div',{style:{marginBottom:'16px'}},
         h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Semana de inicio del bloque'),
-        h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'6px'}},'1 = arranca ahora (test/semana 1 del bloque). Se calcula con la fórmula de siempre.'),
-        h('input',{type:'number',value:bloqueInicio,onChange:e=>setBloqueInicio(parseInt(e.target.value)||1),style:{width:'80px',padding:'8px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px',textAlign:'center'}})
+        semActual!==null
+          ?h('div',{style:{background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
+              h('div',{style:{fontSize:'12px',color:'#065F46',fontWeight:'700',marginBottom:'2px'}},name+' está en su semana '+semActual),
+              h('div',{style:{fontSize:'11px',color:'#047857',lineHeight:'1.4'}},'Para que arranque en la semana 1 de este bloque (test/pauta inicial), poné '+semActual+'.'),
+              h('button',{onClick:()=>setBloqueInicio(semActual),style:{marginTop:'6px',background:G,color:'#fff',border:'none',borderRadius:'6px',padding:'5px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Usar '+semActual+' (arranca en semana 1)')
+            )
+          :h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'6px'}},'No se pudo calcular la semana actual (falta FechaInicio). Poné el número de la semana actual del asesorado.'),
+        h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+          h('input',{type:'number',value:bloqueInicio,onChange:e=>setBloqueInicio(parseInt(e.target.value)||1),style:{width:'80px',padding:'8px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px',textAlign:'center'}}),
+          semActual!==null&&h('span',{style:{fontSize:'11px',color:'#999'}},'→ arranca en semana '+Math.max(1,semActual-bloqueInicio+1)+' del bloque')
+        )
       ),
       // Paso 3: selector de ejercicios por sesión
       h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Ejercicios por sesión'),
