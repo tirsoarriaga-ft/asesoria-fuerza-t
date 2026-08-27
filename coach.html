@@ -236,6 +236,26 @@ function PinScreen({onUnlock}){
 function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
   const statusOrder={red:0,yellow:1,green:2,grey:3};
   const [soloSinRevisar,setSoloSinRevisar]=useState(false);
+  // ── Alta de nuevo asesorado (Fase 2) ──
+  const [showAlta,setShowAlta]=useState(false);
+  const [altaForm,setAltaForm]=useState({asesorado:'',plan:'online',fechaInicio:'',sexo:'',edad:'',altura:'',pesoRef:'',objetivo:''});
+  const [altaSaving,setAltaSaving]=useState(false);
+  const [altaMsg,setAltaMsg]=useState('');
+  // Sugerir el lunes de la semana actual como FechaInicio por defecto
+  const lunesDeEstaSemana=()=>{const d=new Date();const day=d.getDay();const diff=(day===0?-6:1-day);d.setDate(d.getDate()+diff);return d.toISOString().split('T')[0];};
+  const abrirAlta=()=>{setAltaForm({asesorado:'',plan:'online',fechaInicio:lunesDeEstaSemana(),sexo:'',edad:'',altura:'',pesoRef:'',objetivo:''});setAltaMsg('');setShowAlta(true);};
+  const guardarAlta=()=>{
+    if(!altaForm.asesorado.trim()){setAltaMsg('El nombre es obligatorio.');return;}
+    if(!altaForm.plan){setAltaMsg('Elegí un plan.');return;}
+    if(!altaForm.fechaInicio){setAltaMsg('Poné la fecha de inicio (lunes).');return;}
+    setAltaSaving(true);setAltaMsg('');
+    const payload={action:'nuevoAsesorado',asesorado:altaForm.asesorado.trim(),plan:altaForm.plan,estado:'Activo',fechaInicio:altaForm.fechaInicio,sexo:altaForm.sexo,edad:altaForm.edad,altura:altaForm.altura,pesoRef:altaForm.pesoRef,objetivo:altaForm.objetivo};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .finally(()=>{
+        // no-cors no devuelve respuesta legible; asumimos OK y refrescamos tras un momento
+        setTimeout(()=>{setAltaSaving(false);setShowAlta(false);if(onRefresh)onRefresh();},1200);
+      });
+  };
   const getObj=name=>{const r=rutinas.find(rt=>String(rt.Asesorado||'').trim().toLowerCase()===name.toLowerCase());return String(r?.Objetivo||'mantenimiento').toLowerCase().trim()||'mantenimiento';};
 
   // Calcular los 2 SemanIDs más recientes de todos los reportes
@@ -299,8 +319,9 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
           h('div',{style:{fontSize:'18px',fontWeight:'800'}},clients.length+' asesorados')
         ),
         h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
+          h('button',{onClick:abrirAlta,style:{background:G,color:'#fff',border:'none',borderRadius:'8px',padding:'8px 12px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'+ Nuevo'),
           h('button',{onClick:()=>setSoloSinRevisar(s=>!s),style:{background:soloSinRevisar?O:'#F0F0F0',color:soloSinRevisar?'#fff':'#666',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},soloSinRevisar?'Sin revisar ✓':'Sin revisar'),
-          h('button',{onClick:onRefresh,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'↻ Actualizar')
+          h('button',{onClick:onRefresh,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'↻')
         )
       ),
       h('div',{style:{display:'flex',gap:'8px',marginTop:'10px'}},
@@ -365,11 +386,69 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
           )
         );
       })
+    ),
+    // ── MODAL: Alta de nuevo asesorado ──
+    showAlta&&h('div',{onClick:()=>!altaSaving&&setShowAlta(false),style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:100,display:'flex',alignItems:'flex-end'}},
+      h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 18px 32px',maxHeight:'88vh',overflowY:'auto'}},
+        h('div',{style:{width:'36px',height:'4px',background:'#E0E0E0',borderRadius:'2px',margin:'0 auto 16px'}}),
+        h('div',{style:{fontSize:'18px',fontWeight:'800',marginBottom:'4px'}},'Nuevo asesorado'),
+        h('div',{style:{fontSize:'12px',color:'#999',marginBottom:'16px'}},'Se crea la ficha con un ID automático. Podés completar el resto después.'),
+        // Nombre (obligatorio)
+        h('div',{style:{marginBottom:'12px'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Nombre *'),
+          h('input',{type:'text',value:altaForm.asesorado,onChange:e=>{const v=e.target.value;setAltaForm(f=>({...f,asesorado:v}));},placeholder:'Nombre del asesorado',style:{width:'100%',boxSizing:'border-box',padding:'10px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px'}})
+        ),
+        // Plan (obligatorio)
+        h('div',{style:{marginBottom:'12px'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Plan *'),
+          h('div',{style:{display:'flex',gap:'6px'}},
+            ['online','presencial','basico'].map(p=>h('button',{key:p,onClick:()=>setAltaForm(f=>({...f,plan:p})),style:{flex:1,padding:'9px',borderRadius:'8px',border:'1px solid '+(altaForm.plan===p?G:'rgba(0,0,0,0.12)'),background:altaForm.plan===p?G:'#fff',color:altaForm.plan===p?'#fff':'#666',fontSize:'12px',fontWeight:'700',cursor:'pointer',textTransform:'capitalize'}},p))
+          )
+        ),
+        // FechaInicio (obligatorio)
+        h('div',{style:{marginBottom:'12px'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Fecha de inicio (lunes) *'),
+          h('input',{type:'date',value:altaForm.fechaInicio,onChange:e=>{const v=e.target.value;setAltaForm(f=>({...f,fechaInicio:v}));},style:{width:'100%',boxSizing:'border-box',padding:'10px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px'}})
+        ),
+        // Opcionales
+        h('div',{style:{fontSize:'11px',color:'#999',fontWeight:'700',margin:'8px 0',textTransform:'uppercase',letterSpacing:'0.05em'}},'Opcional — completá después si no los tenés'),
+        h('div',{style:{display:'flex',gap:'8px',marginBottom:'12px'}},
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Sexo'),
+            h('div',{style:{display:'flex',gap:'4px'}},
+              ['M','F'].map(s=>h('button',{key:s,onClick:()=>setAltaForm(f=>({...f,sexo:f.sexo===s?'':s})),style:{flex:1,padding:'9px',borderRadius:'8px',border:'1px solid '+(altaForm.sexo===s?G:'rgba(0,0,0,0.12)'),background:altaForm.sexo===s?G:'#fff',color:altaForm.sexo===s?'#fff':'#666',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},s))
+            )
+          ),
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Edad'),
+            h('input',{type:'text',inputMode:'numeric',value:altaForm.edad,onChange:e=>{const v=e.target.value;setAltaForm(f=>({...f,edad:v}));},placeholder:'—',style:{width:'100%',boxSizing:'border-box',padding:'10px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px'}})
+          )
+        ),
+        h('div',{style:{display:'flex',gap:'8px',marginBottom:'12px'}},
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Altura (cm)'),
+            h('input',{type:'text',inputMode:'numeric',value:altaForm.altura,onChange:e=>{const v=e.target.value;setAltaForm(f=>({...f,altura:v}));},placeholder:'—',style:{width:'100%',boxSizing:'border-box',padding:'10px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px'}})
+          ),
+          h('div',{style:{flex:1}},
+            h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Peso ref (kg)'),
+            h('input',{type:'text',inputMode:'decimal',value:altaForm.pesoRef,onChange:e=>{const v=e.target.value;setAltaForm(f=>({...f,pesoRef:v}));},placeholder:'—',style:{width:'100%',boxSizing:'border-box',padding:'10px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px'}})
+          )
+        ),
+        h('div',{style:{marginBottom:'16px'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Objetivo'),
+          h('div',{style:{display:'flex',gap:'6px'}},
+            [['deficit','Déficit'],['superavit','Superávit'],['mantenimiento','Mantenim.']].map(o=>h('button',{key:o[0],onClick:()=>setAltaForm(f=>({...f,objetivo:f.objetivo===o[0]?'':o[0]})),style:{flex:1,padding:'9px 4px',borderRadius:'8px',border:'1px solid '+(altaForm.objetivo===o[0]?G:'rgba(0,0,0,0.12)'),background:altaForm.objetivo===o[0]?G:'#fff',color:altaForm.objetivo===o[0]?'#fff':'#666',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},o[1]))
+          )
+        ),
+        altaMsg&&h('div',{style:{fontSize:'12px',color:'#B42318',fontWeight:'600',marginBottom:'10px'}},altaMsg),
+        h('div',{style:{display:'flex',gap:'8px'}},
+          h('button',{onClick:()=>!altaSaving&&setShowAlta(false),style:{flex:1,padding:'13px',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.15)',background:'#fff',color:'#666',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Cancelar'),
+          h('button',{onClick:guardarAlta,disabled:altaSaving,style:{flex:2,padding:'13px',borderRadius:'10px',border:'none',background:altaSaving?'#ccc':G,color:'#fff',fontSize:'13px',fontWeight:'700',cursor:altaSaving?'default':'pointer'}},altaSaving?'Creando…':'Crear asesorado')
+        )
+      )
     )
   );
 }
-
-// ── CLIENT DETAIL ─────────────────────────────────────────────────────
 // ── CALCULADORA DE DIAGNÓSTICO ─────────────────────────────────────────
 function calcDiagnostico(rutina, weeks){
   var peso=parseFloat(rutina&&rutina.PesoRef||0);
