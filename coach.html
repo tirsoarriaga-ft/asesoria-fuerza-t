@@ -683,11 +683,39 @@ function DiagnosticoPanel({rutina,weeks}){
   );
 }
 
-function ClientDetail({name,weeks,rutina,ejercicios,onRefresh,onBack}){
+function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,onRefresh,onBack}){
   const [tab,setTab]=useState('med');
   const [selEx,setSelEx]=useState(0);
   const [showBuilder,setShowBuilder]=useState(false);
   const [showChecklist,setShowChecklist]=useState(false);
+  const [showDiag,setShowDiag]=useState(false);
+  const [linkCopiado,setLinkCopiado]=useState(false);
+  const [confirmando,setConfirmando]=useState(false);
+  const [bloqueEdit,setBloqueEdit]=useState('');
+  const [nutriEdit,setNutriEdit]=useState('');
+  // Link de diagnóstico para este asesorado
+  const aseIdDiag=(rutina&&rutina.AsesoradoID)||(diagnostico&&diagnostico.AsesoradoID)||'';
+  const linkDiag='https://asesoria-fuerza-t.vercel.app/diagnostico.html?ase='+aseIdDiag;
+  const tieneDiag=!!(diagnostico&&String(diagnostico.EstadoDiag||'').trim());
+  const diagConfirmado=diagnostico&&String(diagnostico.EstadoDiag||'').toLowerCase()==='confirmado';
+  const BLOQ_LABEL={base:'Base',rehabilitacion:'Rehabilitación',fuerza:'Fuerza',volumen:'Volumen',intensidad:'Intensidad',deporte:'Deporte'};
+  const NUTRI_LABEL={deficitario:'Deficitario',adecuado:'Adecuado',deportivo:'Deportivo/Optimizado'};
+  function copiarLink(){
+    try{navigator.clipboard.writeText(linkDiag);}catch(e){}
+    setLinkCopiado(true);setTimeout(()=>setLinkCopiado(false),2000);
+  }
+  function confirmarDiag(bloqueFinal,nutriFinal){
+    if(!aseIdDiag){alert('Este asesorado no tiene AsesoradoID en la hoja Asesorados.');return;}
+    setConfirmando(true);
+    // 1) marcar el diagnóstico como confirmado
+    const campos={BloqueConfirmado:bloqueFinal,NutriConfirmado:nutriFinal,EstadoDiag:'confirmado'};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'guardarDiagnostico',asesoradoId:aseIdDiag,asesorado:name,campos:campos})})
+      .finally(()=>{
+        // 2) escribir el bloque confirmado en la rutina (upsert)
+        fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'guardarRutina',asesorado:name,bloque:bloqueFinal})})
+          .finally(()=>{ setTimeout(()=>{ setConfirmando(false); if(onRefresh)onRefresh(); },1400); });
+      });
+  }
   // ── Checklist de progreso (Fase 3B) — solo ítems con fuente de datos real ──
   const checklist=(()=>{
     const has=v=>v!==undefined&&v!==null&&String(v).trim()!==''&&String(v).trim()!=='—';
@@ -695,6 +723,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,onRefresh,onBack}){
     const ultReporte=(weeks||[])[weeks.length-1]||null;
     return [
       {k:'Cliente creado',ok:has(rutina&&rutina.AsesoradoID)||has(name),nota:has(rutina&&rutina.AsesoradoID)?String(rutina.AsesoradoID):''},
+      {k:'Diagnóstico inicial',ok:!!(diagnostico&&String(diagnostico.EstadoDiag||'').toLowerCase()==='confirmado'),nota:diagnostico?(String(diagnostico.EstadoDiag||'').toLowerCase()==='enviado'?'recibido, sin confirmar':''):'pendiente'},
       {k:'Datos personales',ok:has(rutina&&rutina.Sexo)&&has(rutina&&rutina.Edad)&&has(rutina&&rutina.Altura),nota:'sexo · edad · altura'},
       {k:'Peso de referencia',ok:has(rutina&&rutina.PesoRef)||algunReporteCon('Peso'),nota:''},
       {k:'Cintura',ok:algunReporteCon('Cintura'),nota:''},
@@ -1119,6 +1148,75 @@ function ClientDetail({name,weeks,rutina,ejercicios,onRefresh,onBack}){
             c.nota&&h('span',{style:{fontSize:'10px',color:'#bbb'}},c.nota)
           )),
           h('div',{style:{fontSize:'9px',color:'#ccc',marginTop:'8px',lineHeight:'1.4'}},'Diagnóstico, nutrición cuantificada y compliance se sumarán cuando esas piezas estén activas.')
+        )
+      ),
+      // ── Diagnóstico inicial (Fase 3C) ──
+      h('div',{style:{background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.08)',marginBottom:'10px',overflow:'hidden'}},
+        h('div',{onClick:()=>setShowDiag(s=>!s),style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',cursor:'pointer'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+            h('span',{style:{fontSize:'13px',fontWeight:'800',color:'#111'}},'Diagnóstico inicial'),
+            diagConfirmado
+              ?h('span',{style:{background:'#EAF7F2',color:G,borderRadius:'20px',padding:'2px 8px',fontSize:'10px',fontWeight:'800'}},'Confirmado ✓')
+              :tieneDiag
+                ?h('span',{style:{background:'#FEF9C3',color:'#854D0E',borderRadius:'20px',padding:'2px 8px',fontSize:'10px',fontWeight:'800'}},'Recibido — revisar')
+                :h('span',{style:{background:'#F3F4F6',color:'#6B7280',borderRadius:'20px',padding:'2px 8px',fontSize:'10px',fontWeight:'800'}},'Pendiente')
+          ),
+          h('span',{style:{color:'#ccc',fontSize:'14px'}},showDiag?'▲':'▼')
+        ),
+        showDiag&&h('div',{style:{padding:'0 14px 14px'}},
+          // Link para generar/copiar
+          !aseIdDiag
+            ?h('div',{style:{fontSize:'11px',color:'#B42318',padding:'8px 0'}},'Este asesorado no tiene AsesoradoID en la hoja Asesorados. Cargalo para poder generar el link.')
+            :h('div',{style:{marginBottom:tieneDiag?'14px':'0',borderTop:'1px solid rgba(0,0,0,0.05)',paddingTop:'10px'}},
+                h('div',{style:{fontSize:'11px',color:'#666',marginBottom:'6px'}},'Link de diagnóstico para mandarle:'),
+                h('div',{style:{fontSize:'10px',color:'#999',background:'#F7F7F7',borderRadius:'6px',padding:'8px',wordBreak:'break-all',marginBottom:'6px'}},linkDiag),
+                h('button',{onClick:copiarLink,style:{background:linkCopiado?G:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},linkCopiado?'¡Copiado! ✓':'Copiar link')
+              ),
+          // Si hay diagnóstico recibido, mostrar respuestas + recomendación + confirmar
+          tieneDiag&&h('div',{style:{borderTop:'1px solid rgba(0,0,0,0.05)',paddingTop:'12px'}},
+            h('div',{style:{fontSize:'11px',fontWeight:'700',color:'#444',marginBottom:'8px'}},'Respuestas del asesorado'),
+            h('div',{style:{fontSize:'11px',color:'#666',lineHeight:'1.7',marginBottom:'12px'}},
+              'Dolor: '+(diagnostico.P1_Dolor||'—')+(diagnostico.P1_Detalle?(' ('+diagnostico.P1_Detalle+')'):'')+' · ',
+              'Deporte: '+(diagnostico.P2_Deporte||'—')+' · ',
+              'Entrenó regular: '+(diagnostico.P3_Regular||'—')+' · ',
+              'Registra: '+(diagnostico.P4_Registra||'—')+' · ',
+              'Progresó: '+(diagnostico.P5_Progreso||'—')+' · ',
+              'Esfuerzo: '+(diagnostico.P6_Esfuerzo||'—')+' · ',
+              'Recupera: '+(diagnostico.P7_Recupera||'—')+' · ',
+              h('b',null,'Días: '+(diagnostico.Dias||'—'))
+            ),
+            // Recomendaciones
+            h('div',{style:{display:'flex',gap:'8px',marginBottom:'14px'}},
+              h('div',{style:{flex:1,background:'#EEF2FF',borderRadius:'8px',padding:'10px'}},
+                h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#4338CA',marginBottom:'2px'}},'BLOQUE RECOMENDADO'),
+                h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#312E81'}},BLOQ_LABEL[String(diagnostico.BloqueRecomendado||'').toLowerCase()]||diagnostico.BloqueRecomendado||'—')
+              ),
+              h('div',{style:{flex:1,background:'#F0FDF4',borderRadius:'8px',padding:'10px'}},
+                h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#166534',marginBottom:'2px'}},'ESTADO NUTRICIONAL'),
+                h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#14532D'}},NUTRI_LABEL[String(diagnostico.NutriRecomendado||'').toLowerCase()]||diagnostico.NutriRecomendado||'—')
+              )
+            ),
+            diagConfirmado
+              ?h('div',{style:{fontSize:'12px',color:G,fontWeight:'700'}},'✓ Confirmaste: '+(BLOQ_LABEL[String(diagnostico.BloqueConfirmado||'').toLowerCase()]||diagnostico.BloqueConfirmado||'—')+' · '+(NUTRI_LABEL[String(diagnostico.NutriConfirmado||'').toLowerCase()]||diagnostico.NutriConfirmado||'—'))
+              :h('div',null,
+                  h('div',{style:{display:'flex',gap:'8px'}},
+                    h('button',{onClick:()=>confirmarDiag(diagnostico.BloqueRecomendado,diagnostico.NutriRecomendado),disabled:confirmando,style:{flex:1,padding:'11px',borderRadius:'8px',border:'none',background:confirmando?'#ccc':G,color:'#fff',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},confirmando?'Confirmando…':'Confirmar recomendación'),
+                    h('button',{onClick:()=>{setBloqueEdit(String(diagnostico.BloqueRecomendado||'base').toLowerCase());setNutriEdit(String(diagnostico.NutriRecomendado||'adecuado').toLowerCase());},disabled:confirmando,style:{flex:1,padding:'11px',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.15)',background:'#fff',color:'#666',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Modificar')
+                  ),
+                  // Editor si tocó Modificar
+                  bloqueEdit&&h('div',{style:{marginTop:'12px',background:'#FAFAFA',borderRadius:'8px',padding:'10px'}},
+                    h('div',{style:{fontSize:'10px',fontWeight:'700',color:'#666',marginBottom:'4px'}},'Bloque'),
+                    h('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'10px'}},
+                      ['base','rehabilitacion','fuerza','volumen','intensidad','deporte'].map(b=>h('button',{key:b,onClick:()=>setBloqueEdit(b),style:{padding:'6px 8px',borderRadius:'6px',border:'1px solid '+(bloqueEdit===b?G:'rgba(0,0,0,0.12)'),background:bloqueEdit===b?G:'#fff',color:bloqueEdit===b?'#fff':'#666',fontSize:'10px',fontWeight:'700',cursor:'pointer'}},BLOQ_LABEL[b]))
+                    ),
+                    h('div',{style:{fontSize:'10px',fontWeight:'700',color:'#666',marginBottom:'4px'}},'Estado nutricional'),
+                    h('div',{style:{display:'flex',gap:'4px',marginBottom:'10px'}},
+                      ['deficitario','adecuado','deportivo'].map(nn=>h('button',{key:nn,onClick:()=>setNutriEdit(nn),style:{flex:1,padding:'6px',borderRadius:'6px',border:'1px solid '+(nutriEdit===nn?B:'rgba(0,0,0,0.12)'),background:nutriEdit===nn?B:'#fff',color:nutriEdit===nn?'#fff':'#666',fontSize:'10px',fontWeight:'700',cursor:'pointer'}},NUTRI_LABEL[nn]))
+                    ),
+                    h('button',{onClick:()=>confirmarDiag(bloqueEdit,nutriEdit),disabled:confirmando,style:{width:'100%',padding:'10px',borderRadius:'8px',border:'none',background:confirmando?'#ccc':AC,color:'#fff',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},confirmando?'Guardando…':'Confirmar con estos cambios')
+                  )
+                )
+          )
         )
       ),
       // Alertas
@@ -2010,6 +2108,7 @@ function App(){
   const [rutinas,setRutinas]=useState([]);
   const [videosPend,setVideosPend]=useState({}); // {nombreLower: cantidad} de videos sin corregir
   const [ejercicios,setEjercicios]=useState([]); // hoja Ejercicios para el constructor de rutinas
+  const [diagnosticos,setDiagnosticos]=useState([]); // hoja Diagnosticos (Fase 3C)
   const [decisiones,setDecisiones]=useState([]);
   const [selected,setSelected]=useState(null);
   const [error,setError]=useState(null);
@@ -2023,8 +2122,9 @@ function App(){
       fetch(SCRIPT_URL+'?action=decisiones').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=videos').then(r=>r.json()).catch(()=>[]),
-      fetch(SCRIPT_URL+'?action=ejercicios').then(r=>r.json()).catch(()=>[])
-    ]).then(([reportes,ruts,decs,asesorados,vids,ejs])=>{
+      fetch(SCRIPT_URL+'?action=ejercicios').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=diagnosticos').then(r=>r.json()).catch(()=>[])
+    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags])=>{
       const grouped={};
       (reportes||[]).forEach(row=>{const name=String(row.Asesorado||'').trim();if(!name)return;if(!grouped[name])grouped[name]=[];grouped[name].push(row);});
       Object.values(grouped).forEach(w=>w.sort((a,b)=>String(a.SemanID||'').localeCompare(String(b.SemanID||''))));
@@ -2063,6 +2163,7 @@ function App(){
       });
       setVideosPend(pend);
       setEjercicios(ejs||[]);
+      setDiagnosticos(diags||[]);
       setData(grouped);setRutinas(rutsEnriquecidas);setDecisiones(decs||[]);
     }).catch(()=>setError('Error al cargar datos.')).finally(()=>setLoading(false));
   };
@@ -2070,7 +2171,11 @@ function App(){
   if(!unlocked)return h(PinScreen,{onUnlock:unlock});
   if(loading)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff'}},h('div',{style:{fontSize:'14px',color:'#999'}},'Cargando datos...'));
   if(error)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff',padding:'40px'}},h('div',{style:{fontSize:'14px',color:'#666',marginBottom:'20px',textAlign:'center'}},error),h('button',{onClick:loadData,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'12px 24px',fontSize:'14px',cursor:'pointer'}},'Reintentar'));
-  if(selected)return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()),ejercicios,onRefresh:loadData,onBack:()=>setSelected(null)});
+  if(selected){
+    const rutSel=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase());
+    const diagSel=(diagnosticos||[]).find(d=>String(d.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()||(rutSel&&String(d.AsesoradoID||'').trim().toLowerCase()===String(rutSel.AsesoradoID||'').trim().toLowerCase()&&String(rutSel.AsesoradoID||'').trim()!==''));
+    return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutSel,ejercicios,diagnostico:diagSel,onRefresh:loadData,onBack:()=>setSelected(null)});
+  }
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
       appTab==='lista'&&h(ClientList,{data,rutinas,decisiones,videosPend,onSelect:setSelected,onRefresh:loadData}),
