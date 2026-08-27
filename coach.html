@@ -683,9 +683,10 @@ function DiagnosticoPanel({rutina,weeks}){
   );
 }
 
-function ClientDetail({name,weeks,rutina,onBack}){
+function ClientDetail({name,weeks,rutina,ejercicios,onRefresh,onBack}){
   const [tab,setTab]=useState('med');
   const [selEx,setSelEx]=useState(0);
+  const [showBuilder,setShowBuilder]=useState(false);
   const alerts=getAlerts(weeks,String(rutina?.Objetivo||'mantenimiento'));
   const lat=weeks[weeks.length-1]||{};
 
@@ -1066,10 +1067,12 @@ function ClientDetail({name,weeks,rutina,onBack}){
   const DTABS=[{id:'med',l:' Tendencias'},{id:'ent',l:' Entreno'},{id:'cp',l:' Checkpoint'},{id:'diag',l:' Diagnostico'}];
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
+    showBuilder&&h(RutinaBuilder,{name:name,rutina:rutina,ejercicios:ejercicios,onClose:function(){setShowBuilder(false);},onSaved:function(){setShowBuilder(false);if(onRefresh)onRefresh();}}),
     h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'14px 18px',position:'sticky',top:0,zIndex:10}},
       h('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'4px'}},
         h('button',{onClick:onBack,style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',color:'#111',padding:0}},'←'),
-        h('div',{style:{fontSize:'18px',fontWeight:'800'}},name)
+        h('div',{style:{fontSize:'18px',fontWeight:'800',flex:1}},name),
+        h('button',{onClick:()=>setShowBuilder(true),style:{background:G,color:'#fff',border:'none',borderRadius:'8px',padding:'7px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},rutina&&rutina.Asesorado?'✎ Rutina':'+ Rutina')
       ),
       h('div',{style:{fontSize:'11px',color:'#999',marginLeft:'30px'}},
         tmpl,' · ',numSes,' sesiones · Semana ',currentWkNum,' · ',
@@ -1786,12 +1789,168 @@ function VideosGlobal({onSelect}){
     )
   );
 }
+// ── CONSTRUCTOR DE RUTINA (Fase 3A) ──
+// Reglas de lo que cada bloque deja abierto al coach (el resto lo define el código)
+const BLOQUE_INFO={
+  base:{label:'BASE',define:'3 series efectivas fijas · reps al medio del rango · confirmar técnica',abre:[]},
+  rehabilitacion:{label:'REHABILITACIÓN',define:'pauta que nace en semana 1 (reps+kg editables) · confirmar protocolo',abre:[]},
+  fuerza:{label:'FUERZA',define:'test de RM día 1 · protocolo por posición (principal/accesorio) · kg suben cada 2 sem',abre:[]},
+  volumen:{label:'VOLUMEN',define:'triple progresión · kg sube al techo del rango · +1 serie cada 2 sem',abre:['series']},
+  intensidad:{label:'INTENSIDAD',define:'velocidad de ejecución · técnica cargada por el asesorado',abre:[]}
+};
+const BLOQUES_LISTA=[['base','Base'],['rehabilitacion','Rehabilitación'],['fuerza','Fuerza'],['volumen','Volumen'],['intensidad','Intensidad']];
+function RutinaBuilder({name,rutina,ejercicios,onClose,onSaved}){
+  const norm=x=>String(x||'').trim().toLowerCase();
+  const normB=b=>{var n=norm(b);if(n.includes('fuerza'))return'fuerza';if(n.includes('intensidad'))return'intensidad';if(n.includes('rehab'))return'rehabilitacion';if(n.includes('volumen'))return'volumen';return'base';};
+  // Precargar si ya tiene rutina
+  const yaExiste=!!(rutina&&rutina.Asesorado);
+  const [bloque,setBloque]=useState(yaExiste?normB(rutina.Bloque):'base');
+  const [numSes,setNumSes]=useState(yaExiste?(parseInt(rutina.NumSesiones)||3):3);
+  const [series,setSeries]=useState(yaExiste?(parseInt(rutina.Series)||3):3);
+  const [bloqueInicio,setBloqueInicio]=useState(yaExiste?(parseInt(rutina.BloqueInicio)||1):1);
+  // Sesiones: array de arrays de nombres de ejercicio. Precargar desde SesionA-E si existe.
+  const initSes=()=>{
+    const S=[];
+    ['A','B','C','D','E'].forEach(l=>{
+      const raw=yaExiste?String(rutina['Sesion'+l]||'').trim():'';
+      S.push(raw?raw.split(',').map(x=>x.trim()).filter(Boolean):[]);
+    });
+    return S;
+  };
+  const [sesiones,setSesiones]=useState(initSes);
+  const [sesActiva,setSesActiva]=useState(0);
+  const [buscar,setBuscar]=useState('');
+  const [filtroMusc,setFiltroMusc]=useState('');
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState('');
+
+  // Lista de músculos únicos para el filtro
+  const musculos=[...new Set((ejercicios||[]).map(e=>String(e['MÚSCULO']||e.Musculo||'').trim()).filter(Boolean))].sort();
+  // Ejercicios filtrados
+  const exFiltrados=(ejercicios||[]).filter(e=>{
+    const nom=String(e.NOMBRE||e.Nombre||'').trim();
+    if(!nom)return true?false:false;
+    if(filtroMusc&&norm(e['MÚSCULO']||e.Musculo)!==norm(filtroMusc))return false;
+    if(buscar&&!norm(nom).includes(norm(buscar)))return false;
+    return !!nom;
+  });
+  const letras=['A','B','C','D','E'];
+  function agregarEx(nom){
+    setSesiones(prev=>{const n=prev.map(s=>[...s]);if(!n[sesActiva].includes(nom))n[sesActiva].push(nom);return n;});
+  }
+  function quitarEx(idx){
+    setSesiones(prev=>{const n=prev.map(s=>[...s]);n[sesActiva].splice(idx,1);return n;});
+  }
+  function moverEx(idx,dir){
+    setSesiones(prev=>{const n=prev.map(s=>[...s]);const s=n[sesActiva];const j=idx+dir;if(j<0||j>=s.length)return prev;const t=s[idx];s[idx]=s[j];s[j]=t;return n;});
+  }
+  function guardar(){
+    // Validar: cada sesión activa (según numSes) debe tener al menos 1 ejercicio
+    for(let i=0;i<numSes;i++){
+      if(!sesiones[i]||sesiones[i].length===0){setMsg('La sesión '+letras[i]+' está vacía. Agregá al menos un ejercicio.');setSesActiva(i);return;}
+    }
+    setSaving(true);setMsg('');
+    const payload={action:'guardarRutina',asesorado:name,bloque:bloque,bloqueInicio:bloqueInicio,numSesiones:numSes,series:(bloque==='volumen'?series:'')};
+    // Sesiones A-E: las activas con sus ejercicios (coma), las que sobran vacías ("")
+    letras.forEach((l,i)=>{ payload['sesion'+l]=(i<numSes)?(sesiones[i]||[]).join(', '):''; });
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .finally(()=>{ setTimeout(()=>{ setSaving(false); if(onSaved)onSaved(); },1300); });
+  }
+  const info=BLOQUE_INFO[bloque]||BLOQUE_INFO.base;
+  return h('div',{style:{position:'fixed',inset:0,background:'#F7F7F7',zIndex:200,overflowY:'auto'}},
+    h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'16px 16px 40px'}},
+      // Header
+      h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px'}},
+        h('button',{onClick:onClose,style:{background:'none',border:'none',fontSize:'22px',cursor:'pointer',color:'#666',padding:0}},'‹'),
+        h('div',null,
+          h('div',{style:{fontSize:'18px',fontWeight:'800'}},yaExiste?'Editar rutina':'Armar rutina'),
+          h('div',{style:{fontSize:'12px',color:'#999'}},name)
+        )
+      ),
+      // Paso 1: bloque
+      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Bloque'),
+      h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'10px'}},
+        BLOQUES_LISTA.map(b=>h('button',{key:b[0],onClick:()=>setBloque(b[0]),style:{padding:'8px 12px',borderRadius:'8px',border:'1px solid '+(bloque===b[0]?G:'rgba(0,0,0,0.12)'),background:bloque===b[0]?G:'#fff',color:bloque===b[0]?'#fff':'#666',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},b[1]))
+      ),
+      // Qué define el bloque (lo que NO se pregunta)
+      h('div',{style:{background:'#EEF2FF',border:'1px solid #C7D2FE',borderRadius:'8px',padding:'10px',marginBottom:'16px'}},
+        h('div',{style:{fontSize:'10px',fontWeight:'800',color:'#4338CA',marginBottom:'2px'}},'ESTE BLOQUE YA DEFINE (no hace falta configurarlo)'),
+        h('div',{style:{fontSize:'11px',color:'#3730A3',lineHeight:'1.5'}},info.define)
+      ),
+      // Paso 2: número de sesiones
+      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Sesiones por semana'),
+      h('div',{style:{display:'flex',gap:'6px',marginBottom:'16px'}},
+        [2,3,4,5].map(n=>h('button',{key:n,onClick:()=>setNumSes(n),style:{flex:1,padding:'10px',borderRadius:'8px',border:'1px solid '+(numSes===n?G:'rgba(0,0,0,0.12)'),background:numSes===n?G:'#fff',color:numSes===n?'#fff':'#666',fontSize:'14px',fontWeight:'700',cursor:'pointer'}},n))
+      ),
+      // Decisión abierta: series (solo volumen)
+      info.abre.includes('series')&&h('div',{style:{marginBottom:'16px'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Series efectivas de arranque'),
+        h('div',{style:{display:'flex',gap:'6px'}},
+          [2,3,4].map(n=>h('button',{key:n,onClick:()=>setSeries(n),style:{flex:1,padding:'10px',borderRadius:'8px',border:'1px solid '+(series===n?AC:'rgba(0,0,0,0.12)'),background:series===n?AC:'#fff',color:series===n?'#fff':'#666',fontSize:'14px',fontWeight:'700',cursor:'pointer'}},n))
+        )
+      ),
+      // BloqueInicio
+      h('div',{style:{marginBottom:'16px'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Semana de inicio del bloque'),
+        h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'6px'}},'1 = arranca ahora (test/semana 1 del bloque). Se calcula con la fórmula de siempre.'),
+        h('input',{type:'number',value:bloqueInicio,onChange:e=>setBloqueInicio(parseInt(e.target.value)||1),style:{width:'80px',padding:'8px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px',textAlign:'center'}})
+      ),
+      // Paso 3: selector de ejercicios por sesión
+      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Ejercicios por sesión'),
+      // Pestañas de sesión
+      h('div',{style:{display:'flex',gap:'4px',marginBottom:'10px'}},
+        letras.slice(0,numSes).map((l,i)=>h('button',{key:l,onClick:()=>setSesActiva(i),style:{flex:1,padding:'8px',borderRadius:'8px',border:'none',background:sesActiva===i?'#111':'#E8E8E8',color:sesActiva===i?'#fff':'#666',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},l+' ('+(sesiones[i]||[]).length+')'))
+      ),
+      // Ejercicios ya en la sesión activa
+      (sesiones[sesActiva]||[]).length>0&&h('div',{style:{background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.08)',padding:'8px',marginBottom:'12px'}},
+        (sesiones[sesActiva]||[]).map((nom,idx)=>h('div',{key:idx,style:{display:'flex',alignItems:'center',gap:'6px',padding:'6px 0',borderBottom:idx<sesiones[sesActiva].length-1?'1px solid rgba(0,0,0,0.05)':'none'}},
+          h('span',{style:{fontSize:'11px',color:'#999',fontWeight:'700',width:'18px'}},(idx+1)+'.'),
+          h('span',{style:{flex:1,fontSize:'13px',color:'#111'}},nom),
+          h('button',{onClick:()=>moverEx(idx,-1),disabled:idx===0,style:{background:'none',border:'none',cursor:idx===0?'default':'pointer',color:idx===0?'#ddd':'#888',fontSize:'14px',padding:'2px 4px'}},'▲'),
+          h('button',{onClick:()=>moverEx(idx,1),disabled:idx===sesiones[sesActiva].length-1,style:{background:'none',border:'none',cursor:'pointer',color:idx===sesiones[sesActiva].length-1?'#ddd':'#888',fontSize:'14px',padding:'2px 4px'}},'▼'),
+          h('button',{onClick:()=>quitarEx(idx),style:{background:'none',border:'none',cursor:'pointer',color:'#D92D20',fontSize:'16px',padding:'2px 6px'}},'×')
+        ))
+      ),
+      // Buscador + filtro
+      h('input',{type:'text',value:buscar,onChange:e=>setBuscar(e.target.value),placeholder:'Buscar ejercicio…',style:{width:'100%',boxSizing:'border-box',padding:'9px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'13px',marginBottom:'8px'}}),
+      h('div',{style:{display:'flex',gap:'6px',overflowX:'auto',marginBottom:'8px',paddingBottom:'4px'}},
+        h('button',{onClick:()=>setFiltroMusc(''),style:{flexShrink:0,padding:'5px 10px',borderRadius:'20px',border:'none',background:!filtroMusc?'#111':'#E8E8E8',color:!filtroMusc?'#fff':'#666',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Todos'),
+        musculos.map(m=>h('button',{key:m,onClick:()=>setFiltroMusc(m),style:{flexShrink:0,padding:'5px 10px',borderRadius:'20px',border:'none',background:norm(filtroMusc)===norm(m)?'#111':'#E8E8E8',color:norm(filtroMusc)===norm(m)?'#fff':'#666',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},m))
+      ),
+      // Lista de ejercicios seleccionables
+      h('div',{style:{background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.08)',maxHeight:'240px',overflowY:'auto',marginBottom:'16px'}},
+        exFiltrados.length===0
+          ?h('div',{style:{padding:'20px',textAlign:'center',color:'#bbb',fontSize:'12px'}},'Sin resultados')
+          :exFiltrados.slice(0,80).map((e,i)=>{
+              const nom=String(e.NOMBRE||e.Nombre||'').trim();
+              const ya=(sesiones[sesActiva]||[]).includes(nom);
+              return h('div',{key:i,onClick:()=>!ya&&agregarEx(nom),style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 12px',borderBottom:i<Math.min(exFiltrados.length,80)-1?'1px solid rgba(0,0,0,0.05)':'none',cursor:ya?'default':'pointer',opacity:ya?0.4:1}},
+                h('div',null,
+                  h('div',{style:{fontSize:'13px',color:'#111'}},nom),
+                  h('div',{style:{fontSize:'10px',color:'#999'}},String(e['MÚSCULO']||e.Musculo||''))
+                ),
+                ya?h('span',{style:{fontSize:'11px',color:G,fontWeight:'700'}},'✓ agregado'):h('span',{style:{fontSize:'18px',color:G,fontWeight:'700'}},'+')
+              );
+            })
+      ),
+      // Tip biseries
+      h('div',{style:{fontSize:'10px',color:'#999',marginBottom:'16px',lineHeight:'1.4'}},'Tip: para biseries, agregá los ejercicios y después uní sus nombres con " + " editando en el sheet (por ahora). El constructor los carga como ejercicios separados.'),
+      msg&&h('div',{style:{fontSize:'12px',color:'#B42318',fontWeight:'600',marginBottom:'10px'}},msg),
+      // Guardar
+      h('div',{style:{display:'flex',gap:'8px'}},
+        h('button',{onClick:onClose,style:{flex:1,padding:'14px',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.15)',background:'#fff',color:'#666',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Cancelar'),
+        h('button',{onClick:guardar,disabled:saving,style:{flex:2,padding:'14px',borderRadius:'10px',border:'none',background:saving?'#ccc':G,color:'#fff',fontSize:'13px',fontWeight:'700',cursor:saving?'default':'pointer'}},saving?'Guardando…':(yaExiste?'Guardar cambios':'Crear rutina'))
+      )
+    )
+  );
+}
 function App(){
   const [unlocked,setUnlocked]=useState(()=>sessionStorage.getItem('coach_ok')==='1');
   const [loading,setLoading]=useState(false);
   const [data,setData]=useState({});
   const [rutinas,setRutinas]=useState([]);
   const [videosPend,setVideosPend]=useState({}); // {nombreLower: cantidad} de videos sin corregir
+  const [ejercicios,setEjercicios]=useState([]); // hoja Ejercicios para el constructor de rutinas
   const [decisiones,setDecisiones]=useState([]);
   const [selected,setSelected]=useState(null);
   const [error,setError]=useState(null);
@@ -1804,8 +1963,9 @@ function App(){
       fetch(SCRIPT_URL+'?action=rutinas').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=decisiones').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[]),
-      fetch(SCRIPT_URL+'?action=videos').then(r=>r.json()).catch(()=>[])
-    ]).then(([reportes,ruts,decs,asesorados,vids])=>{
+      fetch(SCRIPT_URL+'?action=videos').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=ejercicios').then(r=>r.json()).catch(()=>[])
+    ]).then(([reportes,ruts,decs,asesorados,vids,ejs])=>{
       const grouped={};
       (reportes||[]).forEach(row=>{const name=String(row.Asesorado||'').trim();if(!name)return;if(!grouped[name])grouped[name]=[];grouped[name].push(row);});
       Object.values(grouped).forEach(w=>w.sort((a,b)=>String(a.SemanID||'').localeCompare(String(b.SemanID||''))));
@@ -1843,6 +2003,7 @@ function App(){
         if(!corr){const a=normV(v.Asesorado);pend[a]=(pend[a]||0)+1;}
       });
       setVideosPend(pend);
+      setEjercicios(ejs||[]);
       setData(grouped);setRutinas(rutsEnriquecidas);setDecisiones(decs||[]);
     }).catch(()=>setError('Error al cargar datos.')).finally(()=>setLoading(false));
   };
@@ -1850,7 +2011,7 @@ function App(){
   if(!unlocked)return h(PinScreen,{onUnlock:unlock});
   if(loading)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff'}},h('div',{style:{fontSize:'14px',color:'#999'}},'Cargando datos...'));
   if(error)return h('div',{style:{maxWidth:'480px',margin:'0 auto',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100vh',background:'#fff',padding:'40px'}},h('div',{style:{fontSize:'14px',color:'#666',marginBottom:'20px',textAlign:'center'}},error),h('button',{onClick:loadData,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'12px 24px',fontSize:'14px',cursor:'pointer'}},'Reintentar'));
-  if(selected)return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()),onBack:()=>setSelected(null)});
+  if(selected)return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()),ejercicios,onRefresh:loadData,onBack:()=>setSelected(null)});
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
       appTab==='lista'&&h(ClientList,{data,rutinas,decisiones,videosPend,onSelect:setSelected,onRefresh:loadData}),
