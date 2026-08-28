@@ -21,7 +21,7 @@ input:focus,textarea:focus,select:focus{border-color:#E8541A!important;box-shado
 <div id="root"></div>
 <script>
 const {useState,useEffect,useRef,useMemo,useCallback,createElement:h}=React;
-const SCRIPT_URL='https://script.google.com/macros/s/AKfycbwAZIsXShtE0o74oCtCQ6KIAJTd87Qm31CnkDzFBRiemjleNrNTDcsU2hW3SHEVuFl2/exec';
+const SCRIPT_URL='https://script.google.com/macros/s/AKfycby0tGGby72hf61Td2ctw8pEn1dW-0bgEjNgMKwTlg-0kP06Om3vLwcTlNVLhyyoX4c/exec';
 const G='#1D9E75',B='#378ADD',O='#D97706',R='#EF4444';
 const AC='#E8541A'; // acento Fuerza T
 const AC2='#C0392B'; // acento degradado
@@ -158,7 +158,9 @@ function parseDietas(row,foodDB){
         return{...food,key:k};
       }).filter(Boolean);
       if(!raw.length)return null;
-      return{id:OPT[i],nom:'Opción '+OPT[i]+' · '+OPT_NOM[OPT[i]],items:withShares(raw)};
+      // Nombre de la preparación (columna {Col}Nombre, ej. DesayunoANombre). Opcional.
+      const nombrePrep=String(row[col+'Nombre']||'').trim();
+      return{id:OPT[i],nom:'Opción '+OPT[i]+' · '+OPT_NOM[OPT[i]],nombrePrep:nombrePrep,items:withShares(raw)};
     }).filter(Boolean);
     if(!ops.length)return null;
     return{...meal,ops};
@@ -697,16 +699,23 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
       (rows||[]).forEach(function(v){
         if(norm(v.Asesorado)!==norm(user))return;
         if(!v.Feedback||!String(v.Feedback).trim())return;
-        // clave por sesión+ejercicio (el ejercicio en la hoja es el ID)
-        var key=String(v.Sesion||'').trim()+'_'+String(v.Ejercicio||'').trim();
-        map[key]={texto:String(v.Feedback).trim(),fecha:String(v.FechaRevision||v.Fecha||'')};
+        // La columna Ejercicio puede tener el NOMBRE o el ID. Guardamos la clave por ambos,
+        // normalizados, para que el matcheo funcione sin importar cómo se subió el video.
+        var sess=String(v.Sesion||'').trim();
+        var ejerc=norm(v.Ejercicio);
+        var fbObj={texto:String(v.Feedback).trim(),fecha:String(v.FechaRevision||v.Fecha||'')};
+        map[sess+'_'+ejerc]=fbObj; // clave por lo que venga en la hoja (nombre o id), normalizado
       });
       setFeedbacks(map);
     }).catch(function(){});
   },[user]);
   const fbVistoKey=(sess,exId,fecha)=>`ase_${user}_fbvisto_${sess}_${exId}_${fecha}`;
-  const getFeedback=(sess,exId)=>{
-    const fb=feedbacks[sess+'_'+exId];
+  const getFeedback=(sess,ex)=>{
+    // ex puede ser el objeto ejercicio o un id. Intentamos matchear por ID y por NOMBRE (normalizados).
+    var norm=function(x){return String(x||'').trim().toLowerCase();};
+    var exId=(ex&&ex.id!==undefined)?ex.id:ex;
+    var exNom=(ex&&ex.n!==undefined)?ex.n:'';
+    var fb=feedbacks[sess+'_'+norm(exId)]||feedbacks[sess+'_'+norm(exNom)]||null;
     if(!fb)return null;
     try{ if(localStorage.getItem(fbVistoKey(sess,exId,fb.fecha)))return null; }catch(e){}
     return fb;
@@ -723,7 +732,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     // Notificar al panel del coach via Apps Script
     const exName=exes.find(e=>e.id===parseInt(exId))?.n||exId;
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'video',user,sessId,exId,exName,url,fecha:new Date().toISOString()})
+      body:JSON.stringify({action:'video',user,asesoradoId:(localStorage.getItem('ase_'+user+'_aseid')||''),sessId,exId,exName,url,fecha:new Date().toISOString()})
     }).catch(()=>{});
   }
   async function uploadBlob(blob,sessId,exId){
@@ -1144,7 +1153,9 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
         )
       ),
     sessGroups.length===0
-      ? h('div',{style:{...card,textAlign:'center',padding:'30px 20px'}},h('div',{style:{fontSize:'30px',marginBottom:'10px'}},'📋'),h('div',{style:{fontSize:'14px',color:'#999',fontWeight:'600'}},'Esta sesión no tiene ejercicios asignados'),h('button',{onClick:()=>setConfiguring(true),style:{marginTop:'12px',background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'10px 20px',fontSize:'13px',cursor:'pointer',fontWeight:'600'}},'⚙️ Configurar sesión'))
+      ? ((loadingExes||!exes||exes.length===0||exes.length<=1)
+          ? h('div',{style:{...card,textAlign:'center',padding:'30px 20px'}},h('div',{style:{fontSize:'24px',marginBottom:'10px'}},'⏳'),h('div',{style:{fontSize:'14px',color:'#999',fontWeight:'600'}},'Cargando tus ejercicios…'))
+          : h('div',{style:{...card,textAlign:'center',padding:'30px 20px'}},h('div',{style:{fontSize:'30px',marginBottom:'10px'}},'📋'),h('div',{style:{fontSize:'14px',color:'#999',fontWeight:'600'}},'Esta sesión no tiene ejercicios asignados'),h('button',{onClick:()=>setConfiguring(true),style:{marginTop:'12px',background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'10px 20px',fontSize:'13px',cursor:'pointer',fontWeight:'600'}},'⚙️ Configurar sesión')))
       : sessGroups.map((group,gi)=>{
           const isBiserie=group.length>1;
           const exCard=(ex)=>{
@@ -1198,9 +1209,9 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   return rows;
                 })()
               ),
-              // ── FEEDBACK del coach (Entrega 6): corrección técnica sobre el video ──
+              // ── FEEDBACK del coach: corrección técnica sobre el video ──
               (function(){
-                const fb=getFeedback(activeSess,ex.id);
+                const fb=getFeedback(activeSess,ex);
                 if(!fb||fbHidden[activeSess+'_'+ex.id])return null;
                 return h('div',{style:{marginBottom:'10px',background:'#EEF2FF',border:'1px solid #C7D2FE',borderRadius:'10px',padding:'12px'}},
                   h('div',{style:{fontSize:'11px',fontWeight:'800',color:'#4338CA',marginBottom:'4px',letterSpacing:'0.04em'}},'📝 CORRECCIÓN DE TU COACH'),
@@ -1210,8 +1221,9 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
               })(),
               h('div',{style:{marginBottom:'8px'}},
                 getVideo(activeSess,ex.id)
-                  ?h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
-                      h('a',{href:getVideo(activeSess,ex.id),target:'_blank',rel:'noreferrer',style:{flex:1,background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:G,textDecoration:'none',display:'flex',alignItems:'center',gap:'6px'}},h('span',null,'🎬'),'Ver mi video'),
+                  ?h('div',{style:{display:'flex',gap:'6px',alignItems:'center',justifyContent:'flex-end'}},
+                      // Video ya subido. No se muestra "Ver mi video" (ruido). Solo re-grabar/re-subir.
+                      h('span',{style:{flex:1,fontSize:'11px',color:'#999'}},'✓ Video enviado'),
                       h('button',{onClick:()=>setShowCamera({sessId:activeSess,exId:ex.id}),style:{background:'#F5F5F5',border:'none',borderRadius:'8px',padding:'7px 8px',fontSize:'11px',cursor:'pointer',color:'#666'}},'📹'),
                       h('button',{onClick:()=>triggerGallery(activeSess,ex.id),style:{background:'#F5F5F5',border:'none',borderRadius:'8px',padding:'7px 8px',fontSize:'11px',cursor:'pointer',color:'#666'}},'🖼️')
                     )
@@ -1362,7 +1374,10 @@ const NIVEL_BANNER={
 };
 function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
   const tKey=`ase_${user}_tmpl`;const oKey=`ase_${user}_opts`;
-  const [tmpl,setTmplState]=useState(()=>parseInt(localStorage.getItem(tKey))||2100);
+  // hayTemplate: true solo si el coach cargó un Template real. Si no, no se muestran cantidades.
+  const tmplRaw=localStorage.getItem(tKey);
+  const hayTemplate=tmplRaw!==null&&tmplRaw!==''&&!isNaN(parseInt(tmplRaw))&&parseInt(tmplRaw)>0;
+  const [tmpl,setTmplState]=useState(()=>parseInt(localStorage.getItem(tKey))||2000);
   const [opts,setOpts]=useState(()=>{try{return JSON.parse(localStorage.getItem(oKey))||{};}catch(e){return{};}});
   const cKey=`ase_${user}_diet_collapsed`;
   const [collapsed,setCollapsed]=useState(()=>{try{return JSON.parse(localStorage.getItem(cKey))||{};}catch(e){return{};}});
@@ -1430,6 +1445,47 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
   const wML=Math.round(pesoVal*40/4);const sSalt=(pesoVal*40/4/1000).toFixed(1);
 
   const [swapItem,setSwapItem]=useState(null); // {n, cat, key} of tapped item
+  const [verGramos,setVerGramos]=useState({}); // {comidaId: bool} mostrar cantidad exacta (gramos)
+  const [modalPaso,setModalPaso]=useState('menu'); // 'menu' | 'dividir' | 'reemplazar' | 'unir' | 'cuando'
+  const [accionPend,setAccionPend]=useState(null); // {tipo:'dividir'|'reemplazar'|'unir', item?} guardado hasta elegir hoy/siempre
+  // Al abrir/cerrar un alimento, resetear el paso
+  const abrirModal=(item)=>{setSwapItem(item);setModalPaso('menu');setAccionPend(null);};
+  const cerrarModal=()=>{setSwapItem(null);setModalPaso('menu');setAccionPend(null);};
+  // Ejecuta la acción elegida (dividir/unir/reemplazar) con alcance hoy(false)/siempre(true)
+  const aplicarAccion=(accion,siempre)=>{
+    if(!swapItem)return;
+    var slotKey=swapItem.origKey||swapItem.key;
+    try{
+      if(accion.tipo==='reemplazar'){
+        var item=accion.item;
+        if(siempre){
+          var perms=JSON.parse(localStorage.getItem('ase_'+user+'_food_perm')||'{}');
+          if(item.key===slotKey)delete perms[slotKey];else perms[slotKey]=item;
+          localStorage.setItem('ase_'+user+'_food_perm',JSON.stringify(perms));
+        }else{
+          if(item.key===slotKey)sessionStorage.removeItem('ase_'+user+'_food_hoy_'+slotKey);
+          else sessionStorage.setItem('ase_'+user+'_food_hoy_'+slotKey,JSON.stringify(item));
+        }
+      }else if(accion.tipo==='dividir'){
+        if(siempre){
+          var sp=JSON.parse(localStorage.getItem('ase_'+user+'_food_split')||'{}');
+          sp[slotKey]=accion.item;localStorage.setItem('ase_'+user+'_food_split',JSON.stringify(sp));
+        }else{
+          sessionStorage.setItem('ase_'+user+'_food_split_hoy_'+slotKey,JSON.stringify(accion.item));
+        }
+      }else if(accion.tipo==='unir'){
+        if(siempre){
+          var sp2=JSON.parse(localStorage.getItem('ase_'+user+'_food_split')||'{}');
+          delete sp2[slotKey];localStorage.setItem('ase_'+user+'_food_split',JSON.stringify(sp2));
+          sessionStorage.removeItem('ase_'+user+'_food_split_hoy_'+slotKey);
+        }else{
+          sessionStorage.removeItem('ase_'+user+'_food_split_hoy_'+slotKey);
+        }
+      }
+    }catch(err){}
+    cerrarModal();
+    setSwapVersion(function(v){return v+1;});
+  };
 
   // Todos los alimentos de la misma categoría del foodDB completo
   const equivalents=useMemo(()=>{
@@ -1476,40 +1532,22 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
 <text x="190" y="232" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#5F5E5A">Esta proporcion se repite en cada una de las 4 comidas</text>
 </svg>`;
 
-  function IR({item,last}){
+  function IR({item,last,showGramos}){
     const cs=CAT[item.cat]||{l:item.cat,bg:'#F8F8F8',c:'#666'};
     const p=calcP(item,tmpl);
-    // Nivel 1: solo nombre del alimento + etiqueta de categoria
-    if(nivel===1){
-      return h('div',{onClick:e=>{e.stopPropagation();setSwapItem(item);},style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)',cursor:'pointer'}},
-        h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
-          h('span',{style:{fontSize:'10px',background:cs.bg,color:cs.c,padding:'2px 6px',borderRadius:'20px',fontWeight:'700',flexShrink:0}},cs.l),
-          h('span',{style:{fontSize:'13px',color:'#111'}},item.n)
-        ),
-        h('span',{style:{fontSize:'12px',color:'#ccc'}},'›')
-      );
-    }
-    // Nivel 2: nombre + cantidad visual cotidiana
-    if(nivel===2){
-      return h('div',{onClick:e=>{e.stopPropagation();setSwapItem(item);},style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)',cursor:'pointer'}},
-        h('div',{style:{flex:1,paddingRight:'8px'}},
-          h('span',{style:{fontSize:'10px',background:cs.bg,color:cs.c,padding:'2px 6px',borderRadius:'20px',fontWeight:'700',marginRight:'6px'}},cs.l),
-          h('span',{style:{fontSize:'13px',color:'#111'}},item.n)
-        ),
-        h('div',{style:{textAlign:'right',flexShrink:0}},
-          h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111'}},p.v)
-        )
-      );
-    }
-    // Nivel 3: nombre + cantidad visual + gramos exactos
-    return h('div',{onClick:e=>{e.stopPropagation();setSwapItem(item);},style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)',cursor:'pointer'}},
+    // Precisión mínima efectiva: porción práctica siempre visible; gramos solo si showGramos.
+    // Si NO hay Template real, no se muestran cantidades (no inventamos porciones).
+    return h('div',{onClick:null,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:last?'none':'1px solid rgba(0,0,0,0.05)'}},
       h('div',{style:{flex:1,paddingRight:'8px'}},
         h('span',{style:{fontSize:'10px',background:cs.bg,color:cs.c,padding:'2px 6px',borderRadius:'20px',fontWeight:'700',marginRight:'6px'}},cs.l),
         h('span',{style:{fontSize:'13px',color:'#111'}},item.n)
       ),
-      h('div',{style:{textAlign:'right',flexShrink:0}},
-        h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111'}},p.v),
-        p.g&&h('div',{style:{fontSize:'10px',color:'#bbb',marginTop:'1px'}},p.g)
+      h('div',{style:{textAlign:'right',flexShrink:0,display:'flex',alignItems:'center',gap:'8px'}},
+        hayTemplate&&h('div',null,
+          h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111'}},p.v),
+          showGramos&&p.g&&h('div',{style:{fontSize:'11px',color:G,fontWeight:'700',marginTop:'1px'}},p.g)
+        ),
+        h('button',{onClick:e=>{e.stopPropagation();abrirModal(item);},style:{fontSize:'11px',fontWeight:'700',color:AC,background:AC+'12',border:'none',borderRadius:'8px',padding:'6px 10px',cursor:'pointer',flexShrink:0}},'Detalle')
       )
     );
   }
@@ -1522,7 +1560,13 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
       ),
       !isC&&h('div',null,
         comida.ops.length>1&&h('div',{style:{display:'flex',gap:'4px',marginBottom:'12px'}},comida.ops.map(o=>h('button',{key:o.id,onClick:e=>{e.stopPropagation();setO(comida.id,o.id);},style:{flex:1,padding:'6px 2px',fontSize:'11px',fontWeight:optId===o.id?'700':'400',cursor:'pointer',borderRadius:'8px',border:'1px solid',color:optId===o.id?'#111':'#999',background:optId===o.id?'#F0F0F0':'#fff',borderColor:optId===o.id?'rgba(0,0,0,0.2)':'rgba(0,0,0,0.08)'}},o.id+' — '+o.nom))),
-        op.items.map((item,i)=>h(IR,{key:i,item,last:i===op.items.length-1})),
+        // Nombre de la preparación (arriba de los ingredientes). Solo si está cargado.
+        op.nombrePrep&&h('div',{style:{fontSize:'15px',fontWeight:'800',color:'#111',marginBottom:'10px',paddingBottom:'8px',borderBottom:'1px solid rgba(0,0,0,0.06)'}},op.nombrePrep),
+        op.items.map((item,i)=>h(IR,{key:i,item,last:i===op.items.length-1,showGramos:!!verGramos[comida.id]})),
+        // Botón "Ver cantidad exacta" — solo si hay Template real
+        hayTemplate&&h('button',{onClick:e=>{e.stopPropagation();setVerGramos(prev=>({...prev,[comida.id]:!prev[comida.id]}));},style:{marginTop:'8px',background:'none',border:'none',color:verGramos[comida.id]?G:'#999',fontSize:'11px',fontWeight:'700',cursor:'pointer',padding:'4px 0',display:'flex',alignItems:'center',gap:'4px'}},verGramos[comida.id]?'✓ Mostrando gramos exactos':'⚖️ Ver cantidad exacta (gramos)'),
+        // Cartel: sin datos no hay porciones (onboarding progresivo)
+        !hayTemplate&&h('div',{style:{marginTop:'8px',background:'#FEF9C3',border:'1px solid #FDE68A',borderRadius:'8px',padding:'8px 10px',fontSize:'11px',color:'#854D0E',lineHeight:'1.4'}},'Todavía no ves las cantidades porque faltan tus datos de referencia (peso y cintura en ayunas). En cuanto los tengamos, tu coach define las porciones exactas para vos.'),
         op.items.some(item=>MEAT_KEYS.includes(item.key))&&h('div',{style:{marginTop:'8px',padding:'7px 10px',background:'#FEF3C7',borderRadius:'8px',display:'flex',alignItems:'center',gap:'6px'}},
           h('span',{style:{fontSize:'13px'}},'🥩'),
           h('span',{style:{fontSize:'11px',color:'#92400E',fontWeight:'600'}},'Comprá ½ kg y dividilo en porciones según tus gramos')
@@ -1532,82 +1576,77 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
     );
   }
   return h('div',null,
-    swapItem&&h('div',{onClick:()=>setSwapItem(null),style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:100,display:'flex',alignItems:'flex-end'}},
+    swapItem&&h('div',{onClick:()=>cerrarModal(),style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',zIndex:100,display:'flex',alignItems:'flex-end'}},
       h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 16px 32px',maxHeight:'75vh',overflowY:'auto'}},
         h('div',{style:{width:'36px',height:'4px',background:'#E0E0E0',borderRadius:'2px',margin:'0 auto 16px'}}),
-        h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#999',marginBottom:'4px'}},'Opciones — '+(CAT[swapItem.cat]?.l||swapItem.cat)),
-        h('div',{style:{fontSize:'15px',fontWeight:'800',marginBottom:'14px'}},swapItem.n),
-        // ─── UNIR: si el item tocado es parte de un split (media porción) ───
-        (swapItem._splitPrimario||swapItem._splitSecundario)&&h('div',{style:{marginBottom:'16px',background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:'10px',padding:'12px'}},
-          h('div',{style:{fontSize:'13px',fontWeight:'700',color:B,marginBottom:'8px'}},'Esta porción está dividida en dos alimentos'),
-          h('div',{style:{display:'flex',gap:'8px'}},
-            h('button',{onClick:function(e){e.stopPropagation();var ok=swapItem.origKey||swapItem.key;try{sessionStorage.removeItem('ase_'+user+'_food_split_hoy_'+ok);}catch(er){}setSwapItem(null);setSwapVersion(function(v){return v+1;});},style:{flex:1,padding:'9px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid '+B,background:'#fff',color:B}},'Unir solo hoy'),
-            h('button',{onClick:function(e){e.stopPropagation();var ok=swapItem.origKey||swapItem.key;try{var sp=JSON.parse(localStorage.getItem('ase_'+user+'_food_split')||'{}');delete sp[ok];localStorage.setItem('ase_'+user+'_food_split',JSON.stringify(sp));sessionStorage.removeItem('ase_'+user+'_food_split_hoy_'+ok);}catch(er){}setSwapItem(null);setSwapVersion(function(v){return v+1;});},style:{flex:1,padding:'9px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:B,color:'#fff'}},'Unir siempre')
+        // Cabecera con "atrás" si no estamos en el menú inicial
+        h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'14px'}},
+          modalPaso!=='menu'&&h('button',{onClick:function(){setModalPaso('menu');setAccionPend(null);},style:{background:'none',border:'none',fontSize:'20px',cursor:'pointer',color:'#666',padding:'0'}},'‹'),
+          h('div',null,
+            h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#999'}},CAT[swapItem.cat]?.l||swapItem.cat),
+            h('div',{style:{fontSize:'16px',fontWeight:'800'}},swapItem.n)
           )
         ),
-        // ─── DIVIDIR: si el item es porción entera (share 1) ───
-        (!swapItem._splitPrimario&&!swapItem._splitSecundario&&(swapItem.share===1||swapItem.share==null))&&h('div',{style:{marginBottom:'16px'}},
-          h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#111',marginBottom:'2px'}},'Dividir en dos alimentos (mitad y mitad)'),
-          h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'10px'}},'Elegí con qué combinar '+swapItem.n+'. Queda media porción de cada uno.'),
+
+        // ── PASO 1: ¿Qué querés hacer? ──
+        modalPaso==='menu'&&h('div',null,
+          h('div',{style:{fontSize:'13px',color:'#666',marginBottom:'12px'}},'¿Qué querés hacer con este alimento?'),
+          // Dividir (si es porción entera) o Unir (si ya está dividida)
+          (swapItem._splitPrimario||swapItem._splitSecundario)
+            ?h('button',{onClick:function(){setAccionPend({tipo:'unir'});setModalPaso('cuando');},style:{width:'100%',padding:'14px',marginBottom:'10px',borderRadius:'10px',border:'2px solid '+B,background:B+'10',color:B,fontSize:'14px',fontWeight:'800',cursor:'pointer',textAlign:'left'}},'🔗 Unir en un solo alimento',h('div',{style:{fontSize:'11px',fontWeight:'400',color:'#666',marginTop:'2px'}},'Volver a una porción entera'))
+            :(swapItem.share===1||swapItem.share==null)&&h('button',{onClick:function(){setModalPaso('dividir');},style:{width:'100%',padding:'14px',marginBottom:'10px',borderRadius:'10px',border:'2px solid '+B,background:B+'10',color:B,fontSize:'14px',fontWeight:'800',cursor:'pointer',textAlign:'left'}},'➗ Dividir en dos alimentos',h('div',{style:{fontSize:'11px',fontWeight:'400',color:'#666',marginTop:'2px'}},'Mitad y mitad con otro alimento')),
+          h('button',{onClick:function(){setModalPaso('reemplazar');},style:{width:'100%',padding:'14px',borderRadius:'10px',border:'2px solid '+AC,background:AC+'10',color:AC,fontSize:'14px',fontWeight:'800',cursor:'pointer',textAlign:'left'}},'🔄 Reemplazar por otro',h('div',{style:{fontSize:'11px',fontWeight:'400',color:'#666',marginTop:'2px'}},'Cambiar por un equivalente'))
+        ),
+
+        // ── PASO 2a: DIVIDIR — elegir con qué combinar ──
+        modalPaso==='dividir'&&h('div',null,
+          h('div',{style:{fontSize:'13px',color:'#666',marginBottom:'12px'}},'Combinar '+swapItem.n+' con:'),
           equivalents.length===0
-            ?h('div',{style:{fontSize:'12px',color:'#bbb',padding:'8px 0'}},'No hay otros alimentos de esta categoría para combinar')
+            ?h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay otros alimentos de esta categoría')
             :equivalents.map(function(item,i){
-                return h('div',{key:'sp'+i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',padding:'8px 0',borderBottom:i<equivalents.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
-                  h('span',{style:{fontSize:'13px',color:'#111',fontWeight:'600',flex:1}},item.n),
-                  h('button',{onClick:function(e){e.stopPropagation();var ok=swapItem.origKey||swapItem.key;try{sessionStorage.setItem('ase_'+user+'_food_split_hoy_'+ok,JSON.stringify(item));}catch(er){}setSwapItem(null);setSwapVersion(function(v){return v+1;});},style:{padding:'6px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.12)',background:'#fff',color:'#333'}},'Solo hoy'),
-                  h('button',{onClick:function(e){e.stopPropagation();var ok=swapItem.origKey||swapItem.key;try{var sp=JSON.parse(localStorage.getItem('ase_'+user+'_food_split')||'{}');sp[ok]=item;localStorage.setItem('ase_'+user+'_food_split',JSON.stringify(sp));}catch(er){}setSwapItem(null);setSwapVersion(function(v){return v+1;});},style:{padding:'6px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:AC,color:'#fff'}},'Siempre')
+                return h('button',{key:'d'+i,onClick:function(){setAccionPend({tipo:'dividir',item:item});setModalPaso('cuando');},style:{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px',marginBottom:'6px',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.1)',background:'#fff',cursor:'pointer',fontSize:'14px',fontWeight:'600',color:'#111'}},
+                  h('span',null,item.n),h('span',{style:{color:'#ccc'}},'›')
                 );
               })
         ),
-        // ─── REEMPLAZAR (siempre disponible) ───
-        h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#111',marginBottom:'2px'}},'Reemplazar por otro alimento'),
-        h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'10px'}},'Cambiá '+swapItem.n+' por un equivalente de la misma categoría.'),
-        equivalents.length===0
-          ?h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay otros alimentos de esta categoria en tu plan')
-          :equivalents.map(function(item,i){
-              const p=calcP(item,tmpl);
-              return h('div',{key:i,style:{padding:'10px 0',borderBottom:i<equivalents.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
-                h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
-                  h('span',{style:{fontSize:'14px',color:'#111',fontWeight:'600'}},item.n),
-                  h('div',{style:{textAlign:'right'}},h('div',{style:{fontSize:'15px',fontWeight:'800'}},p.v),p.g&&h('div',{style:{fontSize:'10px',color:'#ccc'}},p.g))
-                ),
-                h('div',{style:{display:'flex',gap:'8px'}},
-                  h('button',{onClick:function(e){
-                    e.stopPropagation();
-                    var slotKey=swapItem.origKey||swapItem.key;
-                    try{
-                      if(item.key===slotKey){sessionStorage.removeItem('ase_'+user+'_food_hoy_'+slotKey);} // volver al original
-                      else{sessionStorage.setItem('ase_'+user+'_food_hoy_'+slotKey,JSON.stringify(item));}
-                    }catch(err){}
-                    setSwapItem(null);
-                    setSwapVersion(function(v){return v+1;});
-                  },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.12)',background:'#fff',color:'#333'}},'Solo hoy'),
-                  h('button',{onClick:function(e){
-                    e.stopPropagation();
-                    var slotKey=swapItem.origKey||swapItem.key;
-                    try{
-                      var permKey='ase_'+user+'_food_perm';
-                      var perms=JSON.parse(localStorage.getItem(permKey)||'{}');
-                      if(item.key===slotKey){delete perms[slotKey];} // volver al original
-                      else{perms[slotKey]=item;}
-                      localStorage.setItem(permKey,JSON.stringify(perms));
-                    }catch(err){}
-                    setSwapItem(null);
-                    setSwapVersion(function(v){return v+1;});
-                  },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:AC,color:'#fff'}},'Reemplazar siempre')
-                )
-              );
-            })
+
+        // ── PASO 2b: REEMPLAZAR — elegir por cuál ──
+        modalPaso==='reemplazar'&&h('div',null,
+          h('div',{style:{fontSize:'13px',color:'#666',marginBottom:'12px'}},'Reemplazar '+swapItem.n+' por:'),
+          equivalents.length===0
+            ?h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay otros alimentos de esta categoría')
+            :equivalents.map(function(item,i){
+                var pp=calcP(item,tmpl);
+                return h('button',{key:'r'+i,onClick:function(){setAccionPend({tipo:'reemplazar',item:item});setModalPaso('cuando');},style:{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px',marginBottom:'6px',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.1)',background:'#fff',cursor:'pointer'}},
+                  h('span',{style:{fontSize:'14px',fontWeight:'600',color:'#111'}},item.n),
+                  h('span',{style:{fontSize:'14px',fontWeight:'800',color:'#111'}},pp.v)
+                );
+              })
+        ),
+
+        // ── PASO 3: ¿Solo hoy o para siempre? ──
+        modalPaso==='cuando'&&accionPend&&h('div',null,
+          h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#111',marginBottom:'4px'}},
+            accionPend.tipo==='unir'?'Unir en un solo alimento'
+              :accionPend.tipo==='dividir'?('Dividir: '+swapItem.n+' + '+accionPend.item.n)
+              :('Reemplazar por '+accionPend.item.n)
+          ),
+          h('div',{style:{fontSize:'12px',color:'#999',marginBottom:'16px'}},'¿Cuándo lo aplicamos?'),
+          h('div',{style:{display:'flex',gap:'10px'}},
+            h('button',{onClick:function(){aplicarAccion(accionPend,false);},style:{flex:1,padding:'14px',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.15)',background:'#fff',color:'#333',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Solo hoy'),
+            h('button',{onClick:function(){aplicarAccion(accionPend,true);},style:{flex:1,padding:'14px',borderRadius:'10px',border:'none',background:AC,color:'#fff',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Para siempre')
+          )
+        )
       )
     ),
     h('div',{style:{background:'#111',borderRadius:'12px',padding:'16px',marginBottom:'12px',display:'flex',gap:'12px',alignItems:'flex-start'}},
-      h('div',{style:{fontSize:'22px',flexShrink:0}},nivel===1?'🥗':nivel===2?'⚖️':'🎯'),
+      h('div',{style:{fontSize:'22px',flexShrink:0}},'🍽️'),
       h('div',null,
-        h('div',{style:{fontSize:'10px',fontWeight:'700',color:'rgba(255,255,255,0.5)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Nivel '+nivel+' — Tu objetivo con la alimentación'),
-        h('div',{style:{fontSize:'13px',fontWeight:'600',color:'#fff',lineHeight:'1.5'}},NIVEL_BANNER[nivel]||NIVEL_BANNER[1])
+        h('div',{style:{fontSize:'10px',fontWeight:'700',color:'rgba(255,255,255,0.5)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Tus menús'),
+        h('div',{style:{fontSize:'13px',fontWeight:'600',color:'#fff',lineHeight:'1.5'}},hayTemplate?'Cada comida tiene su porción práctica. Si querés precisión, tocá "Ver cantidad exacta" para ver los gramos. Ajustá los alimentos con "Detalle".':'Estos son tus menús base. Todavía sin cantidades: en cuanto tengamos tus datos de referencia, definimos las porciones para vos.')
       )
     ),
-    h('div',{style:{...card,marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+    hayTemplate&&h('div',{style:{...card,marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('div',null,h('div',{style:lbl},'Plan calórico'),h('div',{style:{fontSize:'20px',fontWeight:'800',color:G}},tmpl,' ',h('span',{style:{fontSize:'13px',color:'#999',fontWeight:'400'}},'kcal'))),
       h('div',{style:{fontSize:'11px',color:'#bbb'}},h('div',null,'Template asignado'),h('div',null,'por tu coach'))
     ),
@@ -2363,10 +2402,19 @@ function App(){
   useEffect(()=>{
     if(!user||!exesReady)return;
     // Rutinas → sesiones y ejercicios
-    fetch(SCRIPT_URL+'?action=rutinas')
-      .then(r=>r.json())
-      .then(rutinas=>{
+    Promise.all([
+      fetch(SCRIPT_URL+'?action=rutinas').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[])
+    ])
+      .then(([rutinas,asesorados])=>{
         const fila=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase());
+        // Ficha maestra del asesorado (identidad). Si no está, se usa Rutinas como fallback.
+        const ficha=(asesorados||[]).find(a=>String(a.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase())||null;
+        // Helper: toma el dato de la ficha maestra; si no hay, cae a Rutinas (fila).
+        const ident=(campoFicha,campoRutina)=>{
+          if(ficha&&ficha[campoFicha]!==undefined&&String(ficha[campoFicha]).trim()!=='')return ficha[campoFicha];
+          return fila?fila[campoRutina]:undefined;
+        };
         if(fila){
           const num=parseInt(fila.NumSesiones)||3;
           const assign={};
@@ -2389,18 +2437,31 @@ function App(){
           }).filter(Boolean);
           const normBloque=s=>{
             const n=String(s||'').toLowerCase().trim().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');
-            // 5 bloques finales. Todo lo demás (man/health/deporte/mantenimiento/vacío/desconocido) -> base.
             const VALIDOS={'volumen':1,'fuerza':1,'intensidad':1,'base':1,'rehabilitacion':1};
-            // sinónimos aceptados que mapean a un válido
             const SINON={'rehab':'rehabilitacion','rehabilitación':'rehabilitacion','progresion base':'base','progresionbase':'base'};
             var m=SINON[n]||n;
             return VALIDOS[m]?m:'base';
           };
-          const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess,pesoRef:parseFloat(fila.PesoRef)||0};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
-          // FechaInicio: fecha de arranque para calcular semanas (lunes de esa semana)
-          const fechaInicio=String(fila.FechaInicio||'').trim();
+          // PesoRef: desde la ficha maestra, con fallback a Rutinas
+          const pesoRefVal=parseFloat(ident('PesoRef','PesoRef'))||0;
+          const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess,pesoRef:pesoRefVal};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
+          // FechaInicio: desde ficha maestra, con fallback a Rutinas
+          const fechaInicio=String(ident('FechaInicio','FechaInicio')||'').trim();
           if(fechaInicio){localStorage.setItem(`ase_${user}_startdate`,fechaInicio);}
           else if(!localStorage.getItem(`ase_${user}_startdate`)){localStorage.setItem(`ase_${user}_startdate`,new Date().toISOString().split('T')[0]);}
+          // Datos de identidad (Sexo/Edad/Altura/Objetivo/Plan) desde ficha maestra → localStorage para diagnóstico
+          try{
+            const idData={sexo:ident('Sexo','Sexo'),edad:ident('Edad','Edad'),altura:ident('Altura','Altura'),objetivo:ident('Objetivo','Objetivo'),plan:ident('Plan','Nivel')};
+            localStorage.setItem(`ase_${user}_ident`,JSON.stringify(idData));
+          }catch(e){}
+          // FASE 4.1: resolver y guardar el AsesoradoID (por nombre → ID de la maestra).
+          // El asesorado sigue entrando con su nombre (Camino A); el ID queda disponible
+          // para los pasos siguientes (escrituras/lecturas por ID). No cambia nada más aún.
+          try{
+            const aseId=(ficha&&ficha.AsesoradoID)?String(ficha.AsesoradoID).trim():'';
+            if(aseId)localStorage.setItem(`ase_${user}_aseid`,aseId);
+          }catch(e){}
+          // Template: la fuente ahora es Dietas, pero mantenemos fallback a Rutinas si aún existe
           const tmpl=parseInt(fila.Template);
           if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
         }
@@ -2564,7 +2625,7 @@ function App(){
           return hiitSessIds.map(function(sid){var v=hiitRegs[sid]&&hiitRegs[sid][field];return v?(sid+': '+v):'';}).filter(Boolean).join(' · ');
         };
         fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-          user,wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
+          user,asesoradoId:(localStorage.getItem('ase_'+user+'_aseid')||''),wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
           sens:hab.sens||{},
           dolor:(hab.sens||{}).dolor||'',
@@ -2629,7 +2690,7 @@ function App(){
     // Backup silencioso al sheet
     try{
       var draftBk={sr:sessionReps,n:nut,h:hab,hiit:hiitData};
-      fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'draft',user:user,wi:wk.id,draft:draftBk})}).catch(function(){});
+      fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'draft',user:user,asesoradoId:(localStorage.getItem('ase_'+user+'_aseid')||''),wi:wk.id,draft:draftBk})}).catch(function(){});
     }catch(e){}
   }
   function resetWeek(){
