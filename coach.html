@@ -2151,6 +2151,19 @@ function App(){
           AsesoradoID:f.AsesoradoID||''
         });
       });
+      // Asesorados de la maestra que NO tienen fila en Rutinas todavía (recién dados de alta).
+      // Se agregan como filas virtuales para que aparezcan en la lista aunque no tengan rutina.
+      const conRutina={};
+      (ruts||[]).forEach(r=>{conRutina[norm(r.Asesorado)]=1;});
+      const virtuales=(asesorados||[]).filter(a=>{
+        const n=norm(a.Asesorado);
+        return n&&!conRutina[n]&&String(a.Estado||'').toLowerCase()!=='baja';
+      }).map(a=>({
+        Asesorado:a.Asesorado||'', AsesoradoID:a.AsesoradoID||'', Estado:a.Estado||'',
+        Sexo:a.Sexo||'', Edad:a.Edad||'', Altura:a.Altura||'', PesoRef:a.PesoRef||'',
+        Objetivo:a.Objetivo||'', FechaInicio:a.FechaInicio||'', Nivel:a.Plan||''
+      }));
+      const rutsCompletas=rutsEnriquecidas.concat(virtuales);
       // Videos sin corregir por asesorado (dedup por asesorado+ejercicio, más reciente)
       const normV=x=>String(x||'').trim().toLowerCase();
       const conIdxV=(vids||[]).map((v,i)=>({...v,_ord:i}));
@@ -2164,7 +2177,7 @@ function App(){
       setVideosPend(pend);
       setEjercicios(ejs||[]);
       setDiagnosticos(diags||[]);
-      setData(grouped);setRutinas(rutsEnriquecidas);setDecisiones(decs||[]);
+      setData(grouped);setRutinas(rutsCompletas);setDecisiones(decs||[]);
     }).catch(()=>setError('Error al cargar datos.')).finally(()=>setLoading(false));
   };
   useEffect(()=>{if(unlocked)loadData();},[unlocked]);
