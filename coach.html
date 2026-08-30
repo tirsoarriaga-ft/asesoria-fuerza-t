@@ -2290,9 +2290,11 @@ function App(){
       // Se agregan como filas virtuales para que aparezcan en la lista aunque no tengan rutina.
       const conRutina={};
       (ruts||[]).forEach(r=>{conRutina[norm(r.Asesorado)]=1;});
+      // Los de plan "Básico" NO entran al seguimiento (solo se cobran, aparecen en pestaña Cobros).
+      const esBasico=a=>String(a.Plan||'').trim().toLowerCase()==='basico'||String(a.Plan||'').trim().toLowerCase()==='básico';
       const virtuales=(asesorados||[]).filter(a=>{
         const n=norm(a.Asesorado);
-        return n&&!conRutina[n]&&String(a.Estado||'').toLowerCase()!=='baja';
+        return n&&!conRutina[n]&&String(a.Estado||'').toLowerCase()!=='baja'&&!esBasico(a);
       }).map(a=>({
         Asesorado:a.Asesorado||'', AsesoradoID:a.AsesoradoID||'', Estado:a.Estado||'',
         Sexo:a.Sexo||'', Edad:a.Edad||'', Altura:a.Altura||'', PesoRef:a.PesoRef||'',
