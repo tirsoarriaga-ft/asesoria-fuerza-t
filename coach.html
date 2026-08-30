@@ -2133,16 +2133,21 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   function calcCobro(fInicio){
     var fi=parseFecha(fInicio); if(!fi)return null;
     fi.setHours(0,0,0,0);
-    var meses=(hoy.getFullYear()-fi.getFullYear())*12+(hoy.getMonth()-fi.getMonth());
     var diaCobro=fi.getDate();
-    var vencMesActual=new Date(hoy.getFullYear(),hoy.getMonth(),diaCobro); vencMesActual.setHours(0,0,0,0);
-    var mesActual;
-    if(hoy>=vencMesActual){ mesActual=meses+1; }
-    else { mesActual=meses; var d2=new Date(hoy.getFullYear(),hoy.getMonth()-1,diaCobro); vencMesActual=d2; vencMesActual.setHours(0,0,0,0); }
+    // El vencimiento del ciclo EN CURSO = el día de cobro de este mes calendario.
+    var vencEsteMes=new Date(hoy.getFullYear(),hoy.getMonth(),diaCobro); vencEsteMes.setHours(0,0,0,0);
+    // Si el día de cobro de este mes todavía no llegó, el ciclo en curso venció el mes pasado.
+    var vencActual;
+    if(hoy>=vencEsteMes){ vencActual=vencEsteMes; }
+    else { vencActual=new Date(hoy.getFullYear(),hoy.getMonth()-1,diaCobro); vencActual.setHours(0,0,0,0); }
+    // MesNumero del ciclo en curso = meses transcurridos desde el inicio hasta vencActual + 1
+    var mesActual=(vencActual.getFullYear()-fi.getFullYear())*12+(vencActual.getMonth()-fi.getMonth())+1;
     if(mesActual<1)mesActual=1;
-    var prox=new Date(vencMesActual); prox.setMonth(prox.getMonth()+1);
-    var diasParaVencer=Math.round((prox-hoy)/(1000*60*60*24));
-    return {mesActual:mesActual,vencMesActual:vencMesActual,proxVenc:prox,diasParaVencer:diasParaVencer,diaCobro:diaCobro};
+    // días desde que venció el ciclo actual (0 = vence hoy, >0 = ya pasó)
+    var diasVencido=Math.round((hoy-vencActual)/(1000*60*60*24));
+    // próximo vencimiento (el siguiente ciclo)
+    var prox=new Date(vencActual); prox.setMonth(prox.getMonth()+1);
+    return {mesActual:mesActual,vencActual:vencActual,proxVenc:prox,diasVencido:diasVencido,diaCobro:diaCobro};
   }
   function pagoDeMes(aseId,mes){
     return (pagos||[]).find(function(p){return norm(p.AsesoradoID)===norm(aseId)&&String(p.MesNumero).trim()===String(mes).trim();});
@@ -2151,7 +2156,6 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     var aseId=a.AsesoradoID||'';
     if(!aseId){alert('Ese asesorado no tiene AsesoradoID.');return;}
     setMarcando(aseId);
-    // La fecha del pago = el día de cobro que le corresponde a ese mes (no la fecha de hoy).
     var fechaPago=fechaVenc?fechaVenc.toLocaleDateString('es-AR'):new Date().toLocaleDateString('es-AR');
     var payload={action:'registrarPago',asesoradoId:aseId,asesorado:a.Asesorado||'',mesNumero:mes,fechaPago:fechaPago,monto:monto||''};
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
@@ -2164,11 +2168,10 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     var pagado=c?pagoDeMes(a.AsesoradoID,c.mesActual):null;
     var estado='sinfecha';
     if(c){
-      if(pagado)estado='aldia';
-      else if(c.diasParaVencer<0)estado='vencido';
-      else if(c.diasParaVencer===0)estado='hoy';
-      else if(c.diasParaVencer<=5)estado='pronto';
-      else estado='pendiente';
+      if(pagado)estado='aldia';               // pagó el ciclo en curso
+      else if(c.diasVencido>0)estado='vencido';  // el día ya pasó y no pagó → moroso
+      else if(c.diasVencido===0)estado='hoy';    // vence hoy
+      else estado='pendiente';                    // (no debería pasar con esta lógica)
     }
     return {a:a,c:c,precio:precio,pagado:pagado,estado:estado};
   });
@@ -2235,7 +2238,7 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     vis.length===0&&h('div',{style:{textAlign:'center',padding:'40px 20px',color:'#999',fontSize:'13px'}},'Nada por acá'),
     vis.map(function(f){
       var e=EST[f.estado];
-      var venceStr=f.c?f.c.proxVenc.toLocaleDateString('es-AR',{day:'numeric',month:'short'}):'—';
+      var venceStr=f.c?(f.pagado?f.c.proxVenc:f.c.vencActual).toLocaleDateString('es-AR',{day:'numeric',month:'short'}):'—';
       return h('div',{key:f.a.AsesoradoID||f.a.Asesorado,style:{background:'#fff',border:'1px solid rgba(0,0,0,0.08)',borderRadius:'12px',padding:'13px',marginBottom:'8px'}},
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}},
           h('div',null,
@@ -2246,11 +2249,11 @@ function CobrosPanel({maestra,pagos,onRefresh}){
         ),
         f.estado!=='sinfecha'&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
           h('div',{style:{fontSize:'11px',color:'#666'}},
-            f.pagado?('✓ Mes '+f.c.mesActual+' pagado'):('Mes '+f.c.mesActual+' · vence '+venceStr)
+            f.pagado?('✓ Mes '+f.c.mesActual+' pagado · próx '+venceStr):('Mes '+f.c.mesActual+' · venció '+venceStr)
           ),
           f.pagado
             ?h('span',{style:{fontSize:'11px',color:'#1D9E75',fontWeight:'700'}},'Al día')
-            :h('button',{onClick:function(){marcarPagado(f.a,f.c.mesActual,f.precio,f.c.vencMesActual);},disabled:marcando===f.a.AsesoradoID,
+            :h('button',{onClick:function(){marcarPagado(f.a,f.c.mesActual,f.precio,f.c.vencActual);},disabled:marcando===f.a.AsesoradoID,
                 style:{background:marcando===f.a.AsesoradoID?'#ccc':'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:marcando===f.a.AsesoradoID?'default':'pointer'}},
                 marcando===f.a.AsesoradoID?'Guardando…':'Marcar pagado')
         )
