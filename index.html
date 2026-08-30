@@ -1446,6 +1446,8 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
 
   const [swapItem,setSwapItem]=useState(null); // {n, cat, key} of tapped item
   const [verGramos,setVerGramos]=useState({}); // {comidaId: bool} mostrar cantidad exacta (gramos)
+  const [confMenus,setConfMenus]=useState(false); // confirmando menús
+  const [menusConfirmados,setMenusConfirmados]=useState(()=>localStorage.getItem(`ase_${user}_menusConfirmados`)==='1');
   const [modalPaso,setModalPaso]=useState('menu'); // 'menu' | 'dividir' | 'reemplazar' | 'unir' | 'cuando'
   const [accionPend,setAccionPend]=useState(null); // {tipo:'dividir'|'reemplazar'|'unir', item?} guardado hasta elegir hoy/siempre
   // Al abrir/cerrar un alimento, resetear el paso
@@ -1532,6 +1534,35 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
 <text x="190" y="232" text-anchor="middle" font-family="sans-serif" font-size="10" fill="#5F5E5A">Esta proporcion se repite en cada una de las 4 comidas</text>
 </svg>`;
 
+  // Armar y enviar los menús FINALES (con reemplazos aplicados) a la hoja DietasConfirmadas
+  function confirmarMenus(){
+    const aseId=localStorage.getItem(`ase_${user}_aseid`)||'';
+    if(!aseId){ alert('No se pudo identificar tu cuenta. Recargá la app y probá de nuevo.'); return; }
+    setConfMenus(true);
+    // Mapear cada comida/opción a sus columnas (DesayunoA, DesayunoANombre, etc.)
+    const COLMAP={desayuno:'Desayuno',almuerzo:'Almuerzo',merienda:'Merienda',cena:'Cena'};
+    const menus={};
+    (comidas||[]).forEach(function(c){
+      const base=COLMAP[c.id]||'';
+      if(!base)return;
+      (c.ops||[]).forEach(function(op){
+        const col=base+op.id; // ej: DesayunoA
+        // Alimentos finales: los nombres de los items (con reemplazos ya aplicados)
+        const alimentos=(op.items||[]).map(function(it){return it.n||it.key||'';}).filter(Boolean).join(', ');
+        menus[col]=alimentos;
+        menus[col+'Nombre']=op.nombrePrep||'';
+      });
+    });
+    const payload={action:'guardarMenusConfirmados',asesoradoId:aseId,asesorado:user,menus:menus};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .finally(function(){
+        setTimeout(function(){
+          setConfMenus(false);
+          setMenusConfirmados(true);
+          localStorage.setItem(`ase_${user}_menusConfirmados`,'1');
+        },1300);
+      });
+  }
   function IR({item,last,showGramos}){
     const cs=CAT[item.cat]||{l:item.cat,bg:'#F8F8F8',c:'#666'};
     const p=calcP(item,tmpl);
@@ -1659,6 +1690,20 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
       :h('div',null,
           nivel===1&&h('div',{style:{...card,padding:'12px',marginBottom:'8px'},dangerouslySetInnerHTML:{__html:SVG_PLATO}}),
           comidas.map(c=>h(MC,{key:c.id,comida:c})),
+          // Botón: confirmar mis menús (los manda a DietasConfirmadas)
+          comidas.length>0&&h('div',{style:{...card,marginTop:'8px',marginBottom:'8px',padding:'16px',textAlign:'center'}},
+            menusConfirmados
+              ?h('div',null,
+                  h('div',{style:{fontSize:'13px',fontWeight:'700',color:G,marginBottom:'4px'}},'✓ Menús confirmados'),
+                  h('div',{style:{fontSize:'11px',color:'#999',lineHeight:'1.4',marginBottom:'10px'}},'Ya enviaste tus menús. Si cambiaste algo, podés volver a confirmarlos.'),
+                  h('button',{onClick:confirmarMenus,disabled:confMenus,style:{background:'#fff',color:G,border:'1px solid '+G,borderRadius:'8px',padding:'8px 16px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},confMenus?'Enviando…':'Volver a confirmar')
+                )
+              :h('div',null,
+                  h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#111',marginBottom:'4px'}},'¿Estos son tus menús?'),
+                  h('div',{style:{fontSize:'11px',color:'#999',lineHeight:'1.5',marginBottom:'12px'}},'Revisá cada comida y ajustá lo que quieras con "Detalle" (reemplazar, dividir). Cuando estén como querés, confirmalos: estos van a ser tus menús de referencia.'),
+                  h('button',{onClick:confirmarMenus,disabled:confMenus,style:{background:confMenus?'#ccc':G,color:'#fff',border:'none',borderRadius:'10px',padding:'13px 24px',fontSize:'14px',fontWeight:'800',cursor:confMenus?'default':'pointer',width:'100%'}},confMenus?'Enviando…':'✓ Confirmar mis menús')
+                )
+          ),
           h('div',{style:{...card,marginTop:'4px',display:'flex',justifyContent:'space-around',alignItems:'center'}},
             h('div',{style:{textAlign:'center'}},
               h('div',{style:{fontSize:'24px'}},'💧'),
@@ -1688,9 +1733,9 @@ const CONTEXTO_VIDA=[
 // ── MI SEMANA ─────────────────────────────────────────────────────────
 var MEAL_STATES=[
   {v:'',ic:'○',color:'#E0E0E0',label:''},
-  {v:'ok',ic:'✅',color:'#1D9E75',label:'Sí, comí esto'},
-  {v:'par',ic:'↔',color:'#D97706',label:'Comí esto, pero no las cantidades'},
-  {v:'no',ic:'❌',color:'#EF4444',label:'Comí otra cosa'},
+  {v:'ok',ic:'✅',color:'#1D9E75',label:'Sí, cumplí'},
+  {v:'par',ic:'↔',color:'#D97706',label:'Comí una opción, pero cambié la cantidad'},
+  {v:'no',ic:'❌',color:'#EF4444',label:'Comí algo diferente'},
 ];
 var AGUA_STATES=[
   {v:'',ic:'○',color:'#E0E0E0'},
@@ -1699,7 +1744,7 @@ var AGUA_STATES=[
   {v:'ins',ic:'○',color:'#EF4444'},
 ];
 var DS6=['L','M','X','J','V','S'];
-function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}){
+function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus}){
   var pesoRef=parseFloat(cfg&&cfg.pesoRef)||0;
   var aguaMaxL=pesoRef>0?Math.round(pesoRef*35)/1000:2.0;
   var aguaMinL=pesoRef>0?Math.round(pesoRef*30)/1000:1.5;
@@ -1713,8 +1758,20 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
     setMealPanel({di:di,meal:meal});
   }
   function setMealState(di,meal,val){
-    var newN=nut.map(function(d,i){return i===di?Object.assign({},d,{m:Object.assign({},d.m,{[meal]:val})}):d;});
-    setNut(newN);setSaved(false);setMealPanel(null);
+    var newN=nut.map(function(d,i){
+      if(i!==di)return d;
+      var nm=Object.assign({},d.m,{[meal]:val});
+      // Si NO es "comió algo diferente", limpiar el texto asociado
+      if(val!=='no')nm[meal+'_txt']='';
+      return Object.assign({},d,{m:nm});
+    });
+    setNut(newN);setSaved(false);
+    // Si marcó "comió algo diferente", NO cerrar el panel (para escribir qué comió)
+    if(val!=='no')setMealPanel(null);
+  }
+  function setMealText(di,meal,txt){
+    var newN=nut.map(function(d,i){return i===di?Object.assign({},d,{m:Object.assign({},d.m,{[meal+'_txt']:txt})}):d;});
+    setNut(newN);setSaved(false);
   }
   function cycleAgua(di){
     var cur=(nut[di].agua)||'';
@@ -1760,8 +1817,11 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
     grpTitle('1 · Lo que hago','Tu ejecución del día a día'),
     // COMIDAS
     h('div',{style:card},
-      h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Comidas'),
-      h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'6px'}},'Como estuvo cada comida?'),
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}},
+        h('div',{style:lbl},'Comidas'),
+        h('button',{onClick:function(){if(typeof onVerMenus==='function')onVerMenus();},style:{background:'#EAF7F2',color:G,border:'none',borderRadius:'8px',padding:'5px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Ver mis menús')
+      ),
+      h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'6px'}},'¿Cumpliste cada comida? (comer una de tus opciones respetando la cantidad)'),
       h('div',{style:{display:'flex',gap:'10px',marginBottom:'10px',flexWrap:'wrap'}},
         MEAL_STATES.slice(1).map(function(ms){
           return h('div',{key:ms.v,style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'10px',color:'#666'}},
@@ -1786,12 +1846,15 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
       var mlabels={desayuno:'Desayuno',almuerzo:'Almuerzo',merienda:'Merienda',cena:'Cena'};
       var mdias=['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
       var mcur=(nut[mealPanel.di].m[mealPanel.meal])||'';
+      var mtxtKey=mealPanel.meal+'_txt';
+      var mtxt=(nut[mealPanel.di].m[mtxtKey])||'';
       var mopts=MEAL_STATES.slice(1);
       return h('div',{style:Object.assign({},card,{border:'1.5px solid '+AC,marginTop:'-4px'})},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}},
           h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#111'}},mdias[mealPanel.di]+' · '+mlabels[mealPanel.meal]),
           h('button',{onClick:function(){setMealPanel(null);},style:{background:'none',border:'none',fontSize:'18px',color:'#999',cursor:'pointer',padding:'0 0 0 8px'}},'x')
         ),
+        h('div',{style:{fontSize:'11px',color:'#999',lineHeight:'1.4',marginBottom:'12px'}},'Cumplir = comer una de tus opciones (o un reemplazo que ya tengas) respetando la cantidad.'),
         h('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},
           mopts.map(function(ms){
             var sel=mcur===ms.v;
@@ -1801,6 +1864,11 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
               h('span',{style:{fontSize:'14px',color:sel?'#111':'#333'}},ms.label)
             );
           }),
+          // Si marcó "comí algo diferente" → pedir qué comió (opcional, no bloquea)
+          mcur==='no'&&h('div',{style:{marginTop:'2px'}},
+            h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'5px'}},'¿Qué comiste? (opcional, me ayuda a ajustarte)'),
+            h('input',{type:'text',value:mtxt,onChange:function(e){setMealText(mealPanel.di,mealPanel.meal,e.target.value);},placeholder:'Ej: pizza, un sándwich, salí a comer…',style:{width:'100%',boxSizing:'border-box',padding:'9px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'13px'}})
+          ),
           mcur&&h('button',{onClick:function(){setMealState(mealPanel.di,mealPanel.meal,'');},style:{background:'none',border:'none',color:'#999',fontSize:'12px',cursor:'pointer',padding:'4px',marginTop:'2px'}},'Quitar marca')
         )
       );
@@ -2275,6 +2343,22 @@ function App(){
   const metaSal=parseFloat(metaAgua).toFixed(1);
   const pesoVal=normNum(hab.meds.find(m=>m.p&&normNum(m.p)>0)?.p)||pesoRef;
   const tC=Math.min(24,nut.slice(0,6).reduce((a,d)=>a+Object.values(d.m||{}).filter(v=>v==='ok'||v==='par'||v===true).length,0)),pC=Math.min(100,Math.round(tC/24*100));
+  // FASE 3E: compliance real sobre comidas REGISTRADAS (ok+par+no), separando "sin datos".
+  // Cumplió = 'ok'. Registró = marcó algo (ok/par/no). Sin datos = no marcó.
+  const meal3E=(()=>{
+    let ok=0,par=0,no=0,registradas=0;
+    nut.slice(0,6).forEach(d=>{
+      ['desayuno','almuerzo','merienda','cena'].forEach(m=>{
+        const v=(d.m||{})[m];
+        if(v==='ok'||v===true){ok++;registradas++;}
+        else if(v==='par'){par++;registradas++;}
+        else if(v==='no'){no++;registradas++;}
+      });
+    });
+    const totalPosibles=24; // 4 comidas x 6 dias
+    const compliance=registradas>0?Math.round(ok/registradas*100):null; // % sobre lo registrado
+    return {ok,par,no,registradas,totalPosibles,compliance};
+  })();
   const aguaDias=nut.filter(d=>d.ak).length;
   const aguaPromedio=(nut.reduce((a,d)=>a+normNum(d.a),0)/6).toFixed(1);
   const tA=aguaDias,pA=Math.round(aguaDias/6*100);
@@ -2407,13 +2491,20 @@ function App(){
       fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[])
     ])
       .then(([rutinas,asesorados])=>{
-        const fila=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase());
-        // Ficha maestra del asesorado (identidad). Si no está, se usa Rutinas como fallback.
+        // Ficha maestra del asesorado (identidad). Se resuelve por nombre (así entra el asesorado).
         const ficha=(asesorados||[]).find(a=>String(a.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase())||null;
-        // Helper: toma el dato de la ficha maestra; si no hay, cae a Rutinas (fila).
-        const ident=(campoFicha,campoRutina)=>{
+        // FASE 4.3: el AsesoradoID resuelto (de la maestra). Se usa para buscar por ID con fallback a nombre.
+        const aseId=ficha&&ficha.AsesoradoID?String(ficha.AsesoradoID).trim().toLowerCase():'';
+        // Buscar la fila en Rutinas: PRIMERO por AsesoradoID, si no hay match, por nombre (fallback).
+        const norm=x=>String(x||'').trim().toLowerCase();
+        let fila=null;
+        if(aseId){ fila=rutinas.find(r=>norm(r.AsesoradoID)===aseId)||null; }
+        if(!fila){ fila=rutinas.find(r=>norm(r.Asesorado)===user.trim().toLowerCase())||null; }
+        // Helper: toma el dato de la ficha maestra Asesorados (fuente única de identidad).
+        // FASE 4.5: se retiró el fallback a Rutinas (esas columnas ya no existen).
+        const ident=(campoFicha)=>{
           if(ficha&&ficha[campoFicha]!==undefined&&String(ficha[campoFicha]).trim()!=='')return ficha[campoFicha];
-          return fila?fila[campoRutina]:undefined;
+          return undefined;
         };
         if(fila){
           const num=parseInt(fila.NumSesiones)||3;
@@ -2443,15 +2534,15 @@ function App(){
             return VALIDOS[m]?m:'base';
           };
           // PesoRef: desde la ficha maestra, con fallback a Rutinas
-          const pesoRefVal=parseFloat(ident('PesoRef','PesoRef'))||0;
+          const pesoRefVal=parseFloat(ident('PesoRef'))||0;
           const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess,pesoRef:pesoRefVal};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
           // FechaInicio: desde ficha maestra, con fallback a Rutinas
-          const fechaInicio=String(ident('FechaInicio','FechaInicio')||'').trim();
+          const fechaInicio=String(ident('FechaInicio')||'').trim();
           if(fechaInicio){localStorage.setItem(`ase_${user}_startdate`,fechaInicio);}
           else if(!localStorage.getItem(`ase_${user}_startdate`)){localStorage.setItem(`ase_${user}_startdate`,new Date().toISOString().split('T')[0]);}
           // Datos de identidad (Sexo/Edad/Altura/Objetivo/Plan) desde ficha maestra → localStorage para diagnóstico
           try{
-            const idData={sexo:ident('Sexo','Sexo'),edad:ident('Edad','Edad'),altura:ident('Altura','Altura'),objetivo:ident('Objetivo','Objetivo'),plan:ident('Plan','Nivel')};
+            const idData={sexo:ident('Sexo'),edad:ident('Edad'),altura:ident('Altura'),objetivo:ident('Objetivo'),plan:ident('Plan')};
             localStorage.setItem(`ase_${user}_ident`,JSON.stringify(idData));
           }catch(e){}
           // FASE 4.1: resolver y guardar el AsesoradoID (por nombre → ID de la maestra).
@@ -2473,10 +2564,20 @@ function App(){
     ]).then(([menusRows,dietasRows])=>{
       const foodDB=buildFoodDB(menusRows||[]);
       localStorage.setItem(`ase_${user}_foodDB`,JSON.stringify(foodDB)); // guardar para equivalencias
-      const dietaFila=(dietasRows||[]).find(r=>String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase());
+      // FASE 4.3: buscar la fila en Dietas PRIMERO por AsesoradoID (de localStorage, guardado en 4.1),
+      // con fallback a nombre. Así se migra la lectura sin romper si el ID no está.
+      const normD=x=>String(x||'').trim().toLowerCase();
+      const aseIdD=normD(localStorage.getItem(`ase_${user}_aseid`)||'');
+      let dietaFila=null;
+      if(aseIdD){ dietaFila=(dietasRows||[]).find(r=>normD(r.AsesoradoID)===aseIdD)||null; }
+      if(!dietaFila){ dietaFila=(dietasRows||[]).find(r=>normD(r.Asesorado)===user.trim().toLowerCase())||null; }
       if(dietaFila){
         const tmpl=parseInt(dietaFila.Template);
-        if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
+        // El SHEET es la fuente de verdad del Template: si hay uno válido, se guarda;
+        // si el sheet NO tiene Template, se BORRA el cacheado (así un cambio a deficit/volumen
+        // o quitar el Template se refleja en las porciones de la app).
+        if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl)){localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));}
+        else{localStorage.removeItem(`ase_${user}_tmpl`);}
         const pi=parseFloat(String(dietaFila.PesoInicial||'').replace(',','.'));
         if(!isNaN(pi)&&pi>0)localStorage.setItem(`ase_${user}_pesoinicial`,String(pi));
         const niv=parseInt(dietaFila.Nivel||'1');
@@ -2486,6 +2587,9 @@ function App(){
           localStorage.setItem(`ase_${user}_menus`,JSON.stringify(comidas));
           setMenusVer(v=>v+1);
         }
+      } else {
+        // No hay fila de dieta en el sheet para este asesorado: sin Template (sheet manda).
+        localStorage.removeItem(`ase_${user}_tmpl`);
       }
     }).catch(()=>{});
   },[user,exesReady]);
@@ -2568,15 +2672,19 @@ function App(){
     if(!hasPeso)errors.push('Peso corporal (Mediciones): registrá al menos un día');
     if(!hasCintura)errors.push('Cintura (Mediciones): registrá al menos un día');
     if(!hasSens)errors.push('Sensaciones (Mediciones): completá Energía, Hambre, Digestión y Estrés');
-    // ENTRENO: al menos un ejercicio con kg y reps en serie 1
+    // ENTRENO: al menos un ejercicio registrado.
+    // En volumen/fuerza/intensidad se exige kg + reps. En base/rehabilitación NO se exige kg
+    // (suelen ser ejercicios técnicos o de peso corporal, sin carga), basta con reps.
+    const bloqueVal=String(cfg.bloque||'volumen').toLowerCase();
+    const exigeKg=(bloqueVal!=='base'&&bloqueVal!=='rehabilitacion');
     const allExes=Object.values(cfg.assign||{}).flat();
     const hasAnyExData=allExes.some(exId=>{
       const sesId=Object.entries(cfg.assign||{}).find(([s,ids])=>ids.includes(exId))?.[0];
       const r1=parseInt(sessionReps?.[sesId]?.[exId]?.r1)||0;
       const kg=sessionKg?.[sesId]?.[exId]||exes.find(e=>e.id===exId)?.kg||0;
-      return r1>0&&kg>0;
+      return exigeKg?(r1>0&&kg>0):(r1>0);
     });
-    if(!hasAnyExData)errors.push('Entrenamiento: registrá kg y reps de al menos un ejercicio');
+    if(!hasAnyExData)errors.push(exigeKg?'Entrenamiento: registrá kg y reps de al menos un ejercicio':'Entrenamiento: registrá las reps de al menos un ejercicio');
     return errors;
   }
   function doSave(completeWeek){
@@ -2624,9 +2732,24 @@ function App(){
         var joinHiit=function(field){
           return hiitSessIds.map(function(sid){var v=hiitRegs[sid]&&hiitRegs[sid][field];return v?(sid+': '+v):'';}).filter(Boolean).join(' · ');
         };
+        // FASE 3E: armar el detalle de "comí algo diferente" (qué comió) por día/comida
+        var comidasDif=[];
+        var MDIAS=['Lun','Mar','Mie','Jue','Vie','Sab'];
+        nut.slice(0,6).forEach(function(d,di){
+          ['desayuno','almuerzo','merienda','cena'].forEach(function(m){
+            if((d.m||{})[m]==='no'){
+              var txt=(d.m||{})[m+'_txt']||'';
+              comidasDif.push(MDIAS[di]+' '+m+(txt?(': '+txt):''));
+            }
+          });
+        });
         fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
           user,asesoradoId:(localStorage.getItem('ase_'+user+'_aseid')||''),wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
+          // FASE 3E: compliance de comidas
+          compliancecomidas:(meal3E.compliance!==null?meal3E.compliance:''),
+          comidasok:meal3E.ok, comidaspar:meal3E.par, comidasno:meal3E.no, comidasregistradas:meal3E.registradas,
+          comidasdiferente:comidasDif.join(' | '),
           sens:hab.sens||{},
           dolor:(hab.sens||{}).dolor||'',
           dolorZona:(hab.sens||{}).dolorZona||'',
@@ -3098,7 +3221,7 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus:()=>setTab('die')}),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
     ),
     h('div',{style:{background:'#0A0A0A',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',position:'sticky',bottom:0,zIndex:10}},
