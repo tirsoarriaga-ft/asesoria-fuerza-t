@@ -2672,19 +2672,20 @@ function App(){
     if(!hasPeso)errors.push('Peso corporal (Mediciones): registrá al menos un día');
     if(!hasCintura)errors.push('Cintura (Mediciones): registrá al menos un día');
     if(!hasSens)errors.push('Sensaciones (Mediciones): completá Energía, Hambre, Digestión y Estrés');
-    // ENTRENO: al menos un ejercicio registrado.
-    // En volumen/fuerza/intensidad se exige kg + reps. En base/rehabilitación NO se exige kg
-    // (suelen ser ejercicios técnicos o de peso corporal, sin carga), basta con reps.
+    // ENTRENO: al menos un ejercicio registrado en la semana.
+    // Volumen/fuerza/intensidad: exige kg + reps.
+    // Base/rehabilitación: las reps vienen precargadas, así que la señal de que entrenó es el KG.
+    //   Se exige al menos un ejercicio con kg cargado en toda la semana (siempre hay uno con carga real).
     const bloqueVal=String(cfg.bloque||'volumen').toLowerCase();
-    const exigeKg=(bloqueVal!=='base'&&bloqueVal!=='rehabilitacion');
+    const esBaseRehab=(bloqueVal==='base'||bloqueVal==='rehabilitacion');
     const allExes=Object.values(cfg.assign||{}).flat();
     const hasAnyExData=allExes.some(exId=>{
       const sesId=Object.entries(cfg.assign||{}).find(([s,ids])=>ids.includes(exId))?.[0];
       const r1=parseInt(sessionReps?.[sesId]?.[exId]?.r1)||0;
       const kg=sessionKg?.[sesId]?.[exId]||exes.find(e=>e.id===exId)?.kg||0;
-      return exigeKg?(r1>0&&kg>0):(r1>0);
+      return esBaseRehab?(kg>0):(r1>0&&kg>0);
     });
-    if(!hasAnyExData)errors.push(exigeKg?'Entrenamiento: registrá kg y reps de al menos un ejercicio':'Entrenamiento: registrá las reps de al menos un ejercicio');
+    if(!hasAnyExData)errors.push('Entrenamiento: registrá el kg de al menos un ejercicio');
     return errors;
   }
   function doSave(completeWeek){
