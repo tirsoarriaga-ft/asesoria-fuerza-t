@@ -690,6 +690,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,onRefresh,onBack
   const [showChecklist,setShowChecklist]=useState(false);
   const [showDiag,setShowDiag]=useState(false);
   const [linkCopiado,setLinkCopiado]=useState(false);
+  const [msgCopiado,setMsgCopiado]=useState(false);
   const [confirmando,setConfirmando]=useState(false);
   const [bloqueEdit,setBloqueEdit]=useState('');
   const [nutriEdit,setNutriEdit]=useState('');
@@ -703,6 +704,17 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,onRefresh,onBack
   function copiarLink(){
     try{navigator.clipboard.writeText(linkDiag);}catch(e){}
     setLinkCopiado(true);setTimeout(()=>setLinkCopiado(false),2000);
+  }
+  // Mensaje completo listo para WhatsApp (con nombre y link ya insertados). Tirso lo edita antes de mandar.
+  const primerNombre=String(name||'').trim().split(' ')[0]||'';
+  const mensajeDiag='¡Buenísimo '+primerNombre+', bienvenido/a a Fuerza T! 🙌 Ya te di el alta.\n\n'+
+    'Ahora que arrancamos, el primer paso es que te conozca un poco: cómo venís entrenando y cómo estás comiendo hoy. Con eso te armo la rutina y la alimentación por donde de verdad te conviene, y no a lo genérico.\n\n'+
+    'Te dejo tu link personal 👇\n'+linkDiag+'\n\n'+
+    'Son dos cuestionarios cortos (entrenamiento y alimentación), 5 minutitos. Respondé tranqui y con sinceridad — no hay respuestas buenas ni malas, es para entender tu punto de partida.\n\n'+
+    'Cuando lo completes me llega solo, y con eso preparo tu plan y te doy el acceso a la app. Cualquier duda me escribís por acá 💪';
+  function copiarMensaje(){
+    try{navigator.clipboard.writeText(mensajeDiag);}catch(e){}
+    setMsgCopiado(true);setTimeout(()=>setMsgCopiado(false),2000);
   }
   function confirmarDiag(bloqueFinal,nutriFinal){
     if(!aseIdDiag){alert('Este asesorado no tiene AsesoradoID en la hoja Asesorados.');return;}
@@ -1170,7 +1182,10 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,onRefresh,onBack
             :h('div',{style:{marginBottom:tieneDiag?'14px':'0',borderTop:'1px solid rgba(0,0,0,0.05)',paddingTop:'10px'}},
                 h('div',{style:{fontSize:'11px',color:'#666',marginBottom:'6px'}},'Link de diagnóstico para mandarle:'),
                 h('div',{style:{fontSize:'10px',color:'#999',background:'#F7F7F7',borderRadius:'6px',padding:'8px',wordBreak:'break-all',marginBottom:'6px'}},linkDiag),
-                h('button',{onClick:copiarLink,style:{background:linkCopiado?G:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},linkCopiado?'¡Copiado! ✓':'Copiar link')
+                h('div',{style:{display:'flex',gap:'6px'}},
+                  h('button',{onClick:copiarMensaje,style:{flex:1,background:msgCopiado?G:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},msgCopiado?'¡Mensaje copiado! ✓':'📋 Copiar mensaje completo'),
+                  h('button',{onClick:copiarLink,style:{background:linkCopiado?G:'#fff',color:linkCopiado?'#fff':'#666',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'8px 12px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},linkCopiado?'✓':'Solo link')
+                )
               ),
           // Si hay diagnóstico recibido, mostrar respuestas + recomendación + confirmar
           tieneDiag&&h('div',{style:{borderTop:'1px solid rgba(0,0,0,0.05)',paddingTop:'12px'}},
