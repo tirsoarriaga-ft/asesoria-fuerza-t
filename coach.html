@@ -2147,17 +2147,19 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   function pagoDeMes(aseId,mes){
     return (pagos||[]).find(function(p){return norm(p.AsesoradoID)===norm(aseId)&&String(p.MesNumero).trim()===String(mes).trim();});
   }
-  function marcarPagado(a,mes,monto){
+  function marcarPagado(a,mes,monto,fechaVenc){
     var aseId=a.AsesoradoID||'';
     if(!aseId){alert('Ese asesorado no tiene AsesoradoID.');return;}
     setMarcando(aseId);
-    var payload={action:'registrarPago',asesoradoId:aseId,asesorado:a.Asesorado||'',mesNumero:mes,fechaPago:new Date().toLocaleDateString('es-AR'),monto:monto||''};
+    // La fecha del pago = el día de cobro que le corresponde a ese mes (no la fecha de hoy).
+    var fechaPago=fechaVenc?fechaVenc.toLocaleDateString('es-AR'):new Date().toLocaleDateString('es-AR');
+    var payload={action:'registrarPago',asesoradoId:aseId,asesorado:a.Asesorado||'',mesNumero:mes,fechaPago:fechaPago,monto:monto||''};
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .finally(function(){setTimeout(function(){setMarcando(null);if(onRefresh)onRefresh();},1600);});
   }
   var activos=(maestra||[]).filter(function(a){return norm(a.Estado)!=='baja'&&String(a.Asesorado||'').trim();});
   var filas=activos.map(function(a){
-    var c=calcCobro(a.FechaInicio);
+    var c=calcCobro(a.FechaCobro||a.FechaInicio);
     var precio=parseFloat(String(a.PrecioCuota||'').replace(/[^\d.]/g,''))||0;
     var pagado=c?pagoDeMes(a.AsesoradoID,c.mesActual):null;
     var estado='sinfecha';
@@ -2248,7 +2250,7 @@ function CobrosPanel({maestra,pagos,onRefresh}){
           ),
           f.pagado
             ?h('span',{style:{fontSize:'11px',color:'#1D9E75',fontWeight:'700'}},'Al día')
-            :h('button',{onClick:function(){marcarPagado(f.a,f.c.mesActual,f.precio);},disabled:marcando===f.a.AsesoradoID,
+            :h('button',{onClick:function(){marcarPagado(f.a,f.c.mesActual,f.precio,f.c.vencMesActual);},disabled:marcando===f.a.AsesoradoID,
                 style:{background:marcando===f.a.AsesoradoID?'#ccc':'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:marcando===f.a.AsesoradoID?'default':'pointer'}},
                 marcando===f.a.AsesoradoID?'Guardando…':'Marcar pagado')
         )
@@ -2322,7 +2324,7 @@ function App(){
       }).map(a=>({
         Asesorado:a.Asesorado||'', AsesoradoID:a.AsesoradoID||'', Estado:a.Estado||'',
         Sexo:a.Sexo||'', Edad:a.Edad||'', Altura:a.Altura||'', PesoRef:a.PesoRef||'',
-        Objetivo:a.Objetivo||'', FechaInicio:a.FechaInicio||'', Nivel:a.Plan||''
+        Objetivo:a.Objetivo||'', FechaInicio:a.FechaInicio||'', FechaCobro:a.FechaCobro||'', Nivel:a.Plan||''
       }));
       const rutsCompletas=rutsEnriquecidas.concat(virtuales);
       // Videos sin corregir por asesorado (dedup por asesorado+ejercicio, más reciente)
