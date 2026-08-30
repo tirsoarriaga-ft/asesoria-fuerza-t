@@ -2116,6 +2116,123 @@ function RutinaBuilder({name,rutina,ejercicios,onClose,onSaved}){
     )
   );
 }
+// ── PESTAÑA COBROS: facturación integrada (vencimientos desde FechaInicio + registro de pagos) ──
+function CobrosPanel({maestra,pagos,onRefresh}){
+  var [marcando,setMarcando]=useState(null); // asesoradoId que se está marcando
+  var hoy=new Date(); hoy.setHours(0,0,0,0);
+  var norm=function(x){return String(x||'').trim().toLowerCase();};
+  // Parsear FechaInicio (formatos posibles: YYYY-MM-DD o DD/MM/YYYY)
+  function parseFecha(s){
+    s=String(s||'').trim(); if(!s)return null;
+    var m;
+    if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)){return new Date(parseInt(m[1]),parseInt(m[2])-1,parseInt(m[3]));}
+    if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)){return new Date(parseInt(m[3]),parseInt(m[2])-1,parseInt(m[1]));}
+    var d=new Date(s); return isNaN(d.getTime())?null:d;
+  }
+  // Calcular: en qué "mes de asesoría" está hoy y cuándo vence el mes actual.
+  // El día de cobro = día de FechaInicio. Cada mes calendario, ese día, vence una cuota.
+  function calcCobro(fInicio){
+    var fi=parseFecha(fInicio); if(!fi)return null;
+    fi.setHours(0,0,0,0);
+    // meses transcurridos desde el inicio (por mes calendario)
+    var meses=(hoy.getFullYear()-fi.getFullYear())*12+(hoy.getMonth()-fi.getMonth());
+    // el día de cobro de este mes ya pasó o no
+    var diaCobro=fi.getDate();
+    var vencMesActual=new Date(hoy.getFullYear(),hoy.getMonth(),diaCobro); vencMesActual.setHours(0,0,0,0);
+    // si el día de cobro de este mes todavía no llegó, el mes "en curso" es el anterior
+    var mesActual;
+    if(hoy>=vencMesActual){ mesActual=meses+1; } // ya venció este mes → está en el mes (meses+1)
+    else { mesActual=meses; var d2=new Date(hoy.getFullYear(),hoy.getMonth()-1,diaCobro); vencMesActual=d2; vencMesActual.setHours(0,0,0,0); }
+    if(mesActual<1)mesActual=1;
+    // próximo vencimiento (el siguiente día de cobro)
+    var prox=new Date(vencMesActual); prox.setMonth(prox.getMonth()+1);
+    var diasParaVencer=Math.round((prox-hoy)/(1000*60*60*24));
+    return {mesActual:mesActual,vencMesActual:vencMesActual,proxVenc:prox,diasParaVencer:diasParaVencer,diaCobro:diaCobro};
+  }
+  // ¿pagó el mes X?
+  function pagoDeMes(aseId,mes){
+    return (pagos||[]).find(function(p){return norm(p.AsesoradoID)===norm(aseId)&&String(p.MesNumero).trim()===String(mes).trim();});
+  }
+  function marcarPagado(a,mes,monto){
+    var aseId=a.AsesoradoID||'';
+    if(!aseId){alert('Ese asesorado no tiene AsesoradoID.');return;}
+    setMarcando(aseId);
+    var payload={action:'registrarPago',asesoradoId:aseId,asesorado:a.Asesorado||'',mesNumero:mes,fechaPago:new Date().toLocaleDateString('es-AR'),monto:monto||''};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .finally(function(){setTimeout(function(){setMarcando(null);if(onRefresh)onRefresh();},1400);});
+  }
+  // Armar la lista con estado de cobro
+  var activos=(maestra||[]).filter(function(a){return norm(a.Estado)!=='baja'&&String(a.Asesorado||'').trim();});
+  var filas=activos.map(function(a){
+    var c=calcCobro(a.FechaInicio);
+    var precio=parseFloat(String(a.PrecioCuota||'').replace(/[^\d.]/g,''))||0;
+    var pagado=c?pagoDeMes(a.AsesoradoID,c.mesActual):null;
+    var estado='sinfecha';
+    if(c){
+      if(pagado)estado='aldia';
+      else if(c.diasParaVencer<0)estado='vencido';
+      else if(c.diasParaVencer<=5)estado='pronto';
+      else estado='pendiente';
+    }
+    return {a:a,c:c,precio:precio,pagado:pagado,estado:estado};
+  });
+  // Ordenar: vencidos → vence pronto → pendiente → al día → sin fecha
+  var orden={vencido:0,pronto:1,pendiente:2,aldia:3,sinfecha:4};
+  filas.sort(function(x,y){return (orden[x.estado]-orden[y.estado])||String(x.a.Asesorado).localeCompare(String(y.a.Asesorado));});
+  var EST={
+    vencido:{l:'Vencido',c:'#EF4444',bg:'#FEF2F2'},
+    pronto:{l:'Vence pronto',c:'#D97706',bg:'#FFFBEB'},
+    pendiente:{l:'Al día',c:'#1D9E75',bg:'#F0FDF4'},
+    aldia:{l:'Pagado',c:'#1D9E75',bg:'#F0FDF4'},
+    sinfecha:{l:'Sin fecha inicio',c:'#999',bg:'#F7F7F7'}
+  };
+  // Totales
+  var totalMes=filas.reduce(function(a,f){return a+(f.pagado?f.precio:0);},0);
+  var pendienteMes=filas.reduce(function(a,f){return a+((!f.pagado&&f.estado!=='sinfecha')?f.precio:0);},0);
+  var nVencidos=filas.filter(function(f){return f.estado==='vencido';}).length;
+  return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'12px 12px 90px'}},
+    h('div',{style:{marginBottom:'12px'}},
+      h('div',{style:{fontSize:'20px',fontWeight:'800'}},'Cobros'),
+      h('div',{style:{fontSize:'12px',color:'#999'}},activos.length+' asesorados activos'+(nVencidos>0?(' · '+nVencidos+' vencido'+(nVencidos>1?'s':'')):''))
+    ),
+    // Resumen
+    h('div',{style:{display:'flex',gap:'8px',marginBottom:'14px'}},
+      h('div',{style:{flex:1,background:'#F0FDF4',borderRadius:'10px',padding:'12px'}},
+        h('div',{style:{fontSize:'10px',color:'#1D9E75',fontWeight:'700',textTransform:'uppercase'}},'Cobrado este mes'),
+        h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#111'}},'$'+totalMes.toLocaleString('es-AR'))
+      ),
+      h('div',{style:{flex:1,background:'#FEF2F2',borderRadius:'10px',padding:'12px'}},
+        h('div',{style:{fontSize:'10px',color:'#EF4444',fontWeight:'700',textTransform:'uppercase'}},'Por cobrar'),
+        h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#111'}},'$'+pendienteMes.toLocaleString('es-AR'))
+      )
+    ),
+    filas.length===0&&h('div',{style:{textAlign:'center',padding:'40px 20px',color:'#999'}},'No hay asesorados activos'),
+    filas.map(function(f){
+      var e=EST[f.estado];
+      var venceStr=f.c?f.c.proxVenc.toLocaleDateString('es-AR',{day:'numeric',month:'short'}):'—';
+      return h('div',{key:f.a.AsesoradoID||f.a.Asesorado,style:{background:'#fff',border:'1px solid rgba(0,0,0,0.08)',borderRadius:'12px',padding:'13px',marginBottom:'8px'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}},
+          h('div',null,
+            h('div',{style:{fontSize:'15px',fontWeight:'700',color:'#111'}},f.a.Asesorado),
+            h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},(f.a.Plan||'—')+(f.precio?(' · $'+f.precio.toLocaleString('es-AR')):''))
+          ),
+          h('span',{style:{fontSize:'10px',fontWeight:'700',color:e.c,background:e.bg,padding:'3px 8px',borderRadius:'20px'}},e.l)
+        ),
+        f.estado!=='sinfecha'&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+          h('div',{style:{fontSize:'11px',color:'#666'}},
+            f.pagado?('✓ Mes '+f.c.mesActual+' pagado'):('Mes '+f.c.mesActual+' · vence '+venceStr)
+          ),
+          f.pagado
+            ?h('span',{style:{fontSize:'11px',color:'#1D9E75',fontWeight:'700'}},'Al día')
+            :h('button',{onClick:function(){marcarPagado(f.a,f.c.mesActual,f.precio);},disabled:marcando===f.a.AsesoradoID,
+                style:{background:marcando===f.a.AsesoradoID?'#ccc':'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},
+                marcando===f.a.AsesoradoID?'Guardando…':'Marcar pagado')
+        )
+      );
+    })
+  );
+}
+
 function App(){
   const [unlocked,setUnlocked]=useState(()=>sessionStorage.getItem('coach_ok')==='1');
   const [loading,setLoading]=useState(false);
@@ -2124,6 +2241,8 @@ function App(){
   const [videosPend,setVideosPend]=useState({}); // {nombreLower: cantidad} de videos sin corregir
   const [ejercicios,setEjercicios]=useState([]); // hoja Ejercicios para el constructor de rutinas
   const [diagnosticos,setDiagnosticos]=useState([]); // hoja Diagnosticos (Fase 3C)
+  const [pagos,setPagos]=useState([]); // hoja Pagos (facturación)
+  const [maestra,setMaestra]=useState([]); // hoja Asesorados (para cobros: FechaInicio, PrecioCuota, Plan)
   const [decisiones,setDecisiones]=useState([]);
   const [selected,setSelected]=useState(null);
   const [error,setError]=useState(null);
@@ -2138,8 +2257,9 @@ function App(){
       fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=videos').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=ejercicios').then(r=>r.json()).catch(()=>[]),
-      fetch(SCRIPT_URL+'?action=diagnosticos').then(r=>r.json()).catch(()=>[])
-    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags])=>{
+      fetch(SCRIPT_URL+'?action=diagnosticos').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=pagos').then(r=>r.json()).catch(()=>[])
+    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags,pagosData])=>{
       const grouped={};
       (reportes||[]).forEach(row=>{const name=String(row.Asesorado||'').trim();if(!name)return;if(!grouped[name])grouped[name]=[];grouped[name].push(row);});
       Object.values(grouped).forEach(w=>w.sort((a,b)=>String(a.SemanID||'').localeCompare(String(b.SemanID||''))));
@@ -2192,6 +2312,8 @@ function App(){
       setVideosPend(pend);
       setEjercicios(ejs||[]);
       setDiagnosticos(diags||[]);
+      setPagos(pagosData||[]);
+      setMaestra(asesorados||[]);
       setData(grouped);setRutinas(rutsCompletas);setDecisiones(decs||[]);
     }).catch(()=>setError('Error al cargar datos.')).finally(()=>setLoading(false));
   };
@@ -2209,10 +2331,11 @@ function App(){
       appTab==='lista'&&h(ClientList,{data,rutinas,decisiones,videosPend,onSelect:setSelected,onRefresh:loadData}),
       appTab==='vids'&&h(VideosGlobal,{onSelect:setSelected}),
       appTab==='sem'&&h(SemanaPanel,{data,rutinas}),
-      appTab==='aud'&&h(AuditoriaPanel,{data,rutinas,decisiones})
+      appTab==='aud'&&h(AuditoriaPanel,{data,rutinas,decisiones}),
+      appTab==='cobros'&&h(CobrosPanel,{maestra,pagos,onRefresh:loadData})
     ),
     h('div',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'#fff',borderTop:'1px solid rgba(0,0,0,0.08)',display:'flex',zIndex:20}},
-      [{v:'lista',l:'Asesorados',ic:'👥'},{v:'vids',l:'Videos',ic:'🎬'},{v:'sem',l:'Semana',ic:'📅'},{v:'aud',l:'Auditoria',ic:'📊'}].map(t=>
+      [{v:'lista',l:'Asesorados',ic:'👥'},{v:'vids',l:'Videos',ic:'🎬'},{v:'sem',l:'Semana',ic:'📅'},{v:'aud',l:'Auditoria',ic:'📊'},{v:'cobros',l:'Cobros',ic:'💰'}].map(t=>
         h('button',{key:t.v,onClick:()=>setAppTab(t.v),style:{flex:1,padding:'10px 2px 14px',fontSize:'10px',background:'none',border:'none',borderTop:appTab===t.v?'2px solid #111':'2px solid transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',color:appTab===t.v?'#111':'#999',fontWeight:appTab===t.v?'700':'400'}},h('span',{style:{fontSize:'18px'}},t.ic),t.l)
       )
     )
