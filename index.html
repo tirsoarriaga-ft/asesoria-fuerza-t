@@ -2867,10 +2867,16 @@ function App(){
       setSessionKg(newSK);
       localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(normSK));
     }
+    // Resetear los guardianes ANTES de limpiar, para que el auto-save no dispare con datos
+    // viejos y los escriba en la semana nueva (causaba que la sem nueva arranque con datos de la anterior).
+    dataLoaded.current=false;
+    draftReady.current=false;
     localStorage.setItem(`ase_${user}_wknum`,String(nextNum));
     localStorage.removeItem(`ase_${user}_draft_sem_${nextNum}`);
     setWk(getWkForNum(user,nextNum));
     setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
+    // Reactivar los guardianes tras un breve delay, cuando la limpieza ya se aplicó en React.
+    setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},600);
   }
   function prevWeek(){
     const curNum=wk.num||1;
