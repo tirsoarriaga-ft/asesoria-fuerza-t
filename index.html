@@ -850,9 +850,13 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const canIncreaseKg=ex=>{
     if(!hasProgression)return false;
     if(bloque==='fuerza'){
-      // fuerza: sube c/2 semanas sin importar reps
-      const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${activeSess}_${ex.id}`))||0;
-      return wkNum>=lastUp+2;
+      // En fuerza: el PRINCIPAL sube por protocolo (cada 2 sem). Accesorios/finalizadores por reps (doble progresión).
+      const rol=rolFuerza(ex);
+      if(rol==='principal'){
+        const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${activeSess}_${ex.id}`))||0;
+        return wkNum>=lastUp+2;
+      }
+      return true; // accesorio/finalizador: sube al alcanzar el techo de reps
     }
     return true; // volumen, intensidad, man: sube al alcanzar techo
   };
@@ -1172,7 +1176,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   ),
                   prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},'Sem. ant.: '+prev.reps+' × '+prev.kg+' kg')
                 ),
-                !(bloque==='fuerza'&&esDia1Fuerza&&rolFuerza(ex)==='principal')&&h('div',{style:{textAlign:'right'}},
+                !(bloque==='fuerza'&&rolFuerza(ex)==='principal')&&h('div',{style:{textAlign:'right'}},
                   editing
                     ?h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('input',{type:'text',inputMode:'decimal',value:kgVal,onChange:e=>setKgVal(e.target.value),onKeyDown:e=>e.key==='Enter'&&doSaveKg(ex,kgVal),onBlur:()=>doSaveKg(ex,kgVal),autoFocus:true,style:{width:'64px',textAlign:'center',fontSize:'18px',fontWeight:'700',padding:'4px 6px',border:'2px solid '+G,borderRadius:'6px',color:'#111'}}),h('span',{style:{fontSize:'13px',color:'#999'}},'kg'))
                     :getKg(ex)!==undefined
@@ -2678,14 +2682,17 @@ function App(){
     //   Se exige al menos un ejercicio con kg cargado en toda la semana (siempre hay uno con carga real).
     const bloqueVal=String(cfg.bloque||'volumen').toLowerCase();
     const esBaseRehab=(bloqueVal==='base'||bloqueVal==='rehabilitacion');
-    const allExes=Object.values(cfg.assign||{}).flat();
-    const hasAnyExData=allExes.some(exId=>{
-      const sesId=Object.entries(cfg.assign||{}).find(([s,ids])=>ids.includes(exId))?.[0];
-      const r1=parseInt(sessionReps?.[sesId]?.[exId]?.r1)||0;
-      const kg=sessionKg?.[sesId]?.[exId]||exes.find(e=>e.id===exId)?.kg||0;
-      return esBaseRehab?(kg>0):(r1>0&&kg>0);
+    // Recorrer todas las sesiones y ejercicios buscando datos registrados.
+    // Base/rehab: basta con que UN ejercicio tenga kg. Otros bloques: kg + reps.
+    let hasAnyExData=false;
+    Object.entries(cfg.assign||{}).forEach(([sesId,ids])=>{
+      (ids||[]).flat().forEach(exId=>{
+        const r1=parseInt(sessionReps?.[sesId]?.[exId]?.r1)||0;
+        const kg=parseFloat(sessionKg?.[sesId]?.[exId]||exes.find(e=>e.id==exId)?.kg||0)||0;
+        if(esBaseRehab?(kg>0):(r1>0&&kg>0))hasAnyExData=true;
+      });
     });
-    if(!hasAnyExData)errors.push('Entrenamiento: registrá el kg de al menos un ejercicio');
+    if(!hasAnyExData)errors.push(esBaseRehab?'Entrenamiento: registrá el kg de al menos un ejercicio':'Entrenamiento: registrá kg y reps de al menos un ejercicio');
     return errors;
   }
   function doSave(completeWeek){
