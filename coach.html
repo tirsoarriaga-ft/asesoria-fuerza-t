@@ -2287,8 +2287,9 @@ function App(){
       fetch(SCRIPT_URL+'?action=videos').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=ejercicios').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=diagnosticos').then(r=>r.json()).catch(()=>[]),
-      fetch(SCRIPT_URL+'?action=pagos').then(r=>r.json()).catch(()=>[])
-    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags,pagosData])=>{
+      fetch(SCRIPT_URL+'?action=pagos').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=dietas').then(r=>r.json()).catch(()=>[])
+    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags,pagosData,dietasData])=>{
       const grouped={};
       (reportes||[]).forEach(row=>{const name=String(row.Asesorado||'').trim();if(!name)return;if(!grouped[name])grouped[name]=[];grouped[name].push(row);});
       Object.values(grouped).forEach(w=>w.sort((a,b)=>String(a.SemanID||'').localeCompare(String(b.SemanID||''))));
@@ -2296,9 +2297,22 @@ function App(){
       const norm=x=>String(x||'').trim().toLowerCase();
       const fichas={};
       (asesorados||[]).forEach(a=>{fichas[norm(a.Asesorado)]=a;});
+      // Índice de Dietas por AsesoradoID y por nombre (para traer el Template, que vive en Dietas)
+      const dietaPorId={}, dietaPorNombre={};
+      (dietasData||[]).forEach(d=>{
+        const id=norm(d.AsesoradoID); const nm=norm(d.Asesorado);
+        if(id)dietaPorId[id]=d;
+        if(nm)dietaPorNombre[nm]=d;
+      });
+      const templateDe=(r,f)=>{
+        const id=norm((f&&f.AsesoradoID)||r.AsesoradoID);
+        const nm=norm(r.Asesorado);
+        const d=(id&&dietaPorId[id])||dietaPorNombre[nm]||null;
+        return d&&String(d.Template||'').trim()!=='' ? d.Template : (r.Template||'');
+      };
       const rutsEnriquecidas=(ruts||[]).map(r=>{
         const f=fichas[norm(r.Asesorado)];
-        if(!f)return r; // no está en la maestra → queda como estaba (fallback)
+        if(!f)return Object.assign({},r,{Template:templateDe(r,null)}); // fallback + template de dieta
         const pref=(campoFicha,campoRut)=>{
           if(f[campoFicha]!==undefined&&String(f[campoFicha]).trim()!=='')return f[campoFicha];
           return r[campoRut];
@@ -2312,7 +2326,8 @@ function App(){
           FechaInicio:pref('FechaInicio','FechaInicio'),
           Nivel:pref('Plan','Nivel'),
           Estado:f.Estado||'',
-          AsesoradoID:f.AsesoradoID||''
+          AsesoradoID:f.AsesoradoID||'',
+          Template:templateDe(r,f)
         });
       });
       // Asesorados de la maestra que NO tienen fila en Rutinas todavía (recién dados de alta).
@@ -2327,7 +2342,7 @@ function App(){
       }).map(a=>({
         Asesorado:a.Asesorado||'', AsesoradoID:a.AsesoradoID||'', Estado:a.Estado||'',
         Sexo:a.Sexo||'', Edad:a.Edad||'', Altura:a.Altura||'', PesoRef:a.PesoRef||'',
-        Objetivo:a.Objetivo||'', FechaInicio:a.FechaInicio||'', FechaCobro:a.FechaCobro||'', Nivel:a.Plan||''
+        Objetivo:a.Objetivo||'', FechaInicio:a.FechaInicio||'', FechaCobro:a.FechaCobro||'', Nivel:a.Plan||'', Template:templateDe({Asesorado:a.Asesorado,AsesoradoID:a.AsesoradoID},a)
       }));
       const rutsCompletas=rutsEnriquecidas.concat(virtuales);
       // Videos sin corregir por asesorado (dedup por asesorado+ejercicio, más reciente)
