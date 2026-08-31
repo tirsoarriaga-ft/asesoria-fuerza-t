@@ -309,7 +309,19 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
     if(!weeks||!weeks.length)return false; // sin reportes no puede estar "sin revisar"
     const lat=weeks[weeks.length-1];
     const semId=lat?.SemanID||'';
-    if(!semsRecientes.includes(semId))return false;
+    // "Sin revisar" = reportó RECIENTEMENTE (por fecha real, últimos ~12 días) y no le hice el checkpoint.
+    // Se usa la fecha del reporte (no el número de semana), porque cada asesorado está en su propia semana.
+    const parseF=s=>{
+      s=String(s||'').trim(); let m;
+      if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))return new Date(+m[3],+m[2]-1,+m[1]);
+      if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))return new Date(+m[1],+m[2]-1,+m[3]);
+      const d=new Date(s); return isNaN(d.getTime())?null:d;
+    };
+    const fRep=parseF(lat?.Fecha);
+    if(fRep){
+      const diasDesde=Math.round((new Date()-fRep)/(1000*60*60*24));
+      if(diasDesde>12)return false; // reporte viejo → no es "de esta semana"
+    }
     return !hasCPCheck(name,semId);
   });
   const statusBg={red:'#FEF2F2',yellow:'#FFFBEB',green:'#F0FDF4',grey:'#F9F9F9'};
