@@ -309,19 +309,7 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
     if(!weeks||!weeks.length)return false; // sin reportes no puede estar "sin revisar"
     const lat=weeks[weeks.length-1];
     const semId=lat?.SemanID||'';
-    // "Sin revisar" = reportó RECIENTEMENTE (por fecha real, últimos ~12 días) y no le hice el checkpoint.
-    // Se usa la fecha del reporte (no el número de semana), porque cada asesorado está en su propia semana.
-    const parseF=s=>{
-      s=String(s||'').trim(); let m;
-      if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))return new Date(+m[3],+m[2]-1,+m[1]);
-      if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))return new Date(+m[1],+m[2]-1,+m[3]);
-      const d=new Date(s); return isNaN(d.getTime())?null:d;
-    };
-    const fRep=parseF(lat?.Fecha);
-    if(fRep){
-      const diasDesde=Math.round((new Date()-fRep)/(1000*60*60*24));
-      if(diasDesde>12)return false; // reporte viejo → no es "de esta semana"
-    }
+    // "Sin revisar" = reportó (alguna vez) y no le hice el checkpoint. Histórico, no solo reciente.
     return !hasCPCheck(name,semId);
   });
   const statusBg={red:'#FEF2F2',yellow:'#FFFBEB',green:'#F0FDF4',grey:'#F9F9F9'};
@@ -371,6 +359,14 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
         const redAlerts=alerts.filter(a=>a.lvl==='red').length;
         const yelAlerts=alerts.filter(a=>a.lvl==='yellow').length;
         const hasCPA=hasCPCheck(name,lat?.SemanID||'');
+        const reportoAlguna=lat&&lat.SemanID; // tiene al menos un reporte
+        const sinRevisar=reportoAlguna&&!hasCPA; // reportó y no le hice checkpoint (histórico)
+        const nVideos=(videosPend&&videosPend[name.trim().toLowerCase()])||0;
+        // Faltan datos: chequea peso, cintura y datos personales de identidad (de la ficha/rutina)
+        const faltaPeso=!lat?.Peso;
+        const faltaCintura=!lat?.Cintura;
+        const faltaDatosPers=!rutina?.Sexo||!rutina?.Edad||!rutina?.Altura;
+        const faltanDatos=faltaPeso||faltaCintura||faltaDatosPers;
         return h('div',{key:name,onClick:()=>onSelect(name),
           style:{...card,cursor:'pointer',background:statusBg[status]||'#fff',borderLeft:'3px solid '+(status==='red'?R:status==='yellow'?O:status==='green'?G:'#E0E0E0')}},
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}},
@@ -378,10 +374,14 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
               h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#111'}},name),
               h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},
                 lat?.Semana?h('span',{style:{color:hasCPA?'#999':O,fontWeight:hasCPA?'400':'700'}},lat.Semana):'Sin datos',
-                ' · ',tmpl,
-                !hasCPA&&h('span',{style:{marginLeft:'6px',background:O,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},'Sin revisar'),
-                esCP&&h('span',{style:{marginLeft:'4px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},'CP'),
-                (videosPend&&videosPend[name.trim().toLowerCase()]>0)&&h('span',{style:{marginLeft:'4px',background:'#4338CA',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'1px 6px',borderRadius:'20px'}},'🎬 '+videosPend[name.trim().toLowerCase()]+' sin corregir')
+                ' · ',tmpl
+              ),
+              // Los 3 carteles
+              h('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px',marginTop:'5px'}},
+                sinRevisar&&h('span',{style:{background:O,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'20px'}},'Sin revisar'),
+                nVideos>0&&h('span',{style:{background:'#4338CA',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'20px'}},'🎬 '+nVideos+' sin corregir'),
+                faltanDatos&&h('span',{style:{background:'#B45309',color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'20px'}},'⚠️ Faltan datos'),
+                esCP&&h('span',{style:{background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'20px'}},'CP')
               )
             ),
             h('div',{style:{textAlign:'right',display:'flex',gap:'4px',alignItems:'center'}},
@@ -519,8 +519,8 @@ function calcDiagnostico(rutina, weeks){
   // Si supera criterio → calcular cuanto bajar
   if(superaCriterio&&cintura>0){
     var cmABajar=cintura-cinturObj;
-    // ~1.5kg grasa por cm de cintura (rango 1-2, usamos conservador)
-    var kgGrasaPerder=cmABajar*1.5;
+    // ~1.0 kg de grasa por cm de cintura (ajustado a evidencia: ~0.9-1.1 kg peso por cm)
+    var kgGrasaPerder=cmABajar*1.0;
     // %grasa objetivo según sexo
     var pctGrasaObj=sexo==='M'?14:24;
     var pesoObj=masaMagra/(1-pctGrasaObj/100);
@@ -704,6 +704,15 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,onRefresh,onBack
   const [linkCopiado,setLinkCopiado]=useState(false);
   const [msgCopiado,setMsgCopiado]=useState(false);
   const [confirmando,setConfirmando]=useState(false);
+  const [borrando,setBorrando]=useState(false);
+  const [confirmBorrar,setConfirmBorrar]=useState(false);
+  function eliminarAsesorado(){
+    const aseId=(rutina&&rutina.AsesoradoID)||(diagnostico&&diagnostico.AsesoradoID)||'';
+    setBorrando(true);
+    const payload={action:'eliminarAsesorado',asesoradoId:aseId,asesorado:name};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .finally(function(){setTimeout(function(){setBorrando(false);if(onRefresh)onRefresh();if(onBack)onBack();},1600);});
+  }
   const [bloqueEdit,setBloqueEdit]=useState('');
   const [nutriEdit,setNutriEdit]=useState('');
   // Link de diagnóstico para este asesorado
@@ -1377,7 +1386,20 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,onRefresh,onBack
               :'Próximo: sem '+(Math.ceil(semanasEnBloque/checkpointFreq)*checkpointFreq)+' del bloque (cada '+checkpointFreq+' sem)'
           )
         ),
-        h(ArbolCheckpoint,null)
+        h(ArbolCheckpoint,null),
+        // Eliminar asesorado (zona de peligro, con doble confirmación)
+        h('div',{style:{marginTop:'24px',paddingTop:'16px',borderTop:'1px solid rgba(0,0,0,0.08)'}},
+          !confirmBorrar
+            ?h('button',{onClick:function(){setConfirmBorrar(true);},style:{background:'none',border:'1px solid #EF4444',color:'#EF4444',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer',width:'100%'}},'🗑️ Eliminar asesorado')
+            :h('div',{style:{background:'#FEF2F2',borderRadius:'10px',padding:'14px'}},
+                h('div',{style:{fontSize:'12px',color:'#991B1B',fontWeight:'700',marginBottom:'4px'}},'¿Eliminar a '+name+' definitivamente?'),
+                h('div',{style:{fontSize:'11px',color:'#B91C1C',marginBottom:'10px',lineHeight:'1.4'}},'Esto borra su fila de la hoja Asesorados. Sus reportes y otros datos quedan en el sheet pero el asesorado desaparece del panel. Es irreversible.'),
+                h('div',{style:{display:'flex',gap:'8px'}},
+                  h('button',{onClick:eliminarAsesorado,disabled:borrando,style:{flex:1,background:borrando?'#ccc':'#EF4444',color:'#fff',border:'none',borderRadius:'8px',padding:'9px',fontSize:'12px',fontWeight:'700',cursor:borrando?'default':'pointer'}},borrando?'Eliminando…':'Sí, eliminar'),
+                  h('button',{onClick:function(){setConfirmBorrar(false);},disabled:borrando,style:{flex:1,background:'#fff',color:'#666',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'9px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Cancelar')
+                )
+              )
+        )
       )
     )
   );
