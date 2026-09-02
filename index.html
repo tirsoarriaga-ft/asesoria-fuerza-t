@@ -2874,6 +2874,10 @@ function App(){
     draftReady.current=false;
     localStorage.setItem(`ase_${user}_wknum`,String(nextNum));
     localStorage.removeItem(`ase_${user}_draft_sem_${nextNum}`);
+    // Limpiar el baseProto de la semana nueva (las respuestas de cumplimiento no se arrastran).
+    const nextWkId=getWkForNum(user,nextNum).id;
+    ['A','B','C','D','E'].forEach(function(s){try{localStorage.removeItem(`ase_${user}_baseProto_${nextWkId}_${s}`);}catch(e){}});
+    setBaseProto({});
     setWk(getWkForNum(user,nextNum));
     setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
     // Reactivar los guardianes tras un breve delay, cuando la limpieza ya se aplicó en React.
