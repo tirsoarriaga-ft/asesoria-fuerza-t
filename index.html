@@ -533,14 +533,14 @@ function AjustarSemana({onClose}){
 
 // ── MI BLOQUE ─────────────────────────────────────────────────────────
 const BLOQUE_INFO={
-  'volumen':{titulo:'Bloque Triple Progresion',sub:'rep → kg → series',texto:'Cada semana intentar superar la marca anterior. Cuando llegas al techo, el peso sube solo. En deficit: cintura baja, peso baja lento (0.3-0.5 kg cada 2 sem), la cintura no sube. En superavit: peso sube lento (0.1-0.3 kg/sem), cintura estable. Si la cintura sube: revisar el cumplimiento de porciones. Sin las 4 comidas no hay crecimiento.'},
-  'fuerza':{titulo:'Bloque Fuerza',sub:'tension maxima',texto:'La primera sesion del bloque establecés tu referencia (test de RM). De ahí la app calcula tus kg del ejercicio principal por porcentaje: semanas 1-2 al 80%, 3-4 al 85%, 5-6 al 90%. Los accesorios y finalizadores progresan por reps (doble progresion). El sueno es clave — sin descanso el sistema nervioso no responde. Necesitas energia disponible antes de cada sesion. Sin las 4 comidas no hay fuerza.'},
-  'intensidad':{titulo:'Bloque Intensidad',sub:'eficiencia neuromuscular',texto:'Velocidad de ejecucion antes que peso. En deficit: cintura baja, peso puede quedarse igual — eso es buena senal. Contexto de vida estable es clave, este bloque no tolera estres acumulado. Sin buen descanso, saciedad y recuperacion optimas, no hay tal intensidad.'},
+  'volumen':{titulo:'Bloque Volumen',sub:'triple progresion',texto:'🎯 Objetivo: encontrar la maxima cantidad de series RECUPERABLES por sesion.\n🏋️ Sesion: 1-2 series de calentamiento + series efectivas (al fallo o cerca).\n📈 Progresion triple: la tecnica no se negocia, sesion tras sesion lograr mas reps con el mismo peso, y al llegar al techo la app te sugiere/sube el peso automaticamente.'},
+  'fuerza':{titulo:'Bloque Fuerza',sub:'tension maxima',texto:'🎯 Objetivo: experimentar cargas pesadas que solo permiten pocas reps en ejercicios basicos como sentadilla, peso muerto, etc (tecnica compleja pero se mueve mucho peso).\n🏋️ Sesion: el primer ejercicio de cada sesion se hace a protocolo fijo (series-reps-kg fijos). Los demas complementan y se hacen normales (series de aproximacion + efectivas).\n📈 Progresion: el primer ejercicio progresa por protocolo (lee bien que toca cada semana). El resto: sin perder tecnica, sesion tras sesion mas reps con el mismo peso, y al llegar al techo la app sugiere/sube el peso.'},
+  'intensidad':{titulo:'Bloque Intensidad',sub:'fallo real',texto:'🎯 Objetivo: exprimir la tecnica y el fallo real del musculo al 100%.\n🏋️ Sesion: foco en mover bien el peso, con control y buena tecnica. Se usan tecnicas de intensidad en la serie efectiva.\n📈 Progresion: la tecnica no se negocia, sesion tras sesion lograr mas reps con el mismo peso, y al llegar al techo la app sugiere/sube la carga.'},
   'man':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Mismos pesos, misma nutricion. Peso y cintura estables (+/-0.5 kg/sem). Si el contexto de vida mejora, es momento de evaluar un bloque activo.'},
   'mantenimiento':{titulo:'Bloque Mantenimiento',sub:'sostener lo ganado',texto:'Mismos pesos, misma nutricion. Peso y cintura estables (+/-0.5 kg/sem). Si el contexto de vida mejora, es momento de evaluar un bloque activo.'},
-  'base':{titulo:'Bloque Base',sub:'calibracion del esfuerzo',texto:'Tecnica antes que peso. Las series y kg son fijos — lo que cuenta es que cada rep salga controlada. Nutricion estable, 4 comidas con alimentos de calidad (que recomienda la app). El peso y la cintura no son el foco por ahora. Pero si que no pases hambre, que estes con energia, y mejores tu descanso.'},
-  'rehabilitacion':{titulo:'Bloque Rehabilitacion',sub:'recuperacion controlada',texto:'Interfaz manual: registrás kg y reps de cada ejercicio, sin progresion automatica. El objetivo es recuperar sin forzar. El feedback lo da el coach en los checkpoints, no la app. Priorizá calidad de movimiento y ausencia de dolor por encima de cualquier carga.'},
-  'conexion':{titulo:'Bloque Base',sub:'calibracion del esfuerzo',texto:'Tecnica antes que peso. Las series y kg son fijos — lo que cuenta es que cada rep salga controlada. Nutricion estable, 4 comidas con alimentos de calidad (que recomienda la app). El peso y la cintura no son el foco por ahora. Pero si que no pases hambre, que estes con energia, y mejores tu descanso.'},
+  'base':{titulo:'Bloque Base',sub:'tecnica y calibracion',texto:'🎯 Objetivo: construir una base solida de tecnica-control y encontrar la carga (kg) de cada ejercicio.\n🏋️ Sesion: 1 serie de aproximacion al 50% + 3 series efectivas con reps controladas. La tecnica manda, no el peso.\n📈 Progresion: se sube kg UNICAMENTE si se logro el protocolo (ej. "3x9") con tecnica perfecta.'},
+  'rehabilitacion':{titulo:'Bloque Rehabilitacion',sub:'recuperacion controlada',texto:'🎯 Objetivo: recuperar tecnica-control y funcion de la zona, encontrando cargas seguras.\n🏋️ Sesion: 1 serie de aproximacion al 50% + 3 series efectivas con reps controladas. La tecnica y la ausencia de dolor mandan.\n📈 Progresion: se avanza UNICAMENTE si NO hay dolor. El no-dolor es el criterio. Si algo molesta, avisá al coach.'},
+  'conexion':{titulo:'Bloque Base',sub:'tecnica y calibracion',texto:'🎯 Objetivo: construir una base solida de tecnica-control y encontrar la carga (kg) de cada ejercicio.\n🏋️ Sesion: 1 serie de aproximacion al 50% + 3 series efectivas con reps controladas. La tecnica manda, no el peso.\n📈 Progresion: se sube kg UNICAMENTE si se logro el protocolo (ej. "3x9") con tecnica perfecta.'},
   'health':{titulo:'Bloque Restauracion',sub:'recuperacion activa',texto:'Haces exactamente lo pautado, ni mas ni menos. Come regular, sin restriccion. La energia deberia mejorar semana a semana — si no mejora, hay que investigar que la bloquea.'},
   'deporte':{titulo:'Bloque Deporte',sub:'rendimiento especifico',texto:'Protocolo fijo: pesos, reps y descansos exactos. Carbohidrato antes de entrenar siempre. Sueno y recuperacion entre sesiones son mas importantes que en cualquier otro bloque.'},
 };
@@ -653,13 +653,13 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     }
   }
   const BLOQUES={
-    volumen:    {label:'Volumen',        color:'#1D9E75',emoji:'📈',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. Cada 2 semanas la app te agregará una serie efectiva extra.'},
-    intensidad: {label:'Intensidad',     color:'#378ADD',emoji:'🏋️',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. En la última serie de cada ejercicio, aplicá una técnica de intensidad.'},
-    fuerza:     {label:'Fuerza',         color:'#DC2626',emoji:'💪',hint:'La primera sesion cargás un test de RM y la app fija tu referencia. El ejercicio principal sigue un protocolo por porcentaje (80/85/90% según la semana). Los accesorios y finalizadores progresan por reps.'},
-    man:        {label:'Mantenimiento',  color:'#6B7280',emoji:'🔄',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión.'},
-    base:       {label:'Progresión Base',color:'#F59E0B',emoji:'🌱',hint:'Las series y reps son fijas. Los kg los elegís vos: el peso no debe generarte dolor, pérdida de técnica ni desconfianza. Solo cuando lo sentís fácil, agregás peso — pero no series ni reps.'},
-    rehabilitacion:{label:'Rehabilitación',color:'#0EA5E9',emoji:'🩹',hint:'La semana 1 del bloque anotás reps y kg de cada ejercicio; eso fija la pauta. Las semanas siguientes las reps quedan fijas y solo cargás el kg, confirmando si completaste con buena técnica y sin dolor.'},
-    deporte:    {label:'Deporte',        color:'#8B5CF6',emoji:'🏀',hint:'El protocolo series-reps-kg ya está pautado. El objetivo es respetar lo indicado por la app y ejecutar cada rep a máxima velocidad. Si perdés velocidad, frenás la serie. Si te quedan series, podés sacar peso.'},
+    volumen:    {label:'Volumen',        color:'#1D9E75',emoji:'📈',hint:'🎯 Encontrar la máxima cantidad de series RECUPERABLES por sesión.\n🏋️ 1-2 series de calentamiento + series efectivas (al fallo o cerca).\n📈 Triple progresión: la técnica no se negocia, sesión tras sesión más reps con el mismo peso, y al llegar al techo la app te sube el peso.'},
+    intensidad: {label:'Intensidad',     color:'#378ADD',emoji:'🏋️',hint:'🎯 Exprimir la técnica y el fallo real del músculo al 100%.\n🏋️ Foco en mover bien el peso, con control. Se usan técnicas de intensidad en la serie efectiva.\n📈 La técnica no se negocia, sesión tras sesión más reps con el mismo peso, y al llegar al techo la app sube la carga.'},
+    fuerza:     {label:'Fuerza',         color:'#DC2626',emoji:'💪',hint:'🎯 Cargas pesadas que solo permiten pocas reps en básicos (sentadilla, peso muerto).\n🏋️ El primer ejercicio va a protocolo fijo (series-reps-kg). Los demás complementan (aproximación + efectivas).\n📈 El primero progresa por protocolo (leé qué toca cada semana). El resto: más reps sin perder técnica, y al techo la app sube el peso.'},
+    man:        {label:'Mantenimiento',  color:'#6B7280',emoji:'🔄',hint:'🎯 Sostener lo ganado.\n🏋️ Mismos pesos, trabajo equilibrado.\n📈 Mantenemos cargas. Si tu contexto mejora, evaluamos un bloque activo.'},
+    base:       {label:'Base',color:'#F59E0B',emoji:'🌱',hint:'🎯 Construir base de técnica-control y encontrar la carga (kg) de cada ejercicio.\n🏋️ 1 serie de aproximación al 50% + 3 series efectivas con reps controladas. La técnica manda.\n📈 Subís kg ÚNICAMENTE si lograste el protocolo (ej. "3x9") con técnica perfecta.'},
+    rehabilitacion:{label:'Rehabilitación',color:'#0EA5E9',emoji:'🩹',hint:'🎯 Recuperar técnica-control y función de la zona, con cargas seguras.\n🏋️ 1 serie de aproximación al 50% + 3 series efectivas controladas. La técnica y el no-dolor mandan.\n📈 Avanzás ÚNICAMENTE si NO hay dolor. El no-dolor es el criterio. Si algo molesta, avisame.'},
+    deporte:    {label:'Deporte',        color:'#8B5CF6',emoji:'🏀',hint:'El protocolo series-reps-kg ya está pautado. Ejecutá cada rep a máxima velocidad. Si perdés velocidad, frenás la serie. Si te quedan series, podés sacar peso.'},
   };
   const bloque=(cfg?.bloque||'volumen').toLowerCase();
   const bloqueInfo=BLOQUES[bloque]||BLOQUES.volumen;
@@ -1098,9 +1098,8 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
           h('div',{style:{fontSize:'13px',fontWeight:'900',background:GRAD,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},numSeries+' series'),
           semanasParaSiguienteSerie&&h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.35)'}},'+1 en '+semanasParaSiguienteSerie+' sem')
         ),
-        bloque==='fuerza'&&h('div',{style:{textAlign:'right',fontSize:'11px',fontWeight:'700',background:GRAD,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'kg sube c/2 sem'),
       ),
-      bloqueInfo.hint&&h('div',{style:{marginTop:'10px',fontSize:'11px',color:'rgba(255,255,255,0.65)',lineHeight:'1.6',padding:'10px 12px',background:'rgba(255,255,255,0.06)',borderRadius:'8px',borderLeft:`3px solid ${AC}`}},bloqueInfo.hint)
+      bloqueInfo.hint&&h('div',{style:{marginTop:'10px',fontSize:'11px',color:'rgba(255,255,255,0.65)',lineHeight:'1.6',padding:'10px 12px',background:'rgba(255,255,255,0.06)',borderRadius:'8px',borderLeft:`3px solid ${AC}`,whiteSpace:'pre-line'}},bloqueInfo.hint)
     ),
     calExes.length>0&&h('div',{style:{...card,marginBottom:'10px'}},
       h('div',{onClick:()=>setCalOpen(o=>!o),style:{display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}},
@@ -2314,7 +2313,7 @@ function migrarIDsEstables(user,rows,force){
 
 function App(){
   const [user,setUser]=useState(null);
-  const [tab,setTab]=useState('d');
+  const [tab,setTab]=useState('t');
   const [selExOpt,setSelExOpt]=useState(0);
   const [wk,setWk]=useState({id:'sem_1',num:1,label:'...'});
   const [hiitData,setHiitData]=useState(iHiit());
@@ -3002,7 +3001,7 @@ function App(){
 
   const hiitSess=cfg?.hiit||[];
   const hasHiit=hiitSess.length>0;
-  const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'ms',l:'Mi semana',ic:'📋'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
+  const TABS=[{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'ms',l:'Mi semana',ic:'📋'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
 
   // ── SCORE DE CUMPLIMIENTO ─────────────────────────────────────────
   const calcScore=(w)=>{
