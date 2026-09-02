@@ -236,6 +236,7 @@ function PinScreen({onUnlock}){
 function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
   const statusOrder={red:0,yellow:1,green:2,grey:3};
   const [soloSinRevisar,setSoloSinRevisar]=useState(false);
+  const [busquedaAse,setBusquedaAse]=useState('');
   // ── Alta de nuevo asesorado (Fase 2) ──
   const [showAlta,setShowAlta]=useState(false);
   const [altaForm,setAltaForm]=useState({asesorado:'',plan:'online',fechaInicio:'',sexo:'',edad:'',altura:'',pesoRef:'',objetivo:''});
@@ -311,10 +312,15 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
     const semId=lat?.SemanID||'';
     // "Sin revisar" = reportó (alguna vez) y no le hice el checkpoint. Histórico, no solo reciente.
     return !hasCPCheck(name,semId);
+  }).filter(name=>{
+    // Filtro de búsqueda por nombre
+    if(!busquedaAse.trim())return true;
+    return String(name).toLowerCase().indexOf(busquedaAse.trim().toLowerCase())>=0;
   });
   const statusBg={red:'#FEF2F2',yellow:'#FFFBEB',green:'#F0FDF4',grey:'#F9F9F9'};
   const counts={red:0,yellow:0,green:0};
-  clients.forEach(c=>{const s=getStatus(data[c]||[],getObj(c));if(counts[s]!==undefined)counts[s]++;});
+  // El resumen (Atención/Revisar/OK) se cuenta sobre TODOS los asesorados, no sobre la lista filtrada.
+  Object.keys(nombresSet).forEach(c=>{const s=getStatus(data[c]||[],getObj(c));if(counts[s]!==undefined)counts[s]++;});
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
     h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'16px 18px',position:'sticky',top:0,zIndex:10}},
@@ -329,13 +335,9 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
           h('button',{onClick:onRefresh,style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'↻')
         )
       ),
-      h('div',{style:{display:'flex',gap:'8px',marginTop:'10px'}},
-        [{c:'red',l:'Atención',color:R},{c:'yellow',l:'Revisar',color:O},{c:'green',l:'OK',color:G}].map(s=>
-          h('div',{key:s.c,style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'#666'}},
-            h('div',{style:{width:'8px',height:'8px',borderRadius:'50%',background:s.color}}),
-            counts[s.c]+' '+s.l
-          )
-        )
+      h('div',{style:{marginTop:'10px'}},
+        h('input',{type:'text',value:busquedaAse,onChange:e=>setBusquedaAse(e.target.value),placeholder:'🔍 Buscar asesorado…',
+          style:{width:'100%',boxSizing:'border-box',padding:'9px 12px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'10px',fontSize:'14px'}})
       )
     ),
     h('div',{style:{padding:'12px'}},
