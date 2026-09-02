@@ -1184,6 +1184,8 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},ex.low+'–'+ex.hi+' reps')
                 )
               ),
+              // Cartel: si el ejercicio no tiene kg cargado, avisar. NO aplica al fuerza principal (su kg sale del protocolo/RM).
+              !(bloque==='fuerza'&&rolFuerza(ex)==='principal')&&(getKg(ex)===undefined||getKg(ex)===null||getKg(ex)===0)&&h('div',{style:{marginBottom:'10px',background:'#FEF3C7',border:'1px solid #FCD34D',borderRadius:'8px',padding:'9px 11px',fontSize:'12px',color:'#92400E',fontWeight:'600'}},'⚠️ Cargá el kg de este ejercicio. Sin el peso, no se calculan las series de entrada en calor ni las efectivas.'),
               to&&ex.url&&h('div',{style:{background:'#EBF4FF',border:'1px solid rgba(55,138,221,0.2)',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px'}},h('a',{href:ex.url,target:'_blank',rel:'noreferrer',style:{fontSize:'13px',color:B,fontWeight:'600',textDecoration:'none'}},'▶ Ver video tutorial')),
               showHistorial===ex.id&&h('div',{style:{background:'#F0F9FF',border:'1px solid rgba(55,138,221,0.2)',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px'}},
                 h('div',{style:{fontSize:'10px',fontWeight:'700',color:B,letterSpacing:'0.08em',marginBottom:'8px'}},'HISTORIAL DE REGISTROS'),
@@ -1266,7 +1268,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   return h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
                     h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'Principal · Semana '+semEnBloque+' del bloque'),
                     rm>0
-                      ? h('div',{style:{fontSize:'13px',color:'#6B21A8',marginTop:'4px'}},'Protocolo: '+pr.series+' series × '+pr.reps+' reps · '+pr.pct+'% → '+kgObj+' kg (referencia '+rm+' kg)')
+                      ? h('div',{style:{fontSize:'13px',color:'#6B21A8',marginTop:'4px'}},'Protocolo: '+pr.series+' series × '+pr.reps+' reps · '+pr.pct+'% → '+kgObj+' kg')
                       : h('div',{style:{fontSize:'12px',color:'#B91C1C',marginTop:'4px'}},'Todavía no cargaste tu RM de referencia (se carga la semana 1 del bloque).')
                   );
                 }
@@ -1308,16 +1310,13 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
               h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
                 seriesKeysEx(ex).map((k,i)=>{
                   const sug=suggestedKg(ex,i);
-                  const repFija=bloque==='base'||(bloque==='rehabilitacion'&&!esDia1Rehab); // base y rehab-posterior: reps fijas
-                  // Fuerza principal: reps precargadas del protocolo (editables).
                   const esFuerzaPrincipal=(bloque==='fuerza'&&rolFuerza(ex)==='principal');
+                  // reps NO editables (texto fijo) en: base, rehab-posterior, Y fuerza principal (protocolo fijo).
+                  const repFija=bloque==='base'||(bloque==='rehabilitacion'&&!esDia1Rehab)||esFuerzaPrincipal;
                   const repProto=esFuerzaPrincipal?String(protoActual().reps):'';
                   let repVal;
                   if(esFuerzaPrincipal){
-                    const stored=getRep(activeSess,ex.id,k);
-                    const mitadBase=String(Math.round((ex.low+ex.hi)/2)); // residuo de bloque base
-                    // Ignorar residuos de base (mitad de rango); mostrar protocolo. Respetar ediciones reales.
-                    repVal=(stored&&stored!==mitadBase)?stored:repProto;
+                    repVal=repProto; // siempre el protocolo, no ediciones
                   }else if(bloque==='rehabilitacion'&&!esDia1Rehab){
                     // rehab semanas 2+: rep fija guardada en sem1 (fallback: medio del rango)
                     repVal=getRehabReps(ex)||String(Math.round((ex.low+ex.hi)/2));
@@ -1510,7 +1509,10 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
     // Excluir el alimento ACTUALMENTE mostrado (curKey si el item fue reemplazado, sino key),
     // para que el original siempre aparezca como opción para volver.
     const excluir=swapItem.curKey||swapItem.key;
-    return allFoods.filter(item=>item.cat===swapItem.cat&&item.key!==excluir);
+    // Normalizar categoría de ambos lados (mayúsculas + trim) para que matcheen TODAS las opciones del grupo.
+    const normCat=x=>String(x||'').toUpperCase().trim();
+    const catBuscada=normCat(swapItem.cat);
+    return allFoods.filter(item=>normCat(item.cat)===catBuscada&&item.key!==excluir);
   },[swapItem,comidas,user]);
 
   // SVG plato para nivel 1
