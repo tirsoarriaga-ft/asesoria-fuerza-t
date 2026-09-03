@@ -962,20 +962,20 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,onRefresh,onBack
     // P1: No reportó — fin del árbol
     if(q1==='no'){
       notaInterna='Sin reporte esta semana. No hay datos para trabajar. Pendiente: reporte del asesorado.';
-      mjeAsesorado='Hola! Esta semana no me llego tu reporte y sin esos datos no puedo revisar ni ajustar tu plan.\n\nEl reporte es tu parte: es lo que me permite hacer la mia. Sin eso no puedo saber si el plan esta funcionando, si hay que ajustar algo, ni orientarte para la semana que viene.\n\nEstas a tiempo: pesate, medi tu cintura y complete el registro en la app. Cuanto antes lo mandes, antes puedo trabajar con eso.\n\nPauta de esta semana: registra cada entreno + sube 1 foto o video de un ejercicio.';
+      mjeAsesorado='Che, no me llegó tu reporte de esta semana.\n\nSin tus datos no puedo ver cómo venís ni ajustarte nada. Necesito que entres a la app, completes tu semana y mandes el reporte.\n\nSi algo se te complica con la app, decime y lo resolvemos. Es la base de todo: vos registrás, yo ajusto 🤝';
       return {mje:mjeAsesorado,nota:notaInterna,tipo:'sin_reporte'};
     }
 
     // P2: Cumplimiento bajo — fin del árbol
     if(q2==='muy_bajo'){
       notaInterna='Cumplimiento muy bajo (<50%) sin causas externas claras. No ajustar plan. Hablar primero sobre barreras.';
-      mjeAsesorado='Hola! Revise tu reporte y el cumplimiento de esta semana estuvo muy por debajo del minimo.\n\nSin un cumplimiento base (≥70% en comidas y descanso) las mediciones no me dicen nada util para ajustar tu plan. El plan puede estar bien, pero si no se ejecuta no hay forma de saberlo.\n\nMi parte es ajustar cuando los datos lo indican. Tu parte es registrar y cumplir para que esos datos existan.\n\nEsta semana el foco es uno solo: '+( pctComp<50?'llegar a 3 de 4 comidas por dia, todos los dias':'dormir 7hs al menos 4 noches')+'. El resto lo vemos cuando eso este resuelto.';
+      mjeAsesorado='Vi tu semana y quiero que hablemos algo.\n\nEl cumplimiento vino bastante bajo esta semana. Antes de tocar nada del plan, quiero entender qué pasó.\n\n¿Hubo algo que te complicó (tiempo, ganas, algo personal)? Contame así vemos cómo acomodarlo. No busco que sea perfecto, sí que sea sostenible 💪';
       return {mje:mjeAsesorado,nota:notaInterna,tipo:'cumplimiento_bajo'};
     }
 
     if(q2==='bajo_ctx'){
       notaInterna='Cumplimiento bajo con factores externos. El contexto explica parte del resultado. Plan sin cambios esta semana.';
-      mjeAsesorado='Hola! Vi tu reporte. El cumplimiento estuvo un poco bajo pero entiendo que la semana tuvo sus complicaciones.\n\nLos factores externos no son excusa pero si contexto: complican el cumplimiento y eso impacta en los resultados. Esta semana volvemos a la rutina normal.\n\nFoco: '+( pctComp<70?'comidas — apunta a 3 de 4 todos los dias':'descanso — prioriza 7hs al menos 4 noches')+'. El resto mantenerlo.';
+      mjeAsesorado='Vi tu reporte. El cumplimiento estuvo un poco bajo, pero entiendo que la semana tuvo sus complicaciones.\n\nLos factores externos no son excusa pero sí contexto: complican el cumplimiento y eso impacta en los resultados. Esta semana volvemos a la rutina normal.\n\nFoco: '+( pctComp<70?'las comidas, apuntá a 3 de 4 todos los días':'el descanso, priorizá 7hs al menos 4 noches')+'. El resto, mantenerlo 🙌';
       return {mje:mjeAsesorado,nota:notaInterna,tipo:'cumplimiento_bajo_contexto'};
     }
 
@@ -983,36 +983,36 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,onRefresh,onBack
     var medMsg='';
     if(q3==='contrario'){
       notaInterna='Mediciones en direccion contraria al objetivo con cumplimiento OK. Revisar calorico — posible ajuste de plan necesario.';
-      medMsg='Las mediciones estan yendo en la direccion contraria al objetivo ('+objetivo+'). Con buen cumplimiento esto indica que el plan necesita un ajuste. Esta semana reviso el calorico y te cuento los cambios.';
+      medMsg='Revisé tu semana con detalle. Estás cumpliendo bien, pero las mediciones van para el lado contrario al objetivo. Cuando el cumplimiento está y los resultados no acompañan, toca ajustar. Te voy a ajustar el plan y vas a ver los cambios en la app.';
     }else if(q3==='estancado'){
       notaInterna='Mediciones estancadas sin factores externos. Evaluar ajuste calorico en proximo checkpoint.';
-      medMsg='Peso y cintura sin cambios en 2+ semanas con buen cumplimiento. Esto puede indicar que el calorico necesita un ajuste. Lo evaluo esta semana.';
+      medMsg='Revisé tu semana con detalle. Venís cumpliendo muy bien, pero las mediciones se estancaron. Cuando el cumplimiento está y los resultados no se mueven, toca ajustar el plan. Te voy a ajustar el calórico. Seguí registrando igual que hasta ahora.';
     }else if(q3==='estancado_ctx'){
       notaInterna='Mediciones estancadas pero con factores externos presentes. No ajustar plan aun. Esperar semana normal.';
-      medMsg='El estancamiento de esta semana tiene explicacion: el contexto complica tanto el cumplimiento como las mediciones. En una semana normal esperamos ver el movimiento esperado.';
+      medMsg='Las mediciones no se movieron, pero también veo que venís con un contexto complicado. Eso pesa, y mucho. No vamos a tocar el plan todavía, primero acomodemos eso. El cuerpo responde cuando el contexto acompaña.';
     }else{
       notaInterna='Mediciones en direccion correcta. Plan funcionando.';
-      medMsg='Las mediciones van en la direccion correcta. Seguimos igual.';
+      medMsg='¡Excelente semana! Venís cumpliendo y las mediciones van para donde queremos. Seguí exactamente así, no cambiamos nada. Lo que estás haciendo funciona 🔥';
     }
 
     // P4: Videos y progresion
     var entMsg='';var notaEnt='';
     if(q4==='ok_video'){
       notaEnt='Progresion + video enviado. Todo OK.';
-      entMsg='El entreno va bien y el video me llego. Reviso la tecnica y te mando feedback.';
+      entMsg='El entreno va bien y el video me llegó. Reviso la técnica y te mando feedback.';
     }else if(q4==='ok_sin_video'){
       notaEnt='Progresion OK pero sin video. Pedir video esta semana.';
-      entMsg=(nivelAse==='presencial'?'El entreno va bien. La proxima sesion presencial revisamos tecnica juntos.':'El entreno va bien. Esta semana grabate 1-2 series de cualquier ejercicio y subilo a la app. Me ayuda a ver la tecnica y darte un feedback mas preciso.');
+      entMsg=(nivelAse==='presencial'?'El entreno va bien. La próxima sesión presencial revisamos técnica juntos.':'El entreno va bien. Esta semana mandame 1-2 videos de los ejercicios principales. Los subís desde la app y ahí mismo te dejo el feedback.');
     }else if(q4==='sin_progresion_video'){
       notaEnt='Sin progresion pero mando video. Revisar tecnica antes de ajustar carga.';
-      entMsg='El video me llego, gracias. Esta semana lo reviso en detalle porque antes de ajustar carga quiero ver como esta la tecnica. Te mando devolucion.';
+      entMsg='El video me llegó, gracias. Lo reviso en detalle porque antes de ajustar carga quiero ver cómo está la técnica. Te mando la devolución.';
     }else{
       notaEnt='Sin progresion y sin video. Pedir video urgente.';
-      entMsg=(nivelAse==='presencial'?'Esta semana nos vemos y revisamos tecnica en sesion.':'Esta semana necesito que me mandes 1-2 videos de algun ejercicio. Subilo a la app o mandamelo por aca. Sin verlo no puedo saber si el estancamiento es de carga, de tecnica o de recuperacion.');
+      entMsg=(nivelAse==='presencial'?'Esta semana nos vemos y revisamos técnica en sesión.':'Miré tu entreno y las cargas/reps no están subiendo. Enfocate en superar las reps de la semana pasada con el mismo peso; cuando llegues al techo, la app te sube el kg sola. Y mandame 1-2 videos así veo si es tema de técnica.');
     }
 
     notaInterna=notaInterna+' | Entreno: '+notaEnt;
-    mjeAsesorado='Hola! Revise tu reporte de esta semana.\n\n'+medMsg+'\n\n'+entMsg+'\n\nCualquier duda en el momento me avisas.';
+    mjeAsesorado=medMsg+'\n\n'+entMsg+'\n\nCualquier duda me escribís 💪';
     return {mje:mjeAsesorado,nota:notaInterna,tipo:'completo'};
   }
 
