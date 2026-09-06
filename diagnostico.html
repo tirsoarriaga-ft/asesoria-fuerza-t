@@ -133,11 +133,16 @@ function App(){
 
   // ── VISTA: ENVIADO ──
   if(vista==='enviado'){
+    var NUM_COACH='5492604040936';
+    var nombreAse=(ficha.Asesorado||'');
+    var msgCoach=encodeURIComponent('Soy '+nombreAse+', ya completé mi formulario de inicio de Fuerza T ✅ Quedo atento/a a los próximos pasos 💪');
+    var waLink='https://wa.me/'+NUM_COACH+'?text='+msgCoach;
     return wrap(h('div',{style:{textAlign:'center',paddingTop:'40px'}},
       h('div',{style:{fontSize:'52px',marginBottom:'16px'}},'✅'),
-      h('div',{style:{fontSize:'20px',fontWeight:'800',marginBottom:'10px'}},'¡Diagnóstico enviado!'),
-      h('div',{style:{fontSize:'14px',color:'#666',lineHeight:'1.6',marginBottom:'24px'}},'Gracias, '+(ficha.Asesorado||'')+'. Tu coach ya recibió tus respuestas y va a preparar tu punto de partida. Pronto vas a tener tu plan listo para arrancar.'),
-      h('div',{style:{fontSize:'12px',color:'#bbb'}},'Ya podés cerrar esta página.')
+      h('div',{style:{fontSize:'20px',fontWeight:'800',marginBottom:'10px'}},'¡Listo, '+nombreAse+'!'),
+      h('div',{style:{fontSize:'14px',color:'#666',lineHeight:'1.6',marginBottom:'20px'}},'Tu coach ya recibió tus respuestas y va a preparar tu punto de partida. Para agilizar, avisale que ya terminaste 👇'),
+      h('a',{href:waLink,target:'_blank',style:{display:'inline-block',background:'#25D366',color:'#fff',textDecoration:'none',padding:'14px 24px',borderRadius:'12px',fontSize:'15px',fontWeight:'800',marginBottom:'20px'}},'Avisar a mi coach por WhatsApp'),
+      h('div',{style:{fontSize:'12px',color:'#bbb'}},'Después de avisar, ya podés cerrar esta página.')
     ));
   }
 
@@ -145,7 +150,7 @@ function App(){
   if(vista==='inicio'){
     return wrap(h('div',null,
       h('div',{style:{marginBottom:'6px',fontSize:'12px',fontWeight:'700',color:AC,letterSpacing:'0.05em'}},'FUERZA T'),
-      h('div',{style:{fontSize:'22px',fontWeight:'800',marginBottom:'6px'}},'Hola, '+(ficha.Asesorado||'')+' 👋'),
+      h('div',{style:{fontSize:'22px',fontWeight:'800',marginBottom:'6px'}},'Ya casi estás, '+(ficha.Asesorado||'')+' 👋'),
       h('div',{style:{fontSize:'14px',color:'#666',lineHeight:'1.5',marginBottom:'24px'}},'Antes de armar tu plan, necesito conocerte un poco. Son dos cuestionarios cortos. Podés hacer uno, volver, y después el otro.'),
       // Tarjeta entrenamiento
       h('div',{onClick:()=>setVista('entrenamiento'),style:{background:'#fff',borderRadius:'14px',border:'1px solid rgba(0,0,0,0.08)',padding:'18px',marginBottom:'12px',cursor:'pointer',display:'flex',alignItems:'center',gap:'14px'}},
