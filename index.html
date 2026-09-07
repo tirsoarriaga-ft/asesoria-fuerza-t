@@ -1395,6 +1395,13 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
   const [catAbierta,setCatAbierta]=useState(null);
   // Vista "Armá tu comida" (adecuado): 1 de cada categoría
   const [miPlato,setMiPlato]=useState({P:null,C:null,G:null,FV:null});
+  // Ejemplos fijos de comidas completas (deficitario/adecuado) — enseñan estructura P+H+G+F/V
+  const EJEMPLOS_COMIDA=[
+    {comida:'Desayuno',ic:'☀️',items:[['Huevos','P'],['Pan / tostadas','C'],['Palta','G'],['Banana','FV']]},
+    {comida:'Almuerzo',ic:'🌞',items:[['Pollo','P'],['Arroz','C'],['Aceite de oliva','G'],['Ensalada','FV']]},
+    {comida:'Merienda',ic:'☕',items:[['Yogur','P'],['Avena','C'],['Nueces','G'],['Manzana','FV']]},
+    {comida:'Cena',ic:'🌙',items:[['Carne','P'],['Papa','C'],['Aceite','G'],['Vegetales','FV']]},
+  ];
   // hayTemplate: true solo si el coach cargó un Template real. Si no, no se muestran cantidades.
   const tmplRaw=localStorage.getItem(tKey);
   const hayTemplate=tmplRaw!==null&&tmplRaw!==''&&!isNaN(parseInt(tmplRaw))&&parseInt(tmplRaw)>0;
@@ -1771,18 +1778,37 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
           h('div',{style:{fontSize:'12px',color:'#9A3412'}},'Te falta '+faltan.map(function(c){return nombres[c];}).join(', ')+' para completar tu comida.'));
       })()
     ),
-    hayTemplate&&h('div',{style:{...card,marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+    // EJEMPLOS DE COMIDAS COMPLETAS (deficitario y adecuado)
+    (estadoNutri==='deficitario'||estadoNutri==='adecuado')&&h('div',{style:{...card,marginBottom:'12px'}},
+      h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111',marginBottom:'4px'}},'Ejemplos de comidas completas'),
+      h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'12px'}},'Así se ve un plato completo en cada comida. Cada alimento podés cambiarlo por otro de su mismo grupo.'),
+      EJEMPLOS_COMIDA.map(function(ej){
+        return h('div',{key:ej.comida,style:{marginBottom:'10px',paddingBottom:'10px',borderBottom:'1px solid rgba(0,0,0,0.05)'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#333',marginBottom:'6px'}},ej.ic+' '+ej.comida),
+          h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}},
+            ej.items.map(function(it,idx){
+              var col=(CAT[it[1]]||{}).c||'#666';var bg=(CAT[it[1]]||{}).bg||'#F4F4F4';
+              return h('span',{key:idx,style:{fontSize:'12px',color:col,background:bg,borderRadius:'20px',padding:'4px 11px',fontWeight:'600'}},it[0]);
+            })
+          )
+        );
+      })
+    ),
+    // PLAN CALÓRICO (solo deportivo)
+    (estadoNutri==='deportivo'&&hayTemplate)&&h('div',{style:{...card,marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('div',null,h('div',{style:lbl},'Plan calórico'),h('div',{style:{fontSize:'20px',fontWeight:'800',color:G}},tmpl,' ',h('span',{style:{fontSize:'13px',color:'#999',fontWeight:'400'}},'kcal'))),
       h('div',{style:{fontSize:'11px',color:'#bbb'}},h('div',null,'Template asignado'),h('div',null,'por tu coach'))
     ),
-    comidas.length===0
+    // Plato visual (estructura) para DEFICITARIO y ADECUADO
+    (estadoNutri==='deficitario'||estadoNutri==='adecuado')&&h('div',{style:{...card,padding:'12px',marginBottom:'8px'},dangerouslySetInnerHTML:{__html:SVG_PLATO}}),
+    // LOS 12 MENÚS + CONFIRMAR: solo DEPORTIVO
+    (estadoNutri==='deportivo')&&(comidas.length===0
       ?h('div',{style:{...card,textAlign:'center',padding:'32px 20px'}},
           h('div',{style:{fontSize:'32px',marginBottom:'10px'}},'🍽️'),
           h('div',{style:{fontSize:'15px',fontWeight:'700',color:'#333',marginBottom:'6px'}},'Dieta no configurada'),
           h('div',{style:{fontSize:'13px',color:'#999'}},'Tu coach todavía no cargó tu plan de alimentación.')
         )
       :h('div',null,
-          nivel===1&&h('div',{style:{...card,padding:'12px',marginBottom:'8px'},dangerouslySetInnerHTML:{__html:SVG_PLATO}}),
           comidas.map(c=>h(MC,{key:c.id,comida:c})),
           // Botón: confirmar mis menús (los manda a DietasConfirmadas)
           comidas.length>0&&h('div',{style:{...card,marginTop:'8px',marginBottom:'8px',padding:'16px',textAlign:'center'}},
@@ -1797,21 +1823,22 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
                   h('div',{style:{fontSize:'11px',color:'#999',lineHeight:'1.5',marginBottom:'12px'}},'Revisá cada comida y ajustá lo que quieras con "Detalle" (reemplazar, dividir). Cuando estén como querés, confirmalos: estos van a ser tus menús de referencia.'),
                   h('button',{onClick:confirmarMenus,disabled:confMenus,style:{background:confMenus?'#ccc':G,color:'#fff',border:'none',borderRadius:'10px',padding:'13px 24px',fontSize:'14px',fontWeight:'800',cursor:confMenus?'default':'pointer',width:'100%'}},confMenus?'Enviando…':'✓ Confirmar mis menús')
                 )
-          ),
-          h('div',{style:{...card,marginTop:'4px',display:'flex',justifyContent:'space-around',alignItems:'center'}},
-            h('div',{style:{textAlign:'center'}},
-              h('div',{style:{fontSize:'24px'}},'💧'),
-              h('div',{style:{fontSize:'18px',fontWeight:'800',color:B}},metaAgua+' L'),
-              h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},'agua / día')
-            ),
-            h('div',{style:{width:'1px',height:'40px',background:'rgba(0,0,0,0.08)'}}),
-            h('div',{style:{textAlign:'center'}},
-              h('div',{style:{fontSize:'24px'}},'🧂'),
-              h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#6B7280'}},metaSal+' g'),
-              h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},'sal / día')
-            )
           )
-        )
+        )),
+    // AGUA / SAL: info general para todos los estados
+    h('div',{style:{...card,marginTop:'4px',display:'flex',justifyContent:'space-around',alignItems:'center'}},
+      h('div',{style:{textAlign:'center'}},
+        h('div',{style:{fontSize:'24px'}},'💧'),
+        h('div',{style:{fontSize:'18px',fontWeight:'800',color:B}},metaAgua+' L'),
+        h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},'agua / día')
+      ),
+      h('div',{style:{width:'1px',height:'40px',background:'rgba(0,0,0,0.08)'}}),
+      h('div',{style:{textAlign:'center'}},
+        h('div',{style:{fontSize:'24px'}},'🧂'),
+        h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#6B7280'}},metaSal+' g'),
+        h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},'sal / día')
+      )
+    )
   );
 }
 
