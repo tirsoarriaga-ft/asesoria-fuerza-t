@@ -1732,34 +1732,42 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
         );
       })
     ),
-    // VISTA "Armá tu comida" (ADECUADO): elegir 1 de cada categoría + feedback
+    // VISTA "Armá tu comida" (ADECUADO): carrusel horizontal por macro + porción + cartel
     (estadoNutri==='adecuado')&&h('div',{style:{...card,marginBottom:'12px'}},
       h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111',marginBottom:'4px'}},'Armá tu comida'),
-      h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'12px'}},'Elegí un alimento de cada grupo para armar un plato completo.'),
+      h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'14px'}},'Deslizá cada fila y tocá un alimento para elegirlo. Tocalo de nuevo para quitarlo.'),
       [{c:'P',l:'Proteína',ic:'🥩'},{c:'C',l:'Hidrato',ic:'🍞'},{c:'G',l:'Grasa',ic:'🥑'},{c:'FV',l:'Fruta/Verdura',ic:'🥦'}].map(function(grp){
         var items=foodsByCat[grp.c]||[];
         var elegido=miPlato[grp.c];
         var col=(CAT[grp.c]||{}).c||'#666';
-        return h('div',{key:grp.c,style:{marginBottom:'10px'}},
-          h('div',{style:{fontSize:'12px',fontWeight:'700',color:col,marginBottom:'5px'}},(elegido?'✓ ':'○ ')+grp.ic+' '+grp.l),
-          h('div',{style:{display:'flex',flexWrap:'wrap',gap:'5px'}},
-            items.map(function(it){
-              var sel=elegido===it.key;
-              return h('button',{key:it.key,onClick:function(){setMiPlato(Object.assign({},miPlato,{[grp.c]:sel?null:it.key}));},
-                style:{fontSize:'12px',color:sel?'#fff':'#444',background:sel?col:'#F4F4F4',border:'none',borderRadius:'20px',padding:'5px 11px',cursor:'pointer',fontWeight:sel?'700':'400'}},it.n);
-            })
+        var elFood=items.find(function(x){return x.key===elegido;});
+        return h('div',{key:grp.c,style:{marginBottom:'14px'}},
+          // Fila 1: título del macro + estado
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'6px'}},
+            h('div',{style:{fontSize:'12px',fontWeight:'700',color:col}},(elegido?'✓ ':'○ ')+grp.ic+' '+grp.l),
+            elFood&&elFood.vU&&h('div',{style:{fontSize:'11px',color:'#999'}},'Porción: '+(elFood.vB||1)+' '+elFood.vU)
+          ),
+          // Fila 2: carrusel horizontal (scroll nativo con inercia)
+          h('div',{style:{display:'flex',gap:'7px',overflowX:'auto',paddingBottom:'4px',WebkitOverflowScrolling:'touch',scrollbarWidth:'none'}},
+            items.length===0
+              ?h('div',{style:{fontSize:'12px',color:'#bbb',padding:'6px 0'}},'Sin alimentos en este grupo.')
+              :items.map(function(it){
+                var sel=elegido===it.key;
+                return h('button',{key:it.key,onClick:function(){setMiPlato(Object.assign({},miPlato,{[grp.c]:sel?null:it.key}));},
+                  style:{flexShrink:0,fontSize:'13px',color:sel?'#fff':'#444',background:sel?col:'#F4F4F4',border:'none',borderRadius:'20px',padding:'8px 15px',cursor:'pointer',fontWeight:sel?'700':'500',whiteSpace:'nowrap'}},it.n);
+              })
           )
         );
       }),
-      // Feedback: qué falta para completar el plato
+      // Fila 3: cartel de aviso (qué falta / completo)
       (function(){
         var faltan=['P','C','G','FV'].filter(function(c){return !miPlato[c];});
         var nombres={P:'una proteína',C:'un hidrato',G:'una grasa',FV:'una fruta/verdura'};
         if(faltan.length===0){
-          return h('div',{style:{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:'10px',padding:'11px 13px',marginTop:'6px'}},
+          return h('div',{style:{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:'10px',padding:'11px 13px',marginTop:'4px'}},
             h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#166534'}},'✓ ¡Plato completo! Tenés proteína, hidrato, grasa y fruta/verdura.'));
         }
-        return h('div',{style:{background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:'10px',padding:'11px 13px',marginTop:'6px'}},
+        return h('div',{style:{background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:'10px',padding:'11px 13px',marginTop:'4px'}},
           h('div',{style:{fontSize:'12px',color:'#9A3412'}},'Te falta '+faltan.map(function(c){return nombres[c];}).join(', ')+' para completar tu comida.'));
       })()
     ),
