@@ -1376,6 +1376,25 @@ const NIVEL_BANNER={
 };
 function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
   const tKey=`ase_${user}_tmpl`;const oKey=`ase_${user}_opts`;
+  // Estado nutricional para la pauta educativa (deficitario/adecuado/deportivo)
+  const estadoNutri=(function(){try{return localStorage.getItem('ase_'+user+'_estadoNutri')||'deficitario';}catch(e){return 'deficitario';}})();
+  // Biblioteca de alimentos por categoría (para las vistas educativas)
+  const foodsByCat=useMemo(()=>{
+    try{
+      const db=JSON.parse(localStorage.getItem('ase_'+user+'_foodDB')||'{}');
+      const out={P:[],C:[],G:[],FV:[]};
+      Object.entries(db).forEach(([key,f])=>{
+        const cat=String(f.cat||'').toUpperCase().trim();
+        if(out[cat])out[cat].push({key,n:f.n||key,vU:f.vU||'',vB:f.vB||1});
+      });
+      Object.keys(out).forEach(c=>out[c].sort((a,b)=>String(a.n).localeCompare(String(b.n))));
+      return out;
+    }catch(e){return {P:[],C:[],G:[],FV:[]};}
+  },[user,menusVer]);
+  // Vista "Elegí tus alimentos" (deficitario): categorías desplegables
+  const [catAbierta,setCatAbierta]=useState(null);
+  // Vista "Armá tu comida" (adecuado): 1 de cada categoría
+  const [miPlato,setMiPlato]=useState({P:null,C:null,G:null,FV:null});
   // hayTemplate: true solo si el coach cargó un Template real. Si no, no se muestran cantidades.
   const tmplRaw=localStorage.getItem(tKey);
   const hayTemplate=tmplRaw!==null&&tmplRaw!==''&&!isNaN(parseInt(tmplRaw))&&parseInt(tmplRaw)>0;
@@ -1675,12 +1694,74 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
         )
       )
     ),
-    h('div',{style:{background:'#111',borderRadius:'12px',padding:'16px',marginBottom:'12px',display:'flex',gap:'12px',alignItems:'flex-start'}},
-      h('div',{style:{fontSize:'22px',flexShrink:0}},'🍽️'),
-      h('div',null,
-        h('div',{style:{fontSize:'10px',fontWeight:'700',color:'rgba(255,255,255,0.5)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Tus menús'),
-        h('div',{style:{fontSize:'13px',fontWeight:'600',color:'#fff',lineHeight:'1.5'}},hayTemplate?'Cada comida tiene su porción práctica. Si querés precisión, tocá "Ver cantidad exacta" para ver los gramos. Ajustá los alimentos con "Detalle".':'Estos son tus menús base. Todavía sin cantidades: en cuanto tengamos tus datos de referencia, definimos las porciones para vos.')
-      )
+    (function(){
+      var pautas={
+        deficitario:{tit:'Aprende a armar tus comidas',txt:'Tu objetivo es hacer 4 comidas completas por dia. Un plato completo tiene Proteina + Hidrato + Grasa + Fruta/Verdura. Aca abajo tenes ejemplos por comida — elegi los alimentos que mas te gusten de cada categoria.'},
+        adecuado:{tit:'Platos completos + cantidades',txt:'Mante tus platos completos (P + H + G + F/V) y empeza a mirar las cantidades como referencia. Podes usar los ejemplos o armar tu propia comida combinando un alimento de cada grupo.'},
+        deportivo:{tit:'Tus menus personalizados',txt:hayTemplate?'Estos son tus 12 menus pensados para tu planificacion. Cada comida tiene su porcion practica; toca "Ver cantidad exacta" para los gramos. Ajusta con "Detalle".':'Estos son tus menus base. En cuanto tengamos tus datos definimos las cantidades.'}
+      };
+      var p=pautas[estadoNutri]||pautas.deficitario;
+      return h('div',{style:{background:'#111',borderRadius:'12px',padding:'16px',marginBottom:'12px',display:'flex',gap:'12px',alignItems:'flex-start'}},
+        h('div',{style:{fontSize:'22px',flexShrink:0}},'🍽️'),
+        h('div',null,
+          h('div',{style:{fontSize:'10px',fontWeight:'700',color:'rgba(255,255,255,0.5)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},p.tit),
+          h('div',{style:{fontSize:'13px',fontWeight:'600',color:'#fff',lineHeight:'1.5'}},p.txt)
+        )
+      );
+    })(),
+    // VISTA "Elegí tus alimentos" (DEFICITARIO): 4 categorías desplegables con la biblioteca
+    (estadoNutri==='deficitario')&&h('div',{style:{...card,marginBottom:'12px'}},
+      h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111',marginBottom:'4px'}},'Elegí tus alimentos'),
+      h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'12px'}},'Estos son los alimentos de cada grupo. Para un plato completo elegí uno de cada uno.'),
+      [{c:'P',l:'Proteínas',ic:'🥩'},{c:'C',l:'Hidratos',ic:'🍞'},{c:'G',l:'Grasas',ic:'🥑'},{c:'FV',l:'Frutas/Verduras',ic:'🥦'}].map(function(grp){
+        var abierta=catAbierta===grp.c;
+        var items=foodsByCat[grp.c]||[];
+        var col=(CAT[grp.c]||{}).c||'#666';
+        return h('div',{key:grp.c,style:{marginBottom:'8px',border:'1px solid rgba(0,0,0,0.08)',borderRadius:'10px',overflow:'hidden'}},
+          h('button',{onClick:function(){setCatAbierta(abierta?null:grp.c);},style:{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'11px 13px',background:abierta?(CAT[grp.c]||{}).bg||'#F8F8F8':'#fff',border:'none',cursor:'pointer'}},
+            h('span',{style:{fontSize:'13px',fontWeight:'700',color:col}},grp.ic+' '+grp.l+' ('+items.length+')'),
+            h('span',{style:{fontSize:'12px',color:'#999'}},abierta?'▲':'▼')
+          ),
+          abierta&&h('div',{style:{padding:'4px 13px 10px',display:'flex',flexWrap:'wrap',gap:'6px'}},
+            items.length===0
+              ?h('div',{style:{fontSize:'12px',color:'#bbb',padding:'6px 0'}},'Sin alimentos en este grupo todavía.')
+              :items.map(function(it){
+                return h('span',{key:it.key,style:{fontSize:'12px',color:'#444',background:'#F4F4F4',borderRadius:'20px',padding:'5px 11px'}},it.n);
+              })
+          )
+        );
+      })
+    ),
+    // VISTA "Armá tu comida" (ADECUADO): elegir 1 de cada categoría + feedback
+    (estadoNutri==='adecuado')&&h('div',{style:{...card,marginBottom:'12px'}},
+      h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111',marginBottom:'4px'}},'Armá tu comida'),
+      h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'12px'}},'Elegí un alimento de cada grupo para armar un plato completo.'),
+      [{c:'P',l:'Proteína',ic:'🥩'},{c:'C',l:'Hidrato',ic:'🍞'},{c:'G',l:'Grasa',ic:'🥑'},{c:'FV',l:'Fruta/Verdura',ic:'🥦'}].map(function(grp){
+        var items=foodsByCat[grp.c]||[];
+        var elegido=miPlato[grp.c];
+        var col=(CAT[grp.c]||{}).c||'#666';
+        return h('div',{key:grp.c,style:{marginBottom:'10px'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'700',color:col,marginBottom:'5px'}},(elegido?'✓ ':'○ ')+grp.ic+' '+grp.l),
+          h('div',{style:{display:'flex',flexWrap:'wrap',gap:'5px'}},
+            items.map(function(it){
+              var sel=elegido===it.key;
+              return h('button',{key:it.key,onClick:function(){setMiPlato(Object.assign({},miPlato,{[grp.c]:sel?null:it.key}));},
+                style:{fontSize:'12px',color:sel?'#fff':'#444',background:sel?col:'#F4F4F4',border:'none',borderRadius:'20px',padding:'5px 11px',cursor:'pointer',fontWeight:sel?'700':'400'}},it.n);
+            })
+          )
+        );
+      }),
+      // Feedback: qué falta para completar el plato
+      (function(){
+        var faltan=['P','C','G','FV'].filter(function(c){return !miPlato[c];});
+        var nombres={P:'una proteína',C:'un hidrato',G:'una grasa',FV:'una fruta/verdura'};
+        if(faltan.length===0){
+          return h('div',{style:{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:'10px',padding:'11px 13px',marginTop:'6px'}},
+            h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#166534'}},'✓ ¡Plato completo! Tenés proteína, hidrato, grasa y fruta/verdura.'));
+        }
+        return h('div',{style:{background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:'10px',padding:'11px 13px',marginTop:'6px'}},
+          h('div',{style:{fontSize:'12px',color:'#9A3412'}},'Te falta '+faltan.map(function(c){return nombres[c];}).join(', ')+' para completar tu comida.'));
+      })()
     ),
     hayTemplate&&h('div',{style:{...card,marginBottom:'12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('div',null,h('div',{style:lbl},'Plan calórico'),h('div',{style:{fontSize:'20px',fontWeight:'800',color:G}},tmpl,' ',h('span',{style:{fontSize:'13px',color:'#999',fontWeight:'400'}},'kcal'))),
@@ -1749,8 +1830,18 @@ var AGUA_STATES=[
   {v:'ins',ic:'○',color:'#EF4444'},
 ];
 var DS6=['L','M','X','J','V','S'];
-function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus}){
+function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus,user}){
   var pesoRef=parseFloat(cfg&&cfg.pesoRef)||0;
+  // Estado nutricional (deficitario/adecuado/deportivo). Default deficitario si no hay dato.
+  var estadoNutri=(function(){try{return localStorage.getItem('ase_'+user+'_estadoNutri')||'deficitario';}catch(e){return 'deficitario';}})();
+  // Registro nutricional nuevo (por estado): días 0-7 + causa. Se guarda en hab.nutriReg.
+  var nutriReg=(hab&&hab.nutriReg)||{};
+  function setNutriReg(campo,valor){
+    var nr=Object.assign({},(hab&&hab.nutriReg)||{});
+    nr[campo]=valor;
+    setHab(Object.assign({},hab,{nutriReg:nr}));
+    setSaved(false);
+  }
   var aguaMaxL=pesoRef>0?Math.round(pesoRef*35)/1000:2.0;
   var aguaMinL=pesoRef>0?Math.round(pesoRef*30)/1000:1.5;
   var aguaMaxStr=aguaMaxL.toFixed(1)+'L ('+Math.round(aguaMaxL/0.25)+' vasos)';
@@ -1820,64 +1911,116 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
       )
     ),
     grpTitle('1 · Lo que hago','Tu ejecución del día a día'),
-    // COMIDAS
-    h('div',{style:card},
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}},
-        h('div',{style:lbl},'Comidas'),
-        h('button',{onClick:function(){if(typeof onVerMenus==='function')onVerMenus();},style:{background:'#EAF7F2',color:G,border:'none',borderRadius:'8px',padding:'5px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Ver mis menús')
+    // REGISTRO NUTRICIONAL DEFICITARIO: estructura (4 comidas P+H+G+F/V). Pregunta 0-7 + causa.
+    (estadoNutri==='deficitario')&&h('div',{style:card},
+      h('div',{style:{marginBottom:'8px'}},
+        h('div',{style:lbl},'Tu alimentacion')
       ),
-      h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'6px'}},'¿Cumpliste cada comida? (comer una de tus opciones respetando la cantidad)'),
-      h('div',{style:{display:'flex',gap:'10px',marginBottom:'10px',flexWrap:'wrap'}},
-        MEAL_STATES.slice(1).map(function(ms){
-          return h('div',{key:ms.v,style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'10px',color:'#666'}},
-            h('span',{style:{color:ms.color,fontWeight:'700',marginRight:'2px'}},ms.ic),ms.label
-          );
+      h('div',{style:{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:'10px',padding:'11px 13px',marginBottom:'12px'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#166534',marginBottom:'3px'}},'Tu objetivo: 4 comidas completas por dia'),
+        h('div',{style:{fontSize:'11px',color:'#15803D',lineHeight:'1.5'}},'Un plato completo tiene: Proteina + Hidrato + Grasa + Fruta/Verdura.')
+      ),
+      h('div',{style:{fontSize:'13px',fontWeight:'600',color:'#111',marginBottom:'3px'}},'Pensando en toda la semana, cuantos dias comiste asi?'),
+      h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'10px'}},'Un buen dia = la mayoria de tus comidas fueron platos completos.'),
+      h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',marginBottom:'6px'}},
+        [0,1,2,3,4,5,6,7].map(function(n){
+          var sel=nutriReg.dias===n;
+          return h('button',{key:n,onClick:function(){setNutriReg('dias',sel?undefined:n);},style:{flex:'1',minWidth:'34px',padding:'10px 0',borderRadius:'8px',border:'1.5px solid '+(sel?G:'rgba(0,0,0,0.12)'),background:sel?G:'#fff',color:sel?'#fff':'#666',fontSize:'15px',fontWeight:'800',cursor:'pointer'}},String(n));
         })
       ),
-      diaHeader,
-      ['desayuno','almuerzo','merienda','cena'].map(function(meal,mi){
-        var labels=['Desayuno','Almuerzo','Merienda','Cena'];
-        return h('div',{key:meal,style:{display:'grid',gridTemplateColumns:'72px repeat(6,1fr)',gap:'2px',marginBottom:'4px',alignItems:'center'}},
-          h('div',{style:{fontSize:'11px',color:'#555',fontWeight:'600'}},labels[mi]),
-          nut.slice(0,6).map(function(d,di){
-            var cur=(d.m[meal])||'';
-            var st=MEAL_STATES.find(function(s){return s.v===cur;})||MEAL_STATES[0];
-            return Bub(st.color,cur?st.color+'22':'transparent',st.ic,function(){openMealPanel(di,meal);},mealPanel&&mealPanel.di===di&&mealPanel.meal===meal);
+      (typeof nutriReg.dias==='number'&&nutriReg.dias<=4)&&h('div',{style:{marginTop:'12px'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'600',color:'#111',marginBottom:'6px'}},'Que fue lo que mas te costo?'),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
+          ['No me organice','No tenia los alimentos necesarios','Comi varias veces afuera/socialmente','Eleji comer otras cosas','Me costo hacer todas las comidas','Otro'].map(function(causa){
+            var sel=nutriReg.causa===causa;
+            return h('button',{key:causa,onClick:function(){setNutriReg('causa',sel?undefined:causa);},style:{textAlign:'left',padding:'9px 12px',borderRadius:'8px',border:'1px solid '+(sel?O:'rgba(0,0,0,0.12)'),background:sel?'#FFF7ED':'#fff',color:sel?'#9A3412':'#444',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer'}},causa);
           })
-        );
-      })
-    ),
-    mealPanel&&(function(){
-      var mlabels={desayuno:'Desayuno',almuerzo:'Almuerzo',merienda:'Merienda',cena:'Cena'};
-      var mdias=['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado'];
-      var mcur=(nut[mealPanel.di].m[mealPanel.meal])||'';
-      var mtxtKey=mealPanel.meal+'_txt';
-      var mtxt=(nut[mealPanel.di].m[mtxtKey])||'';
-      var mopts=MEAL_STATES.slice(1);
-      return h('div',{style:Object.assign({},card,{border:'1.5px solid '+AC,marginTop:'-4px'})},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'6px'}},
-          h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#111'}},mdias[mealPanel.di]+' · '+mlabels[mealPanel.meal]),
-          h('button',{onClick:function(){setMealPanel(null);},style:{background:'none',border:'none',fontSize:'18px',color:'#999',cursor:'pointer',padding:'0 0 0 8px'}},'x')
-        ),
-        h('div',{style:{fontSize:'11px',color:'#999',lineHeight:'1.4',marginBottom:'12px'}},'Cumplir = comer una de tus opciones (o un reemplazo que ya tengas) respetando la cantidad.'),
-        h('div',{style:{display:'flex',flexDirection:'column',gap:'8px'}},
-          mopts.map(function(ms){
-            var sel=mcur===ms.v;
-            return h('button',{key:ms.v,onClick:function(){setMealState(mealPanel.di,mealPanel.meal,ms.v);},
-              style:{display:'flex',alignItems:'center',gap:'11px',padding:'11px 13px',border:'1.5px solid '+(sel?ms.color:'rgba(0,0,0,0.1)'),borderRadius:'10px',background:sel?ms.color+'15':'#fff',cursor:'pointer',textAlign:'left',width:'100%'}},
-              h('span',{style:{width:'22px',height:'22px',borderRadius:'50%',background:ms.color,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',flexShrink:0}},ms.ic),
-              h('span',{style:{fontSize:'14px',color:sel?'#111':'#333'}},ms.label)
-            );
-          }),
-          // Si marcó "comí algo diferente" → pedir qué comió (opcional, no bloquea)
-          mcur==='no'&&h('div',{style:{marginTop:'2px'}},
-            h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'5px'}},'¿Qué comiste? (opcional, me ayuda a ajustarte)'),
-            h('input',{type:'text',value:mtxt,onChange:function(e){setMealText(mealPanel.di,mealPanel.meal,e.target.value);},placeholder:'Ej: pizza, un sándwich, salí a comer…',style:{width:'100%',boxSizing:'border-box',padding:'9px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'13px'}})
-          ),
-          mcur&&h('button',{onClick:function(){setMealState(mealPanel.di,mealPanel.meal,'');},style:{background:'none',border:'none',color:'#999',fontSize:'12px',cursor:'pointer',padding:'4px',marginTop:'2px'}},'Quitar marca')
         )
-      );
-    })(),
+      )
+    ),
+    // REGISTRO NUTRICIONAL ADECUADO: 2 variables — estructura (0-7) + cantidad (menor/parecida/mayor)
+    (estadoNutri==='adecuado')&&h('div',{style:card},
+      h('div',{style:{marginBottom:'8px'}},h('div',{style:lbl},'Tu alimentacion')),
+      h('div',{style:{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:'10px',padding:'11px 13px',marginBottom:'12px'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#166534',marginBottom:'3px'}},'Tu objetivo: platos completos + controlar cantidades'),
+        h('div',{style:{fontSize:'11px',color:'#15803D',lineHeight:'1.5'}},'Manten P + H + G + F/V, y usa las cantidades orientadas como referencia.')
+      ),
+      // Variable 1: estructura
+      h('div',{style:{fontSize:'13px',fontWeight:'600',color:'#111',marginBottom:'3px'}},'Cuantos dias la mayoria de tus comidas fueron platos completos?'),
+      h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',marginBottom:'6px'}},
+        [0,1,2,3,4,5,6,7].map(function(n){
+          var sel=nutriReg.dias===n;
+          return h('button',{key:n,onClick:function(){setNutriReg('dias',sel?undefined:n);},style:{flex:'1',minWidth:'34px',padding:'10px 0',borderRadius:'8px',border:'1.5px solid '+(sel?G:'rgba(0,0,0,0.12)'),background:sel?G:'#fff',color:sel?'#fff':'#666',fontSize:'15px',fontWeight:'800',cursor:'pointer'}},String(n));
+        })
+      ),
+      // Si estructura <5, causa de estructura
+      (typeof nutriReg.dias==='number'&&nutriReg.dias<5)&&h('div',{style:{marginTop:'10px',marginBottom:'4px'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'600',color:'#111',marginBottom:'6px'}},'Que te costo de armar los platos completos?'),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
+          ['No me organice','No tenia los alimentos necesarios','Comi varias veces afuera/socialmente','Eleji comer otras cosas','Me costo hacer todas las comidas','Otro'].map(function(causa){
+            var sel=nutriReg.causa===causa;
+            return h('button',{key:causa,onClick:function(){setNutriReg('causa',sel?undefined:causa);},style:{textAlign:'left',padding:'9px 12px',borderRadius:'8px',border:'1px solid '+(sel?O:'rgba(0,0,0,0.12)'),background:sel?'#FFF7ED':'#fff',color:sel?'#9A3412':'#444',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer'}},causa);
+          })
+        )
+      ),
+      // Variable 2: cantidad
+      h('div',{style:{borderTop:'1px solid rgba(0,0,0,0.06)',marginTop:'14px',paddingTop:'12px'}},
+        h('div',{style:{fontSize:'13px',fontWeight:'600',color:'#111',marginBottom:'8px'}},'En general, las cantidades que comiste fueron:'),
+        h('div',{style:{display:'flex',gap:'6px'}},
+          [{v:'menor',l:'Menores'},{v:'parecida',l:'Parecidas'},{v:'mayor',l:'Mayores'}].map(function(o){
+            var sel=nutriReg.cantidad===o.v;
+            return h('button',{key:o.v,onClick:function(){setNutriReg('cantidad',sel?undefined:o.v);},style:{flex:1,padding:'11px 6px',borderRadius:'8px',border:'1.5px solid '+(sel?B:'rgba(0,0,0,0.12)'),background:sel?B:'#fff',color:sel?'#fff':'#666',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},o.l);
+          })
+        ),
+        h('div',{style:{fontSize:'10px',color:'#999',marginTop:'4px',textAlign:'center'}},'…a las cantidades orientadas'),
+        // Causa de cantidad si es menor o mayor
+        (nutriReg.cantidad==='menor')&&h('div',{style:{marginTop:'10px'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'600',color:'#111',marginBottom:'6px'}},'Por que comiste menos?'),
+          h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
+            ['Me llenaba / no tenia hambre','Falta de tiempo / organizacion','Otro'].map(function(c){
+              var sel=nutriReg.causaCant===c;
+              return h('button',{key:c,onClick:function(){setNutriReg('causaCant',sel?undefined:c);},style:{textAlign:'left',padding:'9px 12px',borderRadius:'8px',border:'1px solid '+(sel?B:'rgba(0,0,0,0.12)'),background:sel?'#EBF4FF':'#fff',color:sel?'#1E40AF':'#444',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer'}},c);
+            })
+          )
+        ),
+        (nutriReg.cantidad==='mayor')&&h('div',{style:{marginTop:'10px'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'600',color:'#111',marginBottom:'6px'}},'Por que comiste mas?'),
+          h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
+            ['Tenia hambre','Gusto / antojo','Social / afuera','Otro'].map(function(c){
+              var sel=nutriReg.causaCant===c;
+              return h('button',{key:c,onClick:function(){setNutriReg('causaCant',sel?undefined:c);},style:{textAlign:'left',padding:'9px 12px',borderRadius:'8px',border:'1px solid '+(sel?B:'rgba(0,0,0,0.12)'),background:sel?'#EBF4FF':'#fff',color:sel?'#1E40AF':'#444',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer'}},c);
+            })
+          )
+        )
+      )
+    ),
+    // REGISTRO NUTRICIONAL DEPORTIVO: cantidad protagonista (días 0-7 con cantidades similares a lo pautado) + causa
+    (estadoNutri==='deportivo')&&h('div',{style:card},
+      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+        h('div',{style:lbl},'Tu alimentacion'),
+        h('button',{onClick:function(){if(typeof onVerMenus==='function')onVerMenus();},style:{background:'#EAF7F2',color:G,border:'none',borderRadius:'8px',padding:'5px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Ver mis menus')
+      ),
+      h('div',{style:{background:'#F0FDF4',border:'1px solid #BBF7D0',borderRadius:'10px',padding:'11px 13px',marginBottom:'12px'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#166534',marginBottom:'3px'}},'Tu objetivo: cubrir las cantidades de tu planificacion'),
+        h('div',{style:{fontSize:'11px',color:'#15803D',lineHeight:'1.5'}},'Comer consistentemente las cantidades que tu entrenamiento y recuperacion necesitan.')
+      ),
+      h('div',{style:{fontSize:'13px',fontWeight:'600',color:'#111',marginBottom:'10px'}},'Cuantos dias tus cantidades fueron similares a las pautadas?'),
+      h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',marginBottom:'6px'}},
+        [0,1,2,3,4,5,6,7].map(function(n){
+          var sel=nutriReg.dias===n;
+          return h('button',{key:n,onClick:function(){setNutriReg('dias',sel?undefined:n);},style:{flex:'1',minWidth:'34px',padding:'10px 0',borderRadius:'8px',border:'1.5px solid '+(sel?G:'rgba(0,0,0,0.12)'),background:sel?G:'#fff',color:sel?'#fff':'#666',fontSize:'15px',fontWeight:'800',cursor:'pointer'}},String(n));
+        })
+      ),
+      (typeof nutriReg.dias==='number'&&nutriReg.dias<5)&&h('div',{style:{marginTop:'12px'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'600',color:'#111',marginBottom:'6px'}},'Que paso principalmente?'),
+        h('div',{style:{display:'flex',flexDirection:'column',gap:'6px'}},
+          ['Comi menos porque me llenaba / no tenia hambre','Comi menos por falta de tiempo / organizacion','Comi mas porque tenia hambre','Comi mas por gusto / antojo','Comidas fuera de casa dificultaron las cantidades','Otro'].map(function(c){
+            var sel=nutriReg.causa===c;
+            return h('button',{key:c,onClick:function(){setNutriReg('causa',sel?undefined:c);},style:{textAlign:'left',padding:'9px 12px',borderRadius:'8px',border:'1px solid '+(sel?O:'rgba(0,0,0,0.12)'),background:sel?'#FFF7ED':'#fff',color:sel?'#9A3412':'#444',fontSize:'12px',fontWeight:sel?'700':'400',cursor:'pointer'}},c);
+          })
+        )
+      )
+    ),
     // AGUA
     h('div',{style:card},
       h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Agua'),
@@ -1957,6 +2100,9 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
     // SENSACIONES
     h('div',{style:card},
       h('div',{style:Object.assign({},lbl,{marginBottom:'4px'})},'Sensaciones'),
+      h('div',{style:{background:'#EFF6FF',border:'1px solid #BFDBFE',borderRadius:'10px',padding:'10px 12px',marginBottom:'10px'}},
+        h('div',{style:{fontSize:'11px',color:'#1E40AF',lineHeight:'1.5'}},'💡 Lo esperado: energia estable, buen descanso, digestion y animo. Son consecuencia de que el plan y tu contexto esten funcionando — me ayudan a entender el por que de tus resultados.')
+      ),
       h('div',{style:{fontSize:'12px',color:'#666',marginBottom:'10px'}},'Marca la opcion que mejor refleje tu semana.'),
       Object.entries(SENS).map(function(entry){
         var key=entry[0];var cfg2=entry[1];
@@ -2565,10 +2711,24 @@ function App(){
     // Alimentos (hoja Menus) + Dietas en paralelo → construye la dieta del asesorado
     Promise.all([
       fetch(SCRIPT_URL+'?action=menus').then(r=>r.json()).catch(()=>[]),
-      fetch(SCRIPT_URL+'?action=dietas').then(r=>r.json()).catch(()=>[])
-    ]).then(([menusRows,dietasRows])=>{
+      fetch(SCRIPT_URL+'?action=dietas').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=diagnosticos').then(r=>r.json()).catch(()=>[])
+    ]).then(([menusRows,dietasRows,diagRows])=>{
       const foodDB=buildFoodDB(menusRows||[]);
       localStorage.setItem(`ase_${user}_foodDB`,JSON.stringify(foodDB)); // guardar para equivalencias
+      // ESTADO NUTRICIONAL (deficitario/adecuado/deportivo) desde Diagnosticos.
+      // Prioriza NutriConfirmado (decisión del coach), fallback a NutriRecomendado.
+      const normED=x=>String(x||'').trim().toLowerCase();
+      const aseIdED=normED(localStorage.getItem(`ase_${user}_aseid`)||'');
+      let diagFila=null;
+      if(aseIdED){ diagFila=(diagRows||[]).find(r=>normED(r.AsesoradoID)===aseIdED)||null; }
+      if(!diagFila){ diagFila=(diagRows||[]).find(r=>normED(r.Asesorado)===user.trim().toLowerCase())||null; }
+      if(diagFila){
+        const est=normED(diagFila.NutriConfirmado||diagFila.NutriRecomendado||'');
+        if(est==='deficitario'||est==='adecuado'||est==='deportivo'){
+          localStorage.setItem(`ase_${user}_estadoNutri`,est);
+        }
+      }
       // FASE 4.3: buscar la fila en Dietas PRIMERO por AsesoradoID (de localStorage, guardado en 4.1),
       // con fallback a nombre. Así se migra la lectura sin romper si el ID no está.
       const normD=x=>String(x||'').trim().toLowerCase();
@@ -2755,10 +2915,12 @@ function App(){
         fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
           user,asesoradoId:(localStorage.getItem('ase_'+user+'_aseid')||''),wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
-          // FASE 3E: compliance de comidas
-          compliancecomidas:(meal3E.compliance!==null?meal3E.compliance:''),
-          comidasok:meal3E.ok, comidaspar:meal3E.par, comidasno:meal3E.no, comidasregistradas:meal3E.registradas,
-          comidasdiferente:comidasDif.join(' | '),
+          // REGISTRO NUTRICIONAL (por estado): estado + días 0-7 + causa + (adecuado/deportivo: cantidad)
+          estadoNutri:(localStorage.getItem('ase_'+user+'_estadoNutri')||'deficitario'),
+          nutriDias:((hab.nutriReg||{}).dias!==undefined?(hab.nutriReg||{}).dias:''),
+          nutriCausa:((hab.nutriReg||{}).causa||''),
+          nutriCantidad:((hab.nutriReg||{}).cantidad||''),
+          nutriCausaCant:((hab.nutriReg||{}).causaCant||''),
           sens:hab.sens||{},
           dolor:(hab.sens||{}).dolor||'',
           dolorZona:(hab.sens||{}).dolorZona||'',
@@ -3242,7 +3404,7 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus:()=>setTab('die')}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus:()=>setTab('die'),user}),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
     ),
     h('div',{style:{background:'#0A0A0A',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',position:'sticky',bottom:0,zIndex:10}},
