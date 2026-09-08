@@ -2328,7 +2328,9 @@ function App(){
     ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags,pagosData,dietasData])=>{
       const grouped={};
       (reportes||[]).forEach(row=>{const name=String(row.Asesorado||'').trim();if(!name)return;if(!grouped[name])grouped[name]=[];grouped[name].push(row);});
-      Object.values(grouped).forEach(w=>w.sort((a,b)=>String(a.SemanID||'').localeCompare(String(b.SemanID||''))));
+      // Ordenar por NÚMERO de semana (no texto: "sem_10" > "sem_9"). Los sin SemanID van primero (más viejos).
+      const semNumReport=s=>{var m=String(s||'').match(/sem_(\d+)/);return m?parseInt(m[1]):-1;};
+      Object.values(grouped).forEach(w=>w.sort((a,b)=>semNumReport(a.SemanID)-semNumReport(b.SemanID)));
       // Enriquecer cada rutina con la identidad de la ficha maestra (Asesorados), con fallback a lo de Rutinas.
       const norm=x=>String(x||'').trim().toLowerCase();
       const fichas={};
