@@ -2807,7 +2807,13 @@ function App(){
     }).catch(()=>{});
   },[user,exesReady]);
 
-  const login=name=>{localStorage.setItem(USER_KEY,name);setUser(name);};
+  const login=name=>{
+    // Normalizar solo la PRIMERA letra a mayúscula (dami -> Dami), dejando el resto igual
+    // (respeta nombres como "AgusR"). Así el login no falla por la mayúscula inicial.
+    var n=String(name||'').trim();
+    if(n)n=n.charAt(0).toUpperCase()+n.slice(1);
+    localStorage.setItem(USER_KEY,n);setUser(n);
+  };
   const logout=()=>{if(confirm('¿Cambiar nombre?')){localStorage.removeItem(USER_KEY);setUser(null);}};
 
   function load(id){
