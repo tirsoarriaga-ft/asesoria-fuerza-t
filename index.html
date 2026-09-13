@@ -958,8 +958,17 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   // base/rehab: confirmación de protocolo por ejercicio. Persiste en localStorage (por sesión+semana).
   const baseProtoKey=`ase_${user}_baseProto_${wk.id}_${activeSess}`;
   const [baseProto,setBaseProto]=useState(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${activeSess}`)||'{}');}catch(e){return{};}});
-  useEffect(()=>{try{setBaseProto(JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${activeSess}`)||'{}'));}catch(e){setBaseProto({});}},[activeSess,wk.id,user]);
-  useEffect(()=>{try{localStorage.setItem(baseProtoKey,JSON.stringify(baseProto));}catch(e){}},[baseProto,baseProtoKey]);
+  // Guarda: la clave activa de baseProto. El guardado solo escribe si la clave coincide con la
+  // que se cargó, evitando que al cambiar de semana se guarde la respuesta vieja en la clave nueva.
+  const baseProtoLoadedKey=useRef(baseProtoKey);
+  useEffect(()=>{
+    try{baseProtoLoadedKey.current=`ase_${user}_baseProto_${wk.id}_${activeSess}`;setBaseProto(JSON.parse(localStorage.getItem(baseProtoLoadedKey.current)||'{}'));}catch(e){setBaseProto({});}
+  },[activeSess,wk.id,user]);
+  useEffect(()=>{
+    // Solo guardar si la clave actual coincide con la que se cargó (misma semana/sesión).
+    if(baseProtoLoadedKey.current!==baseProtoKey)return;
+    try{localStorage.setItem(baseProtoKey,JSON.stringify(baseProto));}catch(e){}
+  },[baseProto,baseProtoKey]);
   // fuerza día1: {exId:{kg,reps}} test de RM. Se persiste en localStorage para no perderse al salir.
   const rmTestLSKey=`ase_${user}_rmTest_${activeSess}`;
   const [rmTest,setRmTest]=useState(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${activeSess}`)||'{}');}catch(e){return{};}});
