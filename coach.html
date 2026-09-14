@@ -2302,6 +2302,93 @@ function CobrosPanel({maestra,pagos,onRefresh}){
 }
 
 // ── PESTAÑA REVISAR: auditoría automática de datos (detecta huecos por asesorado) ──
+// ── PESTAÑA MENSUAL: audita la asesoría como sistema (últimas 4 semanas, 4 dimensiones) ──
+function AuditoriaMensual({maestra,data,rutinas,diagnosticos,videosPend,decisiones}){
+  var [exp,setExp]=useState({});
+  var norm=function(x){return String(x||'').trim().toLowerCase();};
+  var rutaPorNombre={};(rutinas||[]).forEach(function(r){rutaPorNombre[norm(r.Asesorado)]=r;});
+  var activos=(maestra||[]).filter(function(a){var p=norm(a.Plan);return norm(a.Estado)!=='baja'&&(p==='online'||p==='presencial')&&String(a.Asesorado||'').trim();});
+  function pctNum(v){return parseInt(String(v||'0').replace('%',''))||0;}
+
+  var res=activos.map(function(a){
+    var nombre=a.Asesorado;var nl=norm(nombre);
+    var weeks=(data[nombre]||[]).slice(-4); // últimas 4 semanas
+    var ruta=rutaPorNombre[nl];
+    var obj=norm(a.Objetivo);
+    // A. SU PARTE
+    var reportes=weeks.length; // reportó X de 4
+    var comidasProm=weeks.length?Math.round(weeks.reduce(function(s,w){return s+pctNum(w['%Comidas']);},0)/weeks.length):0;
+    var suenoProm=weeks.length?Math.round(weeks.reduce(function(s,w){return s+(parseInt(w.DiasSueno)||0);},0)/weeks.length):0;
+    var suParteEstado=(reportes>=3&&comidasProm>=70)?'g':(reportes>=2?'y':'r');
+    // B. MI PARTE (tendencia de cintura en las 4 sem)
+    var cints=weeks.map(function(w){return parseFloat(String(w.Cintura||'').replace(',','.'));}).filter(function(v){return !isNaN(v);});
+    var tendCintura=cints.length>=2?(cints[cints.length-1]-cints[0]):null;
+    var pesos=weeks.map(function(w){return parseFloat(String(w.Peso||'').replace(',','.'));}).filter(function(v){return !isNaN(v);});
+    var tendPeso=pesos.length>=2?(pesos[pesos.length-1]-pesos[0]):null;
+    var miParteEstado,miParteTxt;
+    if(tendCintura===null){miParteEstado='y';miParteTxt='Faltan mediciones para evaluar';}
+    else{
+      var funciona=(obj==='deficit')?tendCintura<-0.3:(obj==='superavit'?tendCintura>=0:Math.abs(tendCintura)<1.5);
+      if(funciona){miParteEstado='g';miParteTxt='Plan funcionando · cintura '+(tendCintura>0?'+':'')+tendCintura.toFixed(1)+'cm';}
+      else if(suParteEstado==='g'){miParteEstado='r';miParteTxt='Cumple pero sin resultados · revisar prescripción';}
+      else{miParteEstado='y';miParteTxt='Sin resultados, pero cumplimiento irregular';}
+    }
+    // C. CALIDAD DEL SEGUIMIENTO (mi parte como coach)
+    var nVideos=(videosPend&&videosPend[nl])||0;
+    var checkpoints=(decisiones||[]).filter(function(d){return norm(d.Asesorado)===nl;}).length;
+    var calidadEstado=(nVideos>0)?'y':'g';
+    var calidadTxt=(nVideos>0)?(nVideos+' video(s) sin corregir'):'Al día con correcciones';
+    // D. PUNTOS ABIERTOS (persistentes en las 4 sem)
+    var abiertos=[];
+    var semSueno=weeks.filter(function(w){return (parseInt(w.DiasSueno)||0)<4;}).length;
+    if(semSueno>=3)abiertos.push('Sueño bajo hace '+semSueno+' semanas (estructural)');
+    var semDolor=weeks.filter(function(w){return String(w.Dolor||'').trim()&&norm(w.Dolor)!=='no'&&norm(w.Dolor)!=='';}).length;
+    if(semDolor>=2)abiertos.push('Dolor reportado '+semDolor+' semanas');
+    if(nVideos>0)abiertos.push(nVideos+' video(s) sin corregir (mi parte)');
+
+    // Estado global del mes
+    var glob=(suParteEstado==='r'||miParteEstado==='r')?'r':((suParteEstado==='g'&&miParteEstado==='g'&&calidadEstado==='g')?'g':'y');
+    return {a:a,nombre:nombre,glob:glob,reportes:reportes,comidasProm:comidasProm,suenoProm:suenoProm,suParteEstado:suParteEstado,miParteEstado:miParteEstado,miParteTxt:miParteTxt,calidadEstado:calidadEstado,calidadTxt:calidadTxt,abiertos:abiertos,tendPeso:tendPeso,tendCintura:tendCintura,obj:obj};
+  });
+  var ordG={r:0,y:1,g:2};
+  res.sort(function(x,y){return (ordG[x.glob]-ordG[y.glob])||String(x.nombre).localeCompare(String(y.nombre));});
+  var colG={r:'#EF4444',y:'#D97706',g:'#1D9E75'};
+  var lblEst={r:'🔴',y:'🟡',g:'🟢'};
+
+  return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'12px 12px 90px'}},
+    h('div',{style:{marginBottom:'12px'}},
+      h('div',{style:{fontSize:'20px',fontWeight:'800'}},'Auditoría mensual'),
+      h('div',{style:{fontSize:'12px',color:'#999'}},'Últimas 4 semanas · ¿la asesoría funciona como sistema?')
+    ),
+    res.length===0&&h('div',{style:{textAlign:'center',padding:'40px',color:'#999'}},'Sin datos suficientes.'),
+    res.map(function(x){
+      var e=exp[x.nombre];
+      return h('div',{key:x.nombre,style:{background:'#fff',border:'1px solid rgba(0,0,0,0.08)',borderLeft:'3px solid '+colG[x.glob],borderRadius:'12px',padding:'13px',marginBottom:'8px'}},
+        h('div',{onClick:function(){setExp(Object.assign({},exp,{[x.nombre]:!e}));},style:{cursor:'pointer'}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+            h('div',{style:{fontSize:'15px',fontWeight:'700',color:'#111'}},x.nombre),
+            h('div',{style:{display:'flex',gap:'4px',fontSize:'13px'}},
+              h('span',{title:'Su parte'},lblEst[x.suParteEstado]),
+              h('span',{title:'Mi parte'},lblEst[x.miParteEstado]),
+              h('span',{title:'Seguimiento'},lblEst[x.calidadEstado])
+            )
+          ),
+          x.abiertos.length>0&&h('div',{style:{fontSize:'11px',color:'#D97706',marginTop:'4px'}},'⚠️ '+x.abiertos.length+' punto(s) estructural(es)')
+        ),
+        e&&h('div',{style:{marginTop:'10px',paddingTop:'10px',borderTop:'1px solid rgba(0,0,0,0.06)',fontSize:'12px',color:'#444'}},
+          h('div',{style:{marginBottom:'6px'}},h('span',{style:{fontWeight:'700',color:colG[x.suParteEstado]}},lblEst[x.suParteEstado]+' SU PARTE: '),'Reportó '+x.reportes+'/4 · comidas '+x.comidasProm+'% · sueño '+x.suenoProm+'/7'),
+          h('div',{style:{marginBottom:'6px'}},h('span',{style:{fontWeight:'700',color:colG[x.miParteEstado]}},lblEst[x.miParteEstado]+' MI PARTE: '),x.miParteTxt+(x.tendPeso!==null?(' · peso '+(x.tendPeso>0?'+':'')+x.tendPeso.toFixed(1)+'kg'):'')),
+          h('div',{style:{marginBottom:'6px'}},h('span',{style:{fontWeight:'700',color:colG[x.calidadEstado]}},lblEst[x.calidadEstado]+' SEGUIMIENTO: '),x.calidadTxt),
+          x.abiertos.length>0&&h('div',{style:{marginTop:'8px',padding:'8px',background:'#FFF7ED',borderRadius:'8px'}},
+            h('div',{style:{fontWeight:'700',color:'#9A3412',marginBottom:'4px',fontSize:'11px'}},'PUNTOS ESTRUCTURALES:'),
+            x.abiertos.map(function(o,i){return h('div',{key:i,style:{fontSize:'11px',color:'#9A3412'}},'• '+o);})
+          )
+        )
+      );
+    })
+  );
+}
+
 // ── PESTAÑA AUDITORIA: motor por capas (cadena de dependencias) ──
 // Por cada asesorado recorre: base -> sabe/hizo su parte -> mi parte funciona -> puntos abiertos.
 // Se detiene en el primer eslabon roto (cuello de botella) y da decision + accion.
@@ -2398,6 +2485,44 @@ function AuditoriaDatos({maestra,data,rutinas,diagnosticos,videosPend}){
     try{navigator.clipboard.writeText(msg);}catch(e){}
     setCopiado(x.nombre);setTimeout(function(){setCopiado(null);},2000);
   }
+  // Mensaje de INTERVENCIÓN para el asesorado (fusiona los pedidos según lo que le falta).
+  function mensajeIntervencion(x){
+    var prim=String(x.nombre).split(' ')[0];
+    var pedidos=[]; // cosas que le pido al asesorado
+    var extras=[];  // menciones secundarias
+    // Según la decisión/cuello, armar el pedido principal
+    if(x.decision==='DESTRABAR'){
+      // Detectar qué datos faltan del texto del cuello
+      var c=String(x.cuello).toLowerCase();
+      var datos=[];
+      if(c.indexOf('datos personales')>=0)datos.push('tus datos (sexo, edad, altura)');
+      if(c.indexOf('peso/cintura')>=0)datos.push('tu peso y cintura en ayunas (apenas te levantás)');
+      if(datos.length)pedidos.push('me falta '+datos.join(' y '));
+      // estado nutricional y template son tarea del coach, no se piden
+    } else if(x.decision==='EXIGIR SU PARTE'){
+      pedidos.push('necesito que retomes tus reportes — sin esos datos no puedo ajustarte nada. ¿Pasó algo que te complicó?');
+    } else if(x.decision==='EDUCAR'){
+      pedidos.push('¿cómo venís con la app? Cualquier duda para registrar me escribís. Lo importante ahora es que arranques a cargar tus datos');
+    } else if(x.decision==='HABLAR / ADAPTAR'){
+      pedidos.push('vi que esta semana el cumplimiento vino un poco bajo. Antes de tocar nada del plan, contame qué te complicó');
+    } else if(x.decision==='AJUSTAR MI PARTE'){
+      pedidos.push('venís cumpliendo muy bien 👏 Voy a ajustarte el plan porque las mediciones se estancaron. Te aviso los cambios');
+    } else if(x.decision==='SOSTENER'){
+      pedidos.push('¡excelente semana! Venís cumpliendo y las mediciones van para donde queremos. Seguí igual, no cambiamos nada 🔥');
+    }
+    // Puntos abiertos de "su parte" (dolor, sueño) se suman como extras
+    x.abiertos.forEach(function(o){
+      if(o.g==='ase'){
+        if(o.t.toLowerCase().indexOf('dolor')>=0)extras.push('contame más sobre la molestia que reportaste (cuándo aparece, en qué ejercicios)');
+        else if(o.t.toLowerCase().indexOf('sueno')>=0||o.t.toLowerCase().indexOf('sueño')>=0)extras.push('tratá de priorizar el descanso esta semana (7hs), impacta directo en tus resultados');
+      }
+    });
+    var cuerpo=pedidos.join('. ');
+    if(extras.length)cuerpo+='. Además, '+extras.join('; ');
+    var msg='Hola '+prim+'! '+cuerpo+' 🙌';
+    try{navigator.clipboard.writeText(msg);}catch(e){}
+    setCopiado(x.nombre+'_int');setTimeout(function(){setCopiado(null);},2000);
+  }
 
   var badgeEst={r:{l:'Destrabar',c:'#EF4444'},o:{l:'Ajustar',c:'#D97706'},y:{l:'Atencion',c:'#D97706'},g:{l:'OK',c:'#1D9E75'}};
 
@@ -2428,7 +2553,10 @@ function AuditoriaDatos({maestra,data,rutinas,diagnosticos,videosPend}){
           x.abiertos.length>0&&h('div',{style:{marginBottom:'8px'}},
             x.abiertos.map(function(o,i){return h('div',{key:i,style:{fontSize:'11px',color:o.g==='coach'?'#4338CA':'#9A3412',display:'flex',alignItems:'center',gap:'6px',marginBottom:'2px'}},h('span',null,o.g==='coach'?'🔧':'⚠️'),o.t+(o.g==='coach'?' (mi parte)':''));})
           ),
-          h('button',{onClick:function(){copiarAccion(x);},style:{background:copiado===x.nombre?G:'#F0F0F0',color:copiado===x.nombre?'#fff':'#666',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},copiado===x.nombre?'✓ Copiado':'📋 Copiar resumen')
+          h('div',{style:{display:'flex',gap:'6px'}},
+            h('button',{onClick:function(){mensajeIntervencion(x);},style:{flex:1,background:copiado===x.nombre+'_int'?G:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'7px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},copiado===x.nombre+'_int'?'✓ Mensaje copiado':'💬 Mensaje al asesorado'),
+            h('button',{onClick:function(){copiarAccion(x);},style:{background:copiado===x.nombre?G:'#F0F0F0',color:copiado===x.nombre?'#fff':'#666',border:'none',borderRadius:'8px',padding:'7px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},copiado===x.nombre?'✓':'📋 Resumen')
+          )
         )
       );
     })
@@ -2553,10 +2681,11 @@ function App(){
       appTab==='sem'&&h(SemanaPanel,{data,rutinas}),
       appTab==='aud'&&h(AuditoriaPanel,{data,rutinas,decisiones}),
       appTab==='cobros'&&h(CobrosPanel,{maestra,pagos,onRefresh:loadData}),
-      appTab==='revisar'&&h(AuditoriaDatos,{maestra,data,rutinas,diagnosticos,videosPend})
+      appTab==='revisar'&&h(AuditoriaDatos,{maestra,data,rutinas,diagnosticos,videosPend}),
+      appTab==='mensual'&&h(AuditoriaMensual,{maestra,data,rutinas,diagnosticos,videosPend,decisiones})
     ),
     h('div',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'#fff',borderTop:'1px solid rgba(0,0,0,0.08)',display:'flex',zIndex:20}},
-      [{v:'lista',l:'Asesorados',ic:'👥'},{v:'vids',l:'Videos',ic:'🎬'},{v:'sem',l:'Semana',ic:'📅'},{v:'revisar',l:'Auditoría',ic:'🔍'},{v:'cobros',l:'Cobros',ic:'💰'}].map(t=>
+      [{v:'lista',l:'Asesorados',ic:'👥'},{v:'vids',l:'Videos',ic:'🎬'},{v:'revisar',l:'Auditoría',ic:'🔍'},{v:'mensual',l:'Mensual',ic:'📆'},{v:'cobros',l:'Cobros',ic:'💰'}].map(t=>
         h('button',{key:t.v,onClick:()=>setAppTab(t.v),style:{flex:1,padding:'10px 2px 14px',fontSize:'10px',background:'none',border:'none',borderTop:appTab===t.v?'2px solid #111':'2px solid transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',color:appTab===t.v?'#111':'#999',fontWeight:appTab===t.v?'700':'400'}},h('span',{style:{fontSize:'18px'}},t.ic),t.l)
       )
     )
