@@ -2302,96 +2302,138 @@ function CobrosPanel({maestra,pagos,onRefresh}){
 }
 
 // ── PESTAÑA REVISAR: auditoría automática de datos (detecta huecos por asesorado) ──
-function AuditoriaDatos({maestra,data,rutinas,diagnosticos}){
+// ── PESTAÑA AUDITORIA: motor por capas (cadena de dependencias) ──
+// Por cada asesorado recorre: base -> sabe/hizo su parte -> mi parte funciona -> puntos abiertos.
+// Se detiene en el primer eslabon roto (cuello de botella) y da decision + accion.
+function AuditoriaDatos({maestra,data,rutinas,diagnosticos,videosPend}){
+  var [expandido,setExpandido]=useState({});
   var [copiado,setCopiado]=useState(null);
   var norm=function(x){return String(x||'').trim().toLowerCase();};
-  // Índices para cruzar
   var rutaPorNombre={};(rutinas||[]).forEach(function(r){rutaPorNombre[norm(r.Asesorado)]=r;});
   var diagPorNombre={};(diagnosticos||[]).forEach(function(d){diagPorNombre[norm(d.Asesorado)]=d;});
   var diagPorId={};(diagnosticos||[]).forEach(function(d){if(d.AsesoradoID)diagPorId[norm(d.AsesoradoID)]=d;});
-  // Semana actual aproximada por asesorado (para "no reporta hace X")
-  function semanasSinReportar(nombre){
-    var weeks=data[nombre]||[];
-    if(!weeks.length)return 999; // nunca reportó
-    var lat=weeks[weeks.length-1];
-    // parsear fecha del último reporte
-    var s=String(lat.Fecha||'').trim();var f=null;var m;
-    if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))f=new Date(+m[3],+m[2]-1,+m[1]);
-    else if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))f=new Date(+m[1],+m[2]-1,+m[3]);
-    if(!f)return 0;
-    return Math.floor((new Date()-f)/(1000*60*60*24*7));
-  }
-  // Solo online/presencial activos
-  var activos=(maestra||[]).filter(function(a){
-    var plan=norm(a.Plan);
-    return norm(a.Estado)!=='baja'&&(plan==='online'||plan==='presencial')&&String(a.Asesorado||'').trim();
-  });
-  // Evaluar cada asesorado
-  var resultados=activos.map(function(a){
-    var nombre=a.Asesorado;var nlow=norm(nombre);
-    var ruta=rutaPorNombre[nlow];
-    var diag=diagPorId[norm(a.AsesoradoID)]||diagPorNombre[nlow];
+  function parseF(s){s=String(s||'').trim();var m;if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))return new Date(+m[3],+m[2]-1,+m[1]);if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))return new Date(+m[1],+m[2]-1,+m[3]);return null;}
+  function semSinReportar(nombre){var w=data[nombre]||[];if(!w.length)return 999;var f=parseF((w[w.length-1]||{}).Fecha);if(!f)return 0;return Math.floor((new Date()-f)/(1000*60*60*24*7));}
+  function semanaAse(a){var f=parseF(a.FechaInicio);if(!f)return 0;return Math.floor((new Date()-f)/(1000*60*60*24*7))+1;}
+
+  var activos=(maestra||[]).filter(function(a){var p=norm(a.Plan);return norm(a.Estado)!=='baja'&&(p==='online'||p==='presencial')&&String(a.Asesorado||'').trim();});
+
+  var auditados=activos.map(function(a){
+    var nombre=a.Asesorado;var nl=norm(nombre);
+    var ruta=rutaPorNombre[nl];
+    var diag=diagPorId[norm(a.AsesoradoID)]||diagPorNombre[nl];
     var weeks=data[nombre]||[];
     var lat=weeks.length?weeks[weeks.length-1]:null;
-    var alertas=[];
+    var semAse=semanaAse(a);
+    var esNuevo=semAse<=2;
     var bloque=norm(ruta&&ruta.Bloque);
-    var tieneRuta=!!ruta;
-    var reportoAlguna=weeks.length>0;
-    var semSin=semanasSinReportar(nombre);
-    // Peso/cintura: del último reporte
-    var tienePeso=lat&&String(lat.Peso||'').trim()!=='';
-    var tieneCintura=lat&&String(lat.Cintura||'').trim()!=='';
     var template=String((ruta&&ruta.Template)||'').trim();
     var nutriConf=norm(diag&&(diag.NutriConfirmado||diag.NutriRecomendado));
     var tieneDatosPers=a.Sexo&&a.Edad&&a.Altura;
-    // Reglas (por gravedad)
-    if(tieneRuta&&!reportoAlguna)alertas.push({g:'r',t:'Tiene rutina pero nunca reportó'});
-    else if(semSin>=2&&semSin<999)alertas.push({g:'r',t:'No reporta hace '+semSin+' semanas'});
-    if(bloque&&bloque!=='base'&&(!tienePeso||!tieneCintura))alertas.push({g:'r',t:'Bloque '+bloque+' sin '+(!tienePeso&&!tieneCintura?'peso ni cintura':(!tienePeso?'peso':'cintura'))});
-    if(!template&&weeks.length>=3)alertas.push({g:'y',t:'Sin Template (lleva '+weeks.length+' semanas)'});
-    if(!nutriConf)alertas.push({g:'y',t:'Sin estado nutricional definido'});
-    if(!tieneDatosPers)alertas.push({g:'y',t:'Faltan datos personales ('+[!a.Sexo?'sexo':'',!a.Edad?'edad':'',!a.Altura?'altura':''].filter(Boolean).join(', ')+')'});
-    if(!diag)alertas.push({g:'w',t:'Sin diagnóstico'});
-    return {a:a,nombre:nombre,alertas:alertas};
-  }).filter(function(r){return r.alertas.length>0;});
-  // Ordenar: más graves primero
-  var pesoG={r:0,y:1,w:2};
-  resultados.sort(function(x,y){
-    var gx=Math.min.apply(null,x.alertas.map(function(al){return pesoG[al.g];}));
-    var gy=Math.min.apply(null,y.alertas.map(function(al){return pesoG[al.g];}));
-    return gx-gy;
+    var tienePeso=lat&&String(lat.Peso||'').trim()!=='';
+    var tieneCintura=lat&&String(lat.Cintura||'').trim()!=='';
+    var reporto=weeks.length>0;
+    var semSin=semSinReportar(nombre);
+    var nVideos=(videosPend&&videosPend[nl])||0;
+    // compliance del ultimo reporte
+    var comidasP=lat?parseInt(String(lat['%Comidas']||'0').replace('%','')):0;
+    var suenoP=lat?parseInt(lat.DiasSueno||0):0;
+
+    // ── CADENA ──
+    var capa,estado,cuello,decision,accion,color;
+    var faltanBase=[];
+    if(!tieneDatosPers)faltanBase.push('datos personales');
+    if(!nutriConf)faltanBase.push('estado nutricional');
+    if(bloque&&bloque!=='base'&&(!tienePeso||!tieneCintura))faltanBase.push('peso/cintura (bloque '+bloque+')');
+    if(!template&&weeks.length>=3&&bloque!=='base')faltanBase.push('Template');
+
+    if(!ruta){
+      capa=1;estado='r';cuello='Sin rutina cargada';decision='DESTRABAR';accion='Armar la rutina desde el constructor.';color='#EF4444';
+    } else if(faltanBase.length>0){
+      capa=1;estado='r';cuello='Falta: '+faltanBase.join(', ');decision='DESTRABAR';accion='Pedir/cargar '+faltanBase.join(', ')+' antes de analizar resultados.';color='#EF4444';
+    } else if(!reporto){
+      if(esNuevo){capa=2;estado='y';cuello='Nuevo, aun no reporto';decision='EDUCAR';accion='Guiar el primer registro y reporte. No exigir resultados.';color='#D97706';}
+      else{capa=2;estado='r';cuello='Nunca reporto';decision='EXIGIR SU PARTE';accion='Hablar: sin reporte no hay asesoria. Definir compromiso.';color='#EF4444';}
+    } else if(semSin>=2&&semSin<999){
+      capa=2;estado='r';cuello='No reporta hace '+semSin+' semanas';decision='EXIGIR SU PARTE';accion='Contactar: entender por que dejo de reportar y retomar.';color='#EF4444';
+    } else if(esNuevo){
+      capa=2;estado='y';cuello='En onboarding (sem '+semAse+')';decision='EDUCAR';accion='Confirmar que entiende la app. Foco en registrar, no en resultados.';color='#D97706';
+    } else if(comidasP<70||suenoP<4){
+      capa=3;estado='y';cuello='Cumplimiento bajo ('+(comidasP<70?'comidas '+comidasP+'%':'')+(comidasP<70&&suenoP<4?' · ':'')+(suenoP<4?'sueno '+suenoP+'/7':'')+')';decision='HABLAR / ADAPTAR';accion='Entender por que no cumple antes de tocar el plan (regla <70%).';color='#D97706';
+    } else {
+      // Su parte OK -> mi parte
+      var tendCintura=(function(){var vals=weeks.slice(-3).map(function(w){return parseFloat(String(w.Cintura||'').replace(',','.'));}).filter(function(v){return !isNaN(v);});if(vals.length<2)return null;return vals[vals.length-1]-vals[0];})();
+      var obj=norm(a.Objetivo);
+      var funciona=null;
+      if(obj==='deficit')funciona=(tendCintura!==null&&tendCintura<-0.2);
+      else if(obj==='superavit')funciona=(tendCintura!==null&&tendCintura>=0);
+      else funciona=(tendCintura!==null&&Math.abs(tendCintura)<1);
+      if(tendCintura===null){capa=4;estado='y';cuello='Cumple, faltan datos para juzgar el plan';decision='RECABAR / SOSTENER';accion='Necesita mas semanas de mediciones para evaluar. Sostener.';color='#D97706';}
+      else if(funciona){capa=4;estado='g';cuello='Todo funcionando';decision='SOSTENER';accion='Plan funciona + cumple. No cambiar. Felicitar.';color='#1D9E75';}
+      else{capa=4;estado='o';cuello='Cumple pero el plan no responde';decision='AJUSTAR MI PARTE';accion='Buen cumplimiento sin resultados: revisar calorico/intensidad.';color='#D97706';}
+    }
+
+    // ── PUNTOS ABIERTOS (siempre se revisan, independiente del cuello) ──
+    var abiertos=[];
+    if(nVideos>0)abiertos.push({t:nVideos+' video(s) sin corregir',g:'coach'});
+    if(lat&&String(lat.Dolor||'').trim()&&norm(lat.Dolor)!=='no'&&norm(lat.Dolor)!=='')abiertos.push({t:'Dolor reportado'+(lat.DolorZona?(': '+lat.DolorZona):''),g:'ase'});
+    if(suenoP>0&&suenoP<4&&capa>=3)abiertos.push({t:'Sueno bajo ('+suenoP+'/7)',g:'ase'});
+    if(reporto&&comidasP>0&&comidasP<70&&capa>=3&&decision!=='HABLAR / ADAPTAR')abiertos.push({t:'Comidas '+comidasP+'%',g:'ase'});
+
+    return {a:a,nombre:nombre,capa:capa,estado:estado,cuello:cuello,decision:decision,accion:accion,color:color,abiertos:abiertos,semAse:semAse,bloque:bloque,reporto:reporto,nVideos:nVideos};
   });
-  var colG={r:'#EF4444',y:'#D97706',w:'#999'};
-  function copiarPedido(nombre,alertas){
-    // Mensaje simple para pedir lo que falta
-    var faltantes=alertas.filter(function(al){return al.g!=='w';}).map(function(al){return al.t.toLowerCase();});
-    var msg='Hola '+String(nombre).split(' ')[0]+'! Para tener tu seguimiento completo me falta: '+faltantes.join('; ')+'. ¿Me lo pasás cuando puedas? 🙌';
+
+  // Ordenar por gravedad (rojo primero) y luego por capa
+  var ordEst={r:0,o:1,y:2,g:3};
+  auditados.sort(function(x,y){return (ordEst[x.estado]-ordEst[y.estado])||(x.capa-y.capa)||String(x.nombre).localeCompare(String(y.nombre));});
+
+  // Resumen arriba
+  var nRojo=auditados.filter(function(x){return x.estado==='r';}).length;
+  var nAmar=auditados.filter(function(x){return x.estado==='y'||x.estado==='o';}).length;
+  var nVerde=auditados.filter(function(x){return x.estado==='g';}).length;
+  var totalAbiertos=auditados.reduce(function(s,x){return s+x.abiertos.length;},0);
+
+  function copiarAccion(x){
+    var msg='['+x.nombre+'] '+x.decision+' · '+x.cuello+'\nAccion: '+x.accion+(x.abiertos.length?('\nPendientes: '+x.abiertos.map(function(o){return o.t;}).join(', ')):'');
     try{navigator.clipboard.writeText(msg);}catch(e){}
-    setCopiado(nombre);setTimeout(function(){setCopiado(null);},2000);
+    setCopiado(x.nombre);setTimeout(function(){setCopiado(null);},2000);
   }
+
+  var badgeEst={r:{l:'Destrabar',c:'#EF4444'},o:{l:'Ajustar',c:'#D97706'},y:{l:'Atencion',c:'#D97706'},g:{l:'OK',c:'#1D9E75'}};
+
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'12px 12px 90px'}},
     h('div',{style:{marginBottom:'12px'}},
-      h('div',{style:{fontSize:'20px',fontWeight:'800'}},'Revisar datos'),
-      h('div',{style:{fontSize:'12px',color:'#999'}},resultados.length===0?'Todo en orden ✓':(resultados.length+' asesorados con pendientes'))
+      h('div',{style:{fontSize:'20px',fontWeight:'800'}},'Auditoria semanal'),
+      h('div',{style:{fontSize:'12px',color:'#999'}},activos.length+' asesorados · '+totalAbiertos+' puntos abiertos')
     ),
-    resultados.length===0&&h('div',{style:{textAlign:'center',padding:'40px 20px',color:'#999',fontSize:'13px'}},'Ningún online/presencial tiene huecos de datos. 🎉'),
-    resultados.map(function(r){
-      return h('div',{key:r.nombre,style:{background:'#fff',border:'1px solid rgba(0,0,0,0.08)',borderRadius:'12px',padding:'13px',marginBottom:'8px'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
-          h('div',{style:{fontSize:'15px',fontWeight:'700',color:'#111'}},r.nombre+(r.a.Plan?(' · '+r.a.Plan):'')),
-          h('button',{onClick:function(){copiarPedido(r.nombre,r.alertas);},style:{background:copiado===r.nombre?G:'#F0F0F0',color:copiado===r.nombre?'#fff':'#666',border:'none',borderRadius:'8px',padding:'5px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},copiado===r.nombre?'✓ Copiado':'📋 Pedir')
+    h('div',{style:{display:'flex',gap:'8px',marginBottom:'14px'}},
+      h('div',{style:{flex:1,background:'#FEF2F2',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'800',color:'#EF4444'}},nRojo),h('div',{style:{fontSize:'10px',color:'#991B1B',fontWeight:'700'}},'DESTRABAR')),
+      h('div',{style:{flex:1,background:'#FFFBEB',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'800',color:'#D97706'}},nAmar),h('div',{style:{fontSize:'10px',color:'#92400E',fontWeight:'700'}},'REVISAR')),
+      h('div',{style:{flex:1,background:'#F0FDF4',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'800',color:'#1D9E75'}},nVerde),h('div',{style:{fontSize:'10px',color:'#166534',fontWeight:'700'}},'OK'))
+    ),
+    auditados.map(function(x){
+      var ab=expandido[x.nombre];
+      var be=badgeEst[x.estado]||badgeEst.y;
+      return h('div',{key:x.nombre,style:{background:'#fff',border:'1px solid rgba(0,0,0,0.08)',borderLeft:'3px solid '+x.color,borderRadius:'12px',padding:'13px',marginBottom:'8px'}},
+        h('div',{onClick:function(){setExpandido(Object.assign({},expandido,{[x.nombre]:!ab}));},style:{cursor:'pointer'}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}},
+            h('div',{style:{fontSize:'15px',fontWeight:'700',color:'#111'}},x.nombre+' ',h('span',{style:{fontSize:'11px',color:'#bbb',fontWeight:'400'}},'· sem '+x.semAse+(x.bloque?(' · '+x.bloque):''))),
+            h('span',{style:{fontSize:'10px',fontWeight:'700',color:'#fff',background:x.color,padding:'3px 8px',borderRadius:'20px'}},x.decision)
+          ),
+          h('div',{style:{fontSize:'12px',color:'#666'}},x.cuello),
+          x.abiertos.length>0&&h('div',{style:{fontSize:'11px',color:'#D97706',marginTop:'3px'}},'⚠️ '+x.abiertos.length+' pendiente(s)'+(ab?'':' — tocá para ver'))
         ),
-        h('div',{style:{display:'flex',flexDirection:'column',gap:'4px'}},
-          r.alertas.map(function(al,i){
-            return h('div',{key:i,style:{fontSize:'12px',color:colG[al.g],display:'flex',alignItems:'center',gap:'6px'}},
-              h('span',{style:{width:'6px',height:'6px',borderRadius:'50%',background:colG[al.g],flexShrink:0}}),al.t);
-          })
+        ab&&h('div',{style:{marginTop:'10px',paddingTop:'10px',borderTop:'1px solid rgba(0,0,0,0.06)'}},
+          h('div',{style:{fontSize:'12px',color:'#333',marginBottom:'8px'}},h('span',{style:{fontWeight:'700'}},'Acción: '),x.accion),
+          x.abiertos.length>0&&h('div',{style:{marginBottom:'8px'}},
+            x.abiertos.map(function(o,i){return h('div',{key:i,style:{fontSize:'11px',color:o.g==='coach'?'#4338CA':'#9A3412',display:'flex',alignItems:'center',gap:'6px',marginBottom:'2px'}},h('span',null,o.g==='coach'?'🔧':'⚠️'),o.t+(o.g==='coach'?' (mi parte)':''));})
+          ),
+          h('button',{onClick:function(){copiarAccion(x);},style:{background:copiado===x.nombre?G:'#F0F0F0',color:copiado===x.nombre?'#fff':'#666',border:'none',borderRadius:'8px',padding:'6px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},copiado===x.nombre?'✓ Copiado':'📋 Copiar resumen')
         )
       );
     })
   );
 }
-
 function App(){
   const [unlocked,setUnlocked]=useState(()=>sessionStorage.getItem('coach_ok')==='1');
   const [loading,setLoading]=useState(false);
@@ -2511,10 +2553,10 @@ function App(){
       appTab==='sem'&&h(SemanaPanel,{data,rutinas}),
       appTab==='aud'&&h(AuditoriaPanel,{data,rutinas,decisiones}),
       appTab==='cobros'&&h(CobrosPanel,{maestra,pagos,onRefresh:loadData}),
-      appTab==='revisar'&&h(AuditoriaDatos,{maestra,data,rutinas,diagnosticos})
+      appTab==='revisar'&&h(AuditoriaDatos,{maestra,data,rutinas,diagnosticos,videosPend})
     ),
     h('div',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'#fff',borderTop:'1px solid rgba(0,0,0,0.08)',display:'flex',zIndex:20}},
-      [{v:'lista',l:'Asesorados',ic:'👥'},{v:'vids',l:'Videos',ic:'🎬'},{v:'sem',l:'Semana',ic:'📅'},{v:'revisar',l:'Revisar',ic:'🔍'},{v:'cobros',l:'Cobros',ic:'💰'}].map(t=>
+      [{v:'lista',l:'Asesorados',ic:'👥'},{v:'vids',l:'Videos',ic:'🎬'},{v:'sem',l:'Semana',ic:'📅'},{v:'revisar',l:'Auditoría',ic:'🔍'},{v:'cobros',l:'Cobros',ic:'💰'}].map(t=>
         h('button',{key:t.v,onClick:()=>setAppTab(t.v),style:{flex:1,padding:'10px 2px 14px',fontSize:'10px',background:'none',border:'none',borderTop:appTab===t.v?'2px solid #111':'2px solid transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',color:appTab===t.v?'#111':'#999',fontWeight:appTab===t.v?'700':'400'}},h('span',{style:{fontSize:'18px'}},t.ic),t.l)
       )
     )
