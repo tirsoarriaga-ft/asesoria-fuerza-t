@@ -1005,7 +1005,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     if(typeof item==='object'&&Array.isArray(item)){acc.push(item);}
     else{acc.push([item]);}
     return acc;
-  },[]).map(g=>g.map(id=>findEx(resolveEx(id))).filter(Boolean)).filter(g=>g.length>0&&!g.every(e=>String(e.m||'').toLowerCase()==='calentamiento'));
+  },[]).map(g=>g.map(id=>{var ex=findEx(resolveEx(id));return ex?Object.assign({},ex,{origId:id}):null;}).filter(Boolean)).filter(g=>g.length>0&&!g.every(e=>String(e.m||'').toLowerCase()==='calentamiento'));
   void swapVerEx;
   const sessExes=sessGroups.flat();
   console.log('[DEBUG] rawAssign:',JSON.stringify(rawAssign),'sessGroups count:',sessGroups.length,sessGroups.map(g=>g.map(e=>e?.n)));
@@ -1133,35 +1133,43 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
         h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 16px 36px',maxHeight:'70vh',overflowY:'auto'}},
           h('div',{style:{width:'36px',height:'4px',background:'#E0E0E0',borderRadius:'2px',margin:'0 auto 16px'}}),
           h('div',{style:{fontSize:'11px',fontWeight:'700',color:'#888',marginBottom:'4px',letterSpacing:'0.08em',textTransform:'uppercase'}},'Equivalentes — '+exEquiv.m),
+          // Músculo de referencia = el del ejercicio ORIGINAL del slot (no el mostrado),
+          // para que las opciones sean siempre las mismas sin importar por cuál esté reemplazado.
+          (function(){return null;})(),
           h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#0A0A0A',marginBottom:'16px'}},'No podes hacer '+exEquiv.n+'?'),
-          exes.filter(function(e){return e.m===exEquiv.m&&e.id!==exEquiv.id;}).length===0
-            ?h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay ejercicios equivalentes en tu lista')
-            :exes.filter(function(e){return e.m===exEquiv.m&&e.id!==exEquiv.id;}).map(function(e,i,arr){
-                return h('div',{key:e.id,style:{padding:'12px 0',borderBottom:i<arr.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
-                  h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
-                    h('div',null,
-                      h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#0A0A0A'}},e.n),
-                      h('div',{style:{fontSize:'11px',color:'#888',marginTop:'2px'}},e.low+'-'+e.hi+' reps')
-                    ),
-                    e.url&&h('a',{href:e.url,target:'_blank',rel:'noreferrer',style:{fontSize:'11px',color:AC,fontWeight:'700',textDecoration:'none'}},'Ver')
+          (function(){
+            // El grupo de equivalentes se calcula desde el ejercicio ORIGINAL del slot
+            var origId=exEquiv.origId;
+            var exOrig=(origId!==undefined?findEx(origId):null)||exEquiv;
+            var muscRef=exOrig.m;
+            var idActual=exEquiv.id; // el que se muestra ahora (para no ofrecerlo)
+            var opciones=exes.filter(function(e){return e.m===muscRef&&e.id!==idActual;});
+            if(opciones.length===0)return h('div',{style:{fontSize:'13px',color:'#bbb',textAlign:'center',padding:'20px 0'}},'No hay ejercicios equivalentes en tu lista');
+            return opciones.map(function(e,i,arr){
+              return h('div',{key:e.id,style:{padding:'12px 0',borderBottom:i<arr.length-1?'1px solid rgba(0,0,0,0.06)':'none'}},
+                h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
+                  h('div',null,
+                    h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#0A0A0A'}},e.n),
+                    h('div',{style:{fontSize:'11px',color:'#888',marginTop:'2px'}},e.low+'-'+e.hi+' reps')
                   ),
-                  h('div',{style:{display:'flex',gap:'8px'}},
-                    h('button',{onClick:function(){
-                      // Solo hoy: guardar en sessionStorage
-                      try{sessionStorage.setItem('ase_'+user+'_eqhoy_'+activeSess+'_'+exEquiv.id,String(e.id));}catch(err){}
-                      setSwapVerEx(function(v){return v+1;});
-                      setExEquiv(null);
-                    },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.12)',background:'#fff',color:'#333'}},'Solo hoy'),
-                    h('button',{onClick:function(){
-                      // Reemplazar siempre: guardar en localStorage
-                      var key='ase_'+user+'_eqperm_'+activeSess+'_'+exEquiv.id;
-                      try{localStorage.setItem(key,String(e.id));}catch(err){}
-                      setSwapVerEx(function(v){return v+1;});
-                      setExEquiv(null);
-                    },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:AC,color:'#fff'}},'Reemplazar siempre')
-                  )
-                );
-              })
+                  e.url&&h('a',{href:e.url,target:'_blank',rel:'noreferrer',style:{fontSize:'11px',color:AC,fontWeight:'700',textDecoration:'none'}},'Ver')
+                ),
+                h('div',{style:{display:'flex',gap:'8px'}},
+                  h('button',{onClick:function(){
+                    var oid=exEquiv.origId!==undefined?exEquiv.origId:exEquiv.id;
+                    try{sessionStorage.setItem('ase_'+user+'_eqhoy_'+activeSess+'_'+oid,String(e.id));}catch(err){}
+                    setSwapVerEx(function(v){return v+1;});setExEquiv(null);
+                  },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.12)',background:'#fff',color:'#333'}},'Solo hoy'),
+                  h('button',{onClick:function(){
+                    var oid=exEquiv.origId!==undefined?exEquiv.origId:exEquiv.id;
+                    var key='ase_'+user+'_eqperm_'+activeSess+'_'+oid;
+                    try{localStorage.setItem(key,String(e.id));}catch(err){}
+                    setSwapVerEx(function(v){return v+1;});setExEquiv(null);
+                  },style:{flex:1,padding:'8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',borderRadius:'8px',border:'none',background:AC,color:'#fff'}},'Reemplazar siempre')
+                )
+              );
+            });
+          })()
         )
       ),
     sessGroups.length===0
@@ -1878,7 +1886,7 @@ var AGUA_STATES=[
   {v:'ins',ic:'○',color:'#EF4444'},
 ];
 var DS6=['L','M','X','J','V','S'];
-function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus,user}){
+function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus,user,onTestNewWeek,onTestPrevWeek,wkNumTest}){
   var pesoRef=parseFloat(cfg&&cfg.pesoRef)||0;
   // Estado nutricional (deficitario/adecuado/deportivo). Default deficitario si no hay dato.
   var estadoNutri=(function(){try{return localStorage.getItem('ase_'+user+'_estadoNutri')||'deficitario';}catch(e){return 'deficitario';}})();
@@ -2232,6 +2240,14 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,savi
                 boxShadow:(canSaveWeek||isViewingPast)&&!saving?'0 2px 10px rgba(232,84,26,0.3)':'none'}},
               saving?'Enviando...':(isViewingPast?'Enviar reporte de esta semana':canSaveWeek?'📤 Enviar reporte semanal':'Disponible el sábado'))
           )
+    ),
+    // ── BOTÓN DE PRUEBA (temporal, solo para testear el cambio de semana) ──
+    h('div',{style:{marginTop:'20px',marginBottom:'30px',padding:'12px',border:'1px dashed rgba(0,0,0,0.2)',borderRadius:'10px',background:'#FAFAFA'}},
+      h('div',{style:{fontSize:'10px',color:'#999',fontWeight:'700',marginBottom:'8px',textTransform:'uppercase'}},'🧪 Modo prueba (sacar después) — semana '+(wkNumTest||'?')),
+      h('div',{style:{display:'flex',gap:'8px'}},
+        h('button',{onClick:function(){if(onTestPrevWeek)onTestPrevWeek();},style:{flex:1,padding:'9px',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.15)',background:'#fff',color:'#666',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'← Semana anterior'),
+        h('button',{onClick:function(){if(onTestNewWeek)onTestNewWeek();},style:{flex:1,padding:'9px',borderRadius:'8px',border:'none',background:'#111',color:'#fff',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Simular nueva semana →')
+      )
     )
   );
 }
@@ -3086,10 +3102,12 @@ function App(){
     }
     // Resetear los guardianes ANTES de limpiar, para que el auto-save no dispare con datos
     // viejos y los escriba en la semana nueva (causaba que la sem nueva arranque con datos de la anterior).
+    cambiandoSemana.current=true;
     dataLoaded.current=false;
     draftReady.current=false;
     localStorage.setItem(`ase_${user}_wknum`,String(nextNum));
     localStorage.removeItem(`ase_${user}_draft_sem_${nextNum}`);
+    localStorage.removeItem(`ase_${user}_draft_${getWkForNum(user,nextNum).id}`);
     // Limpiar el baseProto de la semana nueva (las respuestas de cumplimiento no se arrastran).
     const nextWkId=getWkForNum(user,nextNum).id;
     ['A','B','C','D','E'].forEach(function(s){try{localStorage.removeItem(`ase_${user}_baseProto_${nextWkId}_${s}`);}catch(e){}});
@@ -3097,7 +3115,7 @@ function App(){
     setWk(getWkForNum(user,nextNum));
     setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
     // Reactivar los guardianes tras un breve delay, cuando la limpieza ya se aplicó en React.
-    setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},600);
+    setTimeout(function(){cambiandoSemana.current=false;dataLoaded.current=true;draftReady.current=true;},700);
   }
   function prevWeek(){
     const curNum=wk.num||1;
@@ -3111,6 +3129,7 @@ function App(){
   }
   const draftReady=useRef(false);
   const dataLoaded=useRef(false); // true solo cuando el draft fue cargado completamente
+  const cambiandoSemana=useRef(false); // true durante el cambio de semana (bloquea auto-save)
   // Fallback de seguridad: si tras 4s las guardias siguen en false (carga colgada/fallida),
   // activarlas para que el auto-save no quede muerto. La protección anti-vacío del auto-save
   // (no guardar vacío si ya hay datos) sigue vigente, así que esto no puede borrar nada.
@@ -3127,11 +3146,13 @@ function App(){
     if(!user||!wk.id||!wk.num)return;
     if(!dataLoaded.current)return;
     if(!draftReady.current)return;
+    // Bloqueo durante cambio de semana: si acabamos de avanzar, no guardar hasta que la
+    // limpieza se aplique (evita escribir datos viejos en la semana nueva).
+    if(cambiandoSemana.current)return;
     var hasReps=Object.values(sessionReps).some(function(s){return Object.values(s||{}).some(function(e){return Object.values(e||{}).some(function(v){return v;});});});
     var hasNut=nut.some(function(d){return Object.values(d.m||{}).some(function(v){return v&&v!=='';})|| d.agua||d.ak;});
     var hasHab=(hab.sleep||[]).some(Boolean)||(hab.actExtra||[]).some(Boolean)||(hab.meds||[]).some(function(m){return m.p||m.c;})||((hab.sens||{}).energia);
     if(!hasReps&&!hasNut&&!hasHab){
-      // PROTECCION ABSOLUTA: nunca guardar estado vacío si ya hay datos
       var existingDraft=localStorage.getItem('ase_'+user+'_draft_'+wk.id);
       var existingSaved=localStorage.getItem(SK(wk.id,user));
       if(existingDraft||existingSaved)return;
@@ -3458,7 +3479,7 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus:()=>setTab('die'),user}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus:()=>setTab('die'),user,onTestNewWeek:newWeek,onTestPrevWeek:prevWeek,wkNumTest:wk.num}),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
     ),
     h('div',{style:{background:'#0A0A0A',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',position:'sticky',bottom:0,zIndex:10}},
