@@ -1402,7 +1402,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
       const out={P:[],C:[],G:[],FV:[]};
       Object.entries(db).forEach(([key,f])=>{
         const cat=String(f.cat||'').toUpperCase().trim();
-        if(out[cat])out[cat].push({key,n:f.n||key,vU:f.vU||'',vB:f.vB||1});
+        if(out[cat])out[cat].push({key,n:f.n||key,vU:f.vU||'',vB:f.vB||1,gB:f.gB||0});
       });
       Object.keys(out).forEach(c=>out[c].sort((a,b)=>String(a.n).localeCompare(String(b.n))));
       return out;
@@ -1733,6 +1733,8 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
         )
       );
     })(),
+    // Plato visual (estructura de macros) — justo después del header educativo, para deficitario/adecuado
+    (estadoNutri==='deficitario'||estadoNutri==='adecuado')&&h('div',{style:{...card,padding:'12px',marginBottom:'12px'},dangerouslySetInnerHTML:{__html:SVG_PLATO}}),
     // VISTA "Elegí tus alimentos" (DEFICITARIO): 4 categorías desplegables con la biblioteca
     (estadoNutri==='deficitario')&&h('div',{style:{...card,marginBottom:'12px'}},
       h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#111',marginBottom:'4px'}},'Elegí tus alimentos'),
@@ -1769,7 +1771,11 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
           // Fila 1: título del macro + estado
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:'6px'}},
             h('div',{style:{fontSize:'12px',fontWeight:'700',color:col}},(elegido?'✓ ':'○ ')+grp.ic+' '+grp.l),
-            elFood&&elFood.vU&&h('div',{style:{fontSize:'11px',color:'#999'}},'Porción: '+(elFood.vB||1)+' '+elFood.vU)
+            elFood&&elFood.vU&&(function(){
+              var tmplN=parseInt(localStorage.getItem(tKey))||2000;
+              var gramosReales=elFood.gB?Math.round(elFood.gB*(tmplN/2000)):0;
+              return h('div',{style:{fontSize:'11px',color:'#999'}},'Porción: '+(elFood.vB||1)+' '+elFood.vU+(gramosReales&&hayTemplate?(' ('+gramosReales+'g)'):''));
+            })()
           ),
           // Fila 2: carrusel horizontal (scroll nativo con inercia)
           h('div',{style:{display:'flex',gap:'7px',overflowX:'auto',paddingBottom:'4px',WebkitOverflowScrolling:'touch',scrollbarWidth:'none'}},
@@ -1821,7 +1827,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
       h('div',{style:{fontSize:'11px',color:'#bbb'}},h('div',null,'Template asignado'),h('div',null,'por tu coach'))
     ),
     // Plato visual (estructura) para DEFICITARIO y ADECUADO
-    (estadoNutri==='deficitario'||estadoNutri==='adecuado')&&h('div',{style:{...card,padding:'12px',marginBottom:'8px'},dangerouslySetInnerHTML:{__html:SVG_PLATO}}),
+    // (el plato visual se movió arriba, junto al header educativo)
     // LOS 12 MENÚS + CONFIRMAR: solo DEPORTIVO
     (estadoNutri==='deportivo')&&(comidas.length===0
       ?h('div',{style:{...card,textAlign:'center',padding:'32px 20px'}},
@@ -1830,21 +1836,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nivel}){
           h('div',{style:{fontSize:'13px',color:'#999'}},'Tu coach todavía no cargó tu plan de alimentación.')
         )
       :h('div',null,
-          comidas.map(c=>h(MC,{key:c.id,comida:c})),
-          // Botón: confirmar mis menús (los manda a DietasConfirmadas)
-          comidas.length>0&&h('div',{style:{...card,marginTop:'8px',marginBottom:'8px',padding:'16px',textAlign:'center'}},
-            menusConfirmados
-              ?h('div',null,
-                  h('div',{style:{fontSize:'13px',fontWeight:'700',color:G,marginBottom:'4px'}},'✓ Menús confirmados'),
-                  h('div',{style:{fontSize:'11px',color:'#999',lineHeight:'1.4',marginBottom:'10px'}},'Ya enviaste tus menús. Si cambiaste algo, podés volver a confirmarlos.'),
-                  h('button',{onClick:confirmarMenus,disabled:confMenus,style:{background:'#fff',color:G,border:'1px solid '+G,borderRadius:'8px',padding:'8px 16px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},confMenus?'Enviando…':'Volver a confirmar')
-                )
-              :h('div',null,
-                  h('div',{style:{fontSize:'13px',fontWeight:'700',color:'#111',marginBottom:'4px'}},'¿Estos son tus menús?'),
-                  h('div',{style:{fontSize:'11px',color:'#999',lineHeight:'1.5',marginBottom:'12px'}},'Revisá cada comida y ajustá lo que quieras con "Detalle" (reemplazar, dividir). Cuando estén como querés, confirmalos: estos van a ser tus menús de referencia.'),
-                  h('button',{onClick:confirmarMenus,disabled:confMenus,style:{background:confMenus?'#ccc':G,color:'#fff',border:'none',borderRadius:'10px',padding:'13px 24px',fontSize:'14px',fontWeight:'800',cursor:confMenus?'default':'pointer',width:'100%'}},confMenus?'Enviando…':'✓ Confirmar mis menús')
-                )
-          )
+          comidas.map(c=>h(MC,{key:c.id,comida:c}))
         )),
     // AGUA / SAL: info general para todos los estados
     h('div',{style:{...card,marginTop:'4px',display:'flex',justifyContent:'space-around',alignItems:'center'}},
