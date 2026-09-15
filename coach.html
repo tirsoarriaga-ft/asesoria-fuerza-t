@@ -2159,7 +2159,10 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   var [pagosLocal,setPagosLocal]=useState({});
   var [busqueda,setBusqueda]=useState('');
   var [subTab,setSubTab]=useState('todos'); // todos | moroso | hoy | aldia
-  var hoy=new Date(); hoy.setHours(0,0,0,0);
+  var [mesOffset,setMesOffset]=useState(0); // 0 = mes actual, -1 = mes pasado, etc.
+  // "hoy" desplazado según el mes que estás viendo (para navegar por mes)
+  var hoy=new Date(); hoy.setHours(0,0,0,0); hoy.setDate(15); hoy.setMonth(hoy.getMonth()+mesOffset);
+  var nombreMes=hoy.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
   var norm=function(x){return String(x||'').trim().toLowerCase();};
   function parseFecha(s){
     s=String(s||'').trim(); if(!s)return null;
@@ -2249,6 +2252,15 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     h('div',{style:{marginBottom:'12px'}},
       h('div',{style:{fontSize:'20px',fontWeight:'800'}},'Cobros'),
       h('div',{style:{fontSize:'12px',color:'#999'}},activos.length+' activos'+(nMoroso>0?(' · '+nMoroso+' moroso'+(nMoroso>1?'s':'')):''))
+    ),
+    // Selector de mes (navegar por mes calendario)
+    h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:'#111',borderRadius:'10px',padding:'8px 12px',marginBottom:'12px'}},
+      h('button',{onClick:function(){setMesOffset(mesOffset-1);},style:{background:'rgba(255,255,255,0.1)',border:'none',color:'#fff',borderRadius:'8px',padding:'6px 12px',fontSize:'16px',cursor:'pointer',fontWeight:'700'}},'‹'),
+      h('div',{style:{textAlign:'center'}},
+        h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#fff',textTransform:'capitalize'}},nombreMes),
+        mesOffset!==0&&h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.5)'}},mesOffset<0?'mes pasado':'mes futuro')
+      ),
+      h('button',{onClick:function(){setMesOffset(mesOffset+1);},style:{background:'rgba(255,255,255,0.1)',border:'none',color:'#fff',borderRadius:'8px',padding:'6px 12px',fontSize:'16px',cursor:'pointer',fontWeight:'700'}},'›')
     ),
     // Resumen
     h('div',{style:{display:'flex',gap:'8px',marginBottom:'12px'}},
