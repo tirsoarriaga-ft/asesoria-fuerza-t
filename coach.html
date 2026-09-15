@@ -375,7 +375,15 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
             h('div',null,
               h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#111'}},name),
               h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},
-                lat?.Semana?h('span',{style:{color:hasCPA?'#999':O,fontWeight:hasCPA?'400':'700'}},lat.Semana):'Sin datos',
+                (function(){
+                  if(!lat?.Semana)return 'Sin datos';
+                  var semNum=parseInt(String(lat.SemanID||'').replace('sem_',''))||parseInt(String(lat.Semana||'').replace(/\D/g,''))||0;
+                  var bloqueN=String(rutina?.Bloque||'').trim();
+                  var semBloque=semNum?Math.max(1,semNum-bloqueInicio2+1):0;
+                  var bloqueCap=bloqueN?(bloqueN.charAt(0).toUpperCase()+bloqueN.slice(1)):'';
+                  var txt=(bloqueCap&&semBloque?('Sem '+semBloque+' de '+bloqueCap+' · '):'')+lat.Semana;
+                  return h('span',{style:{color:hasCPA?'#999':O,fontWeight:hasCPA?'400':'700'}},txt);
+                })(),
                 ' · ',tmpl
               ),
               // Los 3 carteles
