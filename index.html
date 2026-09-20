@@ -882,6 +882,18 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     if(pos===1||pos===2)return 'accesorio';
     return 'finalizador';
   };
+  // Versión que recibe exId + sessId explícitos (para la progresión al avanzar de semana)
+  const rolFuerzaFor=(exId,sessId)=>{
+    const lista=(cfg.assign[sessId]||[]);
+    let pos=-1, count=0;
+    for(const item of lista){
+      const ids=Array.isArray(item)?item:[item];
+      for(const id of ids){ if(String(id)===String(exId)){pos=count;} count++; }
+    }
+    if(pos===0)return 'principal';
+    if(pos===1||pos===2)return 'accesorio';
+    return 'finalizador';
+  };
   // ¿Es el día 1 del bloque de fuerza? (test de RM)
   const esDia1Fuerza=bloque==='fuerza'&&semEnBloque===1;
   // ── REHABILITACIÓN (Entrega ajuste) ──
@@ -938,15 +950,21 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   // volumen: 50% y 75% sin rep. intensidad: 50%x15 y 75%x8 (reps fijas). base: 50% sin rep.
   // rehabilitacion/fuerza: sin aproximaciones.
   const APROX_REPS={intensidad:[15,8]}; // reps fijas de aproximación por bloque (si aplica)
+  // Aproximaciones de calentamiento. Con pesos bajos, el % redondeado a 2.5kg queda casi igual
+  // al efectivo (ej. 50% de 6kg = 5kg), así que se omiten: no tiene sentido "calentar" con casi el mismo peso.
+  const aproxUtil=(base)=>{
+    // Solo vale la pena el calentamiento si el peso da margen para dos escalones reales bajo el efectivo.
+    return base>=10; // < 10kg: sin series de aproximación con kg
+  };
   const getAproximaciones=(ex)=>{
     // Fuerza principal: aproximaciones del kg OBJETIVO del protocolo (no del kg cargado).
     if(bloque==='fuerza'&&rolFuerza(ex)==='principal'&&!esDia1Fuerza){
       const kgObj=kgPrincipal(ex);
-      if(!kgObj||kgObj<=0)return [];
+      if(!kgObj||kgObj<=0||!aproxUtil(kgObj))return [];
       return [{pct:50,kg:rKg(kgObj*0.5)},{pct:75,kg:rKg(kgObj*0.75)}];
     }
     const curKg=getKg(ex);
-    if(!curKg||curKg<=0)return [];
+    if(!curKg||curKg<=0||!aproxUtil(curKg))return [];
     if(bloque==='volumen')return [{pct:50,kg:rKg(curKg*0.5)},{pct:75,kg:rKg(curKg*0.75)}];
     if(bloque==='intensidad')return [{pct:50,kg:rKg(curKg*0.5),reps:15},{pct:75,kg:rKg(curKg*0.75),reps:8}];
     if(bloque==='base')return [{pct:50,kg:rKg(curKg*0.5)}];
@@ -1101,7 +1119,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
         h('div',null,
           h('div',{style:{fontSize:'14px',fontWeight:'900',color:'#fff',letterSpacing:'-0.3px'}},bloqueInfo.emoji+' '+bloqueInfo.label),
-          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'2px'}},'Semana '+(weeksInBlock+1)+' del bloque')
+          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'2px'}},'Semana '+(weeksInBlock+1)+' del bloque',h('span',{style:{color:'rgba(255,255,255,0.25)'}},' · sem '+wkNum+' en total'))
         ),
         bloque==='volumen'&&h('div',{style:{textAlign:'right'}},
           h('div',{style:{fontSize:'13px',fontWeight:'900',background:GRAD,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},numSeries+' series'),
@@ -2587,6 +2605,20 @@ function App(){
     // Además guardar realNum como máximo para que "Nueva →" no supere el calendario
     localStorage.setItem(`ase_${user}_maxWkNum`,String(realNum));
     const correctedNum=Math.min(storedNum,realNum);
+    // (TEST) si hay una semana forzada por el botón de prueba, respetarla (no corregir por calendario)
+    const testForce=parseInt(localStorage.getItem(`ase_${user}_testForceWk`));
+    if(testForce&&testForce>0){
+      localStorage.removeItem(`ase_${user}_testForceWk`);
+      localStorage.setItem(`ase_${user}_wknum`,String(testForce));
+      localStorage.setItem(`ase_${user}_maxWkNum`,String(Math.max(testForce,realNum)));
+      setWk(getWkForNum(user,testForce));
+      // arrancar limpio en la semana forzada
+      dataLoaded.current=false;draftReady.current=false;
+      setNut(iN());setHab(iH());setSessionReps({});
+      try{setHiitData(iHiit());}catch(e){}
+      setTimeout(function(){dataLoaded.current=true;draftReady.current=true;},700);
+      return;
+    }
     if(correctedNum!==storedNum){
       localStorage.setItem(`ase_${user}_wknum`,String(correctedNum));
     }
@@ -3056,6 +3088,21 @@ function App(){
     setSessionReps({});setNut(iN());setHab(iH());setHiitData(iHiit());setSaved(false);
     localStorage.removeItem(`ase_${user}_draft_${wk.id}`);
   }
+  // Versión de PRUEBA: fuerza el avance de semana ignorando las guardas de calendario.
+  // Solo para testear el arrastre. Aplica la misma limpieza que newWeek.
+  function testNewWeek(){
+    const curNum=wk.num||1;
+    const nextNum=curNum+1;
+    // Forzar avance vía localStorage + recargar, para que el efecto de carga arranque limpio.
+    localStorage.setItem(`ase_${user}_wknum`,String(nextNum));
+    localStorage.setItem(`ase_${user}_maxWkNum`,String(Math.max(nextNum,maxWkNum)));
+    localStorage.setItem(`ase_${user}_testForceWk`,String(nextNum));
+    localStorage.removeItem(`ase_${user}_draft_sem_${nextNum}`);
+    localStorage.removeItem(`ase_${user}_draft_${getWkForNum(user,nextNum).id}`);
+    const nextWkId=getWkForNum(user,nextNum).id;
+    ['A','B','C','D','E'].forEach(function(s){try{localStorage.removeItem(`ase_${user}_baseProto_${nextWkId}_${s}`);}catch(e){}});
+    location.reload();
+  }
   function newWeek(){
     const curNum=wk.num||1;
     if(curNum>=realWkNum&&!wkFinished)return;
@@ -3073,13 +3120,15 @@ function App(){
           const ex=exes.find(e=>e.id===exIdInt);if(!ex)return;
           const curKg=(sessionKg[sessId]?.[exIdInt])||(sessionKg[sessId]?.[exId])||null;
           if(!curKg||curKg<=0)return;
-          if(bloqueActual==='fuerza'){
+          if(bloqueActual==='fuerza'&&rolFuerzaFor(exIdInt,sessId)==='principal'){
+            // Principal de fuerza: sube por protocolo cada 2 semanas
             const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${sessId}_${exIdInt}`))||0;
             if(curNum<lastUp+2)return;
             if(!newSK[sessId])newSK[sessId]={};
             newSK[sessId][exIdInt]=rKg(curKg*1.05);
             localStorage.setItem(`ase_${user}_lastKgUp_${sessId}_${exIdInt}`,String(curNum));
           }else{
+            // Volumen/intensidad + accesorios/finalizadores de fuerza: suben por reps (al techo)
             const r1=parseInt(reps.r1)||0;
             if(r1<ex.hi)return;
             if(!newSK[sessId])newSK[sessId]={};
@@ -3122,6 +3171,7 @@ function App(){
   const draftReady=useRef(false);
   const dataLoaded=useRef(false); // true solo cuando el draft fue cargado completamente
   const cambiandoSemana=useRef(false); // true durante el cambio de semana (bloquea auto-save)
+  const testOverride=useRef(null); // (test) fuerza una semana ignorando el calendario
   // Fallback de seguridad: si tras 4s las guardias siguen en false (carga colgada/fallida),
   // activarlas para que el auto-save no quede muerto. La protección anti-vacío del auto-save
   // (no guardar vacío si ya hay datos) sigue vigente, así que esto no puede borrar nada.
@@ -3425,7 +3475,15 @@ function App(){
           h('div',{style:{fontSize:'18px',fontWeight:'900',color:'#fff'}},user),
           h('button',{onClick:logout,style:{background:'none',border:'none',cursor:'pointer',fontSize:'10px',color:'rgba(255,255,255,0.25)',padding:0}},'cambiar')
         ),
-        h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'1px'}},wk.label)
+        h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'1px'}},(function(){
+          // Sem del bloque + sem total + fechas (Opción A)
+          var bloqueN=String((cfg&&cfg.bloque)||'').trim();
+          var bloqueInic=parseInt(cfg&&cfg.bloqueInicio)||1;
+          var semBloque=Math.max(1,(wk.num||1)-bloqueInic+1);
+          var bloqueCap=bloqueN?(bloqueN.charAt(0).toUpperCase()+bloqueN.slice(1)):'';
+          var fechas=String(wk.label||'').split('·').slice(1).join('·').trim(); // solo las fechas
+          return (bloqueCap?('Sem '+semBloque+' de '+bloqueCap+' · '):'')+'Sem '+(wk.num||1)+' total'+(fechas?(' · '+fechas):'');
+        })())
       ),
       h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-end',minWidth:'160px'}},
         saveErrors.length>0&&h('div',{style:{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:'10px',padding:'8px 10px',marginBottom:'2px',width:'100%'}},
@@ -3471,7 +3529,7 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus:()=>setTab('die'),user,onTestNewWeek:newWeek,onTestPrevWeek:prevWeek,wkNumTest:wk.num}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,onVerMenus:()=>setTab('die'),user,onTestNewWeek:testNewWeek,onTestPrevWeek:prevWeek,wkNumTest:wk.num}),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
     ),
     h('div',{style:{background:'#0A0A0A',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',position:'sticky',bottom:0,zIndex:10}},
