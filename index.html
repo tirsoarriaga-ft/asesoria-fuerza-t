@@ -2643,9 +2643,15 @@ function App(){
         if(d.hiit)setHiitData(d.hiit);
         setSaved(localStorage.getItem(`ase_${user}_reporteSent_${wkId}`)?true:false);
       }else{
-        // Sin datos locales — marcar para restaurar desde sheet después de cargar ejercicios
+        // Semana nueva sin datos locales — arrancar LIMPIO y bloquear el auto-save mientras se aplica
+        // la limpieza (evita que datos residuales en memoria se guarden en la clave de la semana nueva).
+        cambiandoSemana.current=true;
+        dataLoaded.current=false;draftReady.current=false;
+        localStorage.removeItem(`ase_${user}_draft_${wkId}`);
         setNut(iN());setHab(iH());setSessionReps({});setSaved(false);
+        try{setHiitData(iHiit());}catch(e){}
         localStorage.setItem(`ase_${user}_needsRestore_${wkId}`,'1');
+        setTimeout(function(){cambiandoSemana.current=false;dataLoaded.current=true;draftReady.current=true;},700);
       }
     }catch(e){}
     setCfg(()=>{try{return JSON.parse(localStorage.getItem(CFG_KEY(user)))||defCfg;}catch(e){return defCfg;}});
