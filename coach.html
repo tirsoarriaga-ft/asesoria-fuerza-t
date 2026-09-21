@@ -833,7 +833,25 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,onRefresh,onBack
   const tmpl=rutina?.Template?String(rutina.Template)+' kcal':'—';
   const numSes=rutina?.NumSesiones||'—';
   const latSemanID=lat?.SemanID||'';
-  const currentWkNum=latSemanID?parseInt(latSemanID.replace('sem_',''))||'—':'—';
+  // Semana actual: PRIMERO desde FechaInicio (calendario real, igual que la app del asesorado),
+  // con fallback al SemanID del último reporte si no hay FechaInicio.
+  const currentWkNum=(function(){
+    const fi=String((rutina&&rutina.FechaInicio)||'').trim();
+    if(fi){
+      var m,f=null;
+      if(m=fi.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))f=new Date(+m[1],+m[2]-1,+m[3]);
+      else if(m=fi.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))f=new Date(+m[3],+m[2]-1,+m[1]);
+      if(f){
+        // Anclar al lunes de la semana de inicio (misma lógica que la app)
+        var dow=(f.getDay()+6)%7; // 0=lunes
+        var lunes=new Date(f); lunes.setDate(f.getDate()-dow); lunes.setHours(0,0,0,0);
+        var hoy=new Date(); hoy.setHours(0,0,0,0);
+        var sem=Math.floor((hoy-lunes)/(1000*60*60*24*7))+1;
+        if(sem>=1)return sem;
+      }
+    }
+    return latSemanID?parseInt(latSemanID.replace('sem_',''))||'—':'—';
+  })();
   const bloqueActual=String(rutina?.Bloque||'—');
   const bloqueInicio=parseInt(rutina?.BloqueInicio)||1;
   const semanasEnBloque=Math.max(1,(typeof currentWkNum==='number'?currentWkNum:1)-bloqueInicio+1);
