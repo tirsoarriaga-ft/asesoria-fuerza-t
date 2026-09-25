@@ -2739,7 +2739,8 @@ function ClosedSelect({value,onChange,options}){
 function SemanalV2({data,rutinas,decisiones,nutriResumen,videosPend,onRefresh}){
   var [filtro,setFiltro]=useState('Todos');var [open,setOpen]=useState({});var [draft,setDraft]=useState({});var [saving,setSaving]=useState(null);var [localRows,setLocalRows]=useState([]);
   var decAll=(decisiones||[]).concat(localRows);
-  var nutBy={};(nutriResumen||[]).forEach(function(n){nutBy[String(n.AsesoradoID||'')]=n;nutBy[ftNorm(n.Asesorado)]=n;});
+  var nutRows=Array.isArray(nutriResumen)?nutriResumen:(nutriResumen&&Array.isArray(nutriResumen.data)?nutriResumen.data:(nutriResumen&&Array.isArray(nutriResumen.rows)?nutriResumen.rows:[]));
+  var nutBy={};nutRows.forEach(function(n){nutBy[String(n.AsesoradoID||'')]=n;nutBy[ftNorm(n.Asesorado)]=n;});
   var clients=(rutinas||[]).filter(function(r){return ftNorm(r.Estado)!=='baja'&&ftNorm(r.Nivel)!=='basico'&&ftNorm(r.Nivel)!=='básico'&&String(r.Asesorado||'').trim();}).map(function(r){
     var nombre=r.Asesorado,weeks=data[nombre]||[],id=r.AsesoradoID||'',prev=ftLatestAudit(decAll,nombre,id),nut=nutBy[String(id)]||nutBy[ftNorm(nombre)]||null,vp=(videosPend&&videosPend[ftNorm(nombre)])||0;
     var sug=ftSuggest(r,weeks,nut,prev,vp),ev=ftEvidence(r,weeks,nut,vp),sem=(weeks[weeks.length-1]||{}).SemanID||('sem_'+ftCurrentWeek(r));
@@ -2898,7 +2899,7 @@ function App(){
       });
       setVideosPend(pend);
       setVideos(vids||[]);
-      setNutriResumen(nutriData||[]);
+      setNutriResumen(Array.isArray(nutriData)?nutriData:(nutriData&&Array.isArray(nutriData.data)?nutriData.data:(nutriData&&Array.isArray(nutriData.rows)?nutriData.rows:[])));
       setEjercicios(ejs||[]);
       setDiagnosticos(diags||[]);
       setPagos(pagosData||[]);
