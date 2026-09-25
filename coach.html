@@ -2183,6 +2183,8 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   var [marcando,setMarcando]=useState(null); // asesoradoId que se está marcando
   // Pagos marcados en esta sesión (optimista): {aseId+'_'+mes: true} — se ven al instante sin recargar.
   var [pagosLocal,setPagosLocal]=useState({});
+  var [eliminados,setEliminados]=useState({}); // asesorados borrados en esta sesión (optimista)
+  var [confBorrar,setConfBorrar]=useState(null); // asesoradoId a confirmar borrado
   var [busqueda,setBusqueda]=useState('');
   var [subTab,setSubTab]=useState('todos'); // todos | moroso | hoy | aldia
   var [mesOffset,setMesOffset]=useState(0); // 0 = mes actual, -1 = mes pasado, etc.
@@ -2201,18 +2203,16 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     var fi=parseFecha(fInicio); if(!fi)return null;
     fi.setHours(0,0,0,0);
     var diaCobro=fi.getDate();
-    // El vencimiento del ciclo EN CURSO = el día de cobro de este mes calendario.
     var vencEsteMes=new Date(hoy.getFullYear(),hoy.getMonth(),diaCobro); vencEsteMes.setHours(0,0,0,0);
-    // Si el día de cobro de este mes todavía no llegó, el ciclo en curso venció el mes pasado.
     var vencActual;
     if(hoy>=vencEsteMes){ vencActual=vencEsteMes; }
     else { vencActual=new Date(hoy.getFullYear(),hoy.getMonth()-1,diaCobro); vencActual.setHours(0,0,0,0); }
-    // MesNumero del ciclo en curso = meses transcurridos desde el inicio hasta vencActual + 1
+    // GUARDA: el ciclo en curso nunca puede ser anterior a la fecha de alta del cliente.
+    // Un cliente que recién arranca no tiene deuda de meses previos a su inicio.
+    if(vencActual<fi){ vencActual=new Date(fi); }
     var mesActual=(vencActual.getFullYear()-fi.getFullYear())*12+(vencActual.getMonth()-fi.getMonth())+1;
     if(mesActual<1)mesActual=1;
-    // días desde que venció el ciclo actual (0 = vence hoy, >0 = ya pasó)
     var diasVencido=Math.round((hoy-vencActual)/(1000*60*60*24));
-    // próximo vencimiento (el siguiente ciclo)
     var prox=new Date(vencActual); prox.setMonth(prox.getMonth()+1);
     return {mesActual:mesActual,vencActual:vencActual,proxVenc:prox,diasVencido:diasVencido,diaCobro:diaCobro};
   }
@@ -2229,11 +2229,34 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     // Se envía en segundo plano; no bloquea ni cambia de vista. El refresh real queda para cuando recargues.
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
   }
-  var activos=(maestra||[]).filter(function(a){return norm(a.Estado)!=='baja'&&String(a.Asesorado||'').trim();});
+  function desmarcarPago(a,mes){
+    var aseId=a.AsesoradoID||'';
+    if(!aseId)return;
+    if(!window.confirm('¿Desmarcar el pago de '+a.Asesorado+' (mes '+mes+')?'))return;
+    // Optimista: quitar del estado local al instante.
+    setPagosLocal(function(p){var n=Object.assign({},p);n[aseId+'_'+mes]=false;return n;});
+    var payload={action:'eliminarPago',asesoradoId:aseId,mesNumero:mes};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
+  }
+  function eliminarCliente(a){
+    var aseId=a.AsesoradoID||'';
+    if(!aseId){alert('Ese asesorado no tiene AsesoradoID.');return;}
+    setEliminados(function(b){var n=Object.assign({},b);n[aseId||a.Asesorado]=true;return n;});
+    setConfBorrar(null);
+    var payload={action:'eliminarAsesorado',asesoradoId:aseId,asesorado:a.Asesorado||''};
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
+  }
+  // Cobros muestra TODOS los activos (básico, online, presencial). Oculta los borrados optimistas.
+  var activos=(maestra||[]).filter(function(a){return norm(a.Estado)!=='baja'&&String(a.Asesorado||'').trim()&&!eliminados[a.AsesoradoID||a.Asesorado];});
   var filas=activos.map(function(a){
     var c=calcCobro(a.FechaCobro||a.FechaInicio);
     var precio=parseFloat(String(a.PrecioCuota||'').replace(/[^\d.]/g,''))||0;
-    var pagado=c?(pagoDeMes(a.AsesoradoID,c.mesActual)||(pagosLocal[a.AsesoradoID+'_'+c.mesActual]?{local:true}:null)):null;
+    var localKey=a.AsesoradoID+'_'+(c?c.mesActual:'');
+    var localVal=pagosLocal[localKey];
+    var pagado;
+    if(localVal===false)pagado=null; // desmarcado localmente
+    else if(localVal===true)pagado={local:true}; // marcado localmente
+    else pagado=c?pagoDeMes(a.AsesoradoID,c.mesActual):null; // del sheet
     var estado='sinfecha';
     if(c){
       if(pagado)estado='aldia';               // pagó el ciclo en curso
@@ -2322,14 +2345,27 @@ function CobrosPanel({maestra,pagos,onRefresh}){
             h('div',{style:{fontSize:'15px',fontWeight:'700',color:'#111'}},f.a.Asesorado),
             h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},(f.a.Plan||'—')+(f.precio?(' · $'+f.precio.toLocaleString('es-AR')):''))
           ),
-          h('span',{style:{fontSize:'10px',fontWeight:'700',color:e.c,background:e.bg,padding:'3px 8px',borderRadius:'20px'}},e.l)
+          h('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
+            h('span',{style:{fontSize:'10px',fontWeight:'700',color:e.c,background:e.bg,padding:'3px 8px',borderRadius:'20px'}},e.l),
+            h('button',{onClick:function(){setConfBorrar(confBorrar===(f.a.AsesoradoID||f.a.Asesorado)?null:(f.a.AsesoradoID||f.a.Asesorado));},style:{background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'#ccc',padding:'2px'}},'🗑️')
+          )
+        ),
+        // Confirmación de borrado
+        confBorrar===(f.a.AsesoradoID||f.a.Asesorado)&&h('div',{style:{background:'#FEF2F2',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
+          h('div',{style:{fontSize:'11px',color:'#991B1B',fontWeight:'700',marginBottom:'8px'}},'¿Eliminar a '+f.a.Asesorado+'? Se borra su fila. Irreversible.'),
+          h('div',{style:{display:'flex',gap:'6px'}},
+            h('button',{onClick:function(){eliminarCliente(f.a);},style:{flex:1,background:'#EF4444',color:'#fff',border:'none',borderRadius:'8px',padding:'7px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Sí, eliminar'),
+            h('button',{onClick:function(){setConfBorrar(null);},style:{flex:1,background:'#fff',color:'#666',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'7px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Cancelar')
+          )
         ),
         f.estado!=='sinfecha'&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
           h('div',{style:{fontSize:'11px',color:'#666'}},
             f.pagado?('✓ Mes '+f.c.mesActual+' pagado · próx '+venceStr):('Mes '+f.c.mesActual+' · venció '+venceStr)
           ),
           f.pagado
-            ?h('span',{style:{fontSize:'11px',color:'#1D9E75',fontWeight:'700'}},'Al día')
+            ?h('button',{onClick:function(){desmarcarPago(f.a,f.c.mesActual);},
+                style:{background:'#F0FDF4',color:'#1D9E75',border:'1px solid #BBF7D0',borderRadius:'8px',padding:'7px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},
+                '✓ Al día · desmarcar')
             :h('button',{onClick:function(){marcarPagado(f.a,f.c.mesActual,f.precio,f.c.vencActual);},
                 style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},
                 'Marcar pagado')
