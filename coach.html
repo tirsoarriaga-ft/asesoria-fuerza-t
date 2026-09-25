@@ -2646,7 +2646,7 @@ function AuditoriaDatos({maestra,data,rutinas,diagnosticos,videosPend}){
 // ── AUDITORÍA V2 · SU PARTE / MI PARTE ──────────────────────────────
 const FT_AUDIT_PREFIX='FTAUDIT:';
 const FT_TRABAS=['Información','Entendimiento','Logística','Ejecución','Prescripción','Sin traba'];
-const FT_RESP=['Su parte','Mi parte','Compartida','A confirmar'];
+const FT_RESP=['—','Su parte','Mi parte','Compartida','A confirmar'];
 const FT_DEC=['Destrabar','Educar','Adaptar','Exigir su parte','Ajustar mi parte','Sostener'];
 const FT_PALANCAS={
   'Información':['Completar reporte','Completar peso y cintura','Completar datos base','Completar registro de entrenamiento','Enviar video solicitado','Revisar dato pendiente'],
@@ -2719,10 +2719,11 @@ function ftSuggest(r,weeks,nutri,prevOpen,videosPend){
     var comp=ftNorm(nutri.Comprension),via=ftNorm(nutri.Viabilidad),eje=ftNorm(nutri.Ejecucion);
     if(comp&&comp.indexOf('no')===0)return {traba:'Entendimiento',responsable:'Mi parte',decision:'Educar',motivo:'La auditoría nutricional marca comprensión insuficiente'};
     if(via&&(via.indexOf('no viable')>=0||via.indexOf('inviable')>=0))return {traba:'Logística',responsable:'Compartida',decision:'Adaptar',motivo:'La pauta aparece como no viable en el contexto actual'};
-    if(eje&&eje.indexOf('irregular')>=0)return {traba:'Ejecución',responsable:'A confirmar',decision:'Exigir su parte',motivo:'Ejecución irregular; confirmar causa antes de modificar el plan'};
+    if(eje&&eje.indexOf('irregular')>=0)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',motivo:'Ejecución irregular; falta confirmar si no sabe, no puede o sabe/puede pero no hace'};
   }
   var comidas=ftNum(lat['%Comidas']);
-  if(comidas!==null&&comidas<70)return {traba:'Ejecución',responsable:'A confirmar',decision:'Exigir su parte',motivo:'Registro nutricional <70%; no ajustar prescripción antes de hablar'};
+  if(comidas===0)return {traba:'Entendimiento',responsable:'A confirmar',decision:'Educar',motivo:'Registro nutricional 0%: confirmar si representa incumplimiento real o problema de registro'};
+  if(comidas!==null&&comidas<70)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',motivo:'Ejecución <70%: confirmar causa antes de decidir entre Educar, Adaptar o Exigir su parte'};
   var vals=weeks.slice(-3).map(function(w){return parseFloat(String(w.Cintura||'').replace(',','.'));}).filter(function(v){return !isNaN(v);});
   if(vals.length<2)return {traba:'Información',responsable:'Compartida',decision:'Destrabar',motivo:'Faltan mediciones suficientes para juzgar la respuesta'};
   var obj=ftNorm(r.Objetivo),dc=vals[vals.length-1]-vals[0],fuera=false;
@@ -2731,7 +2732,7 @@ function ftSuggest(r,weeks,nutri,prevOpen,videosPend){
   else if(obj==='superavit')fuera=false; // cintura sola no prueba fallo de prescripción en superávit
   if(fuera)return {traba:'Prescripción',responsable:'Mi parte',decision:'Ajustar mi parte',motivo:'Con ejecución suficiente, la tendencia disponible no acompaña el objetivo'};
   if(videosPend>0)return {traba:'Información',responsable:'Mi parte',decision:'Destrabar',motivo:'Hay videos recibidos pendientes de revisión'};
-  return {traba:'Sin traba',responsable:'Compartida',decision:'Sostener',motivo:'No aparece un eslabón previo roto con los datos disponibles'};
+  return {traba:'Sin traba',responsable:'—',decision:'Sostener',motivo:'No aparece un eslabón previo roto con los datos disponibles'};
 }
 function ClosedSelect({value,onChange,options}){
   return h('select',{value:value,onChange:function(e){onChange(e.target.value);},style:Object.assign({},inp,{fontSize:'12px',padding:'9px 10px'})},options.map(function(o){return h('option',{key:o,value:o},o);}));
@@ -2747,7 +2748,7 @@ function SemanalV2({data,rutinas,decisiones,nutriResumen,videosPend,onRefresh}){
     return {r:r,nombre:nombre,id:id,weeks:weeks,prev:prev,nut:nut,vp:vp,sug:sug,ev:ev,sem:sem};
   });
   function current(x){return draft[x.id||x.nombre]||{traba:x.sug.traba,responsable:x.sug.responsable,decision:x.sug.decision,palanca:(FT_PALANCAS[x.sug.traba]||[])[0]||'',prueba:(FT_PRUEBAS[x.sug.traba]||[])[0]||'',estado:'Abierto'};}
-  function upd(x,k,v){var key=x.id||x.nombre,cur=current(x),n=Object.assign({},cur,{[k]:v});if(k==='traba'){n.palanca=(FT_PALANCAS[v]||[])[0]||'';n.prueba=(FT_PRUEBAS[v]||[])[0]||'';if(v==='Sin traba'){n.decision='Sostener';n.responsable='Compartida';}}setDraft(Object.assign({},draft,{[key]:n}));}
+  function upd(x,k,v){var key=x.id||x.nombre,cur=current(x),n=Object.assign({},cur,{[k]:v});if(k==='traba'){n.palanca=(FT_PALANCAS[v]||[])[0]||'';n.prueba=(FT_PRUEBAS[v]||[])[0]||'';if(v==='Sin traba'){n.decision='Sostener';n.responsable='—';}}setDraft(Object.assign({},draft,{[key]:n}));}
   function save(x){var c=current(x);var obj={v:2,asesorado:x.nombre,asesoradoId:x.id,semanID:x.sem,traba:c.traba,responsable:c.responsable,decision:c.decision,palanca:c.palanca,prueba:c.prueba,estado:c.estado,evidencia:x.ev,motivoSugerido:x.sug.motivo,guardado:new Date().toISOString()};setSaving(x.id||x.nombre);
     var payload={action:'decision',asesorado:x.nombre,bloque:x.r.Bloque||'',semanaEnBloque:Math.max(1,ftCurrentWeek(x.r)-(parseInt(x.r.BloqueInicio)||1)+1),decision:c.decision,nota:FT_AUDIT_PREFIX+JSON.stringify(obj),SemanID:x.sem};
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).finally(function(){var fake={Asesorado:x.nombre,Decision:c.decision,Nota:payload.nota,SemanID:x.sem,Fecha:new Date().toISOString()};setLocalRows(localRows.concat([fake]));setSaving(null);setTimeout(function(){if(onRefresh)onRefresh();},900);});
