@@ -1908,6 +1908,7 @@ function App(){
   const [menusVer,setMenusVer]=useState(0);
   const [devoluciones,setDevoluciones]=useState([]);
   const [seguimiento,setSeguimiento]=useState([]);
+  const [asesoradoId,setAsesoradoId]=useState('');
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
   const [cfg,setCfg]=useState(defCfg);
   const [exesReady,setExesReady]=useState(false);
@@ -2081,6 +2082,10 @@ function App(){
             return MAP[n]||n;
           };
           const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess,pesoRef:parseFloat(fila.PesoRef)||0,nivel:String(fila.Nivel||'').toLowerCase()};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
+          // V4: conservar ID estable del asesorado si existe en Rutinas. El nombre queda como fallback.
+          const aid=String(fila.AsesoradoID||fila.ID||'').trim();
+          setAsesoradoId(aid);
+          if(aid)localStorage.setItem(`ase_${user}_asesoradoId`,aid);
           // FechaInicio: fecha de arranque para calcular semanas (lunes de esa semana)
           const fechaInicio=String(fila.FechaInicio||'').trim();
           if(fechaInicio){localStorage.setItem(`ase_${user}_startdate`,fechaInicio);}
@@ -2405,13 +2410,30 @@ function App(){
     });
   },[user]);
 
+  function getAsesoradoId(){
+    return String(asesoradoId||localStorage.getItem(`ase_${user}_asesoradoId`)||'').trim();
+  }
+  function sameAsesorado(row){
+    var aid=getAsesoradoId();
+    var rowId=String((row&&row.AsesoradoID)||'').trim();
+    if(aid&&rowId)return aid===rowId;
+    return String((row&&row.Asesorado)||'').trim().toLowerCase()===String(user||'').trim().toLowerCase();
+  }
   function latestDevolucion(){
-    var rows=(devoluciones||[]).filter(function(d){return String(d.Asesorado||'').trim().toLowerCase()===String(user||'').trim().toLowerCase();});
-    function sn(x){var m=String(x.SemanID||'').match(/sem_(\d+)/);return m?parseInt(m[1]):0;}
-    rows.sort(function(a,b){return sn(a)-sn(b);});
+    var rows=(devoluciones||[]).filter(sameAsesorado);
+    function sn(x){var m=String(x.SemanID||'').match(/sem_(\d+)/);return m?parseInt(m[1],10):0;}
+    rows.sort(function(a,b){
+      var ds=sn(a)-sn(b);
+      if(ds)return ds;
+      return String(a.Fecha||'').localeCompare(String(b.Fecha||''));
+    });
     return rows.length?rows[rows.length-1]:null;
   }
-  function parseJsonSafe(v,fallback){try{return JSON.parse(v||'');}catch(e){return fallback;}}
+  function parseJsonSafe(v,fallback){
+    if(v===null||v===undefined||v==='')return fallback;
+    if(typeof v==='object')return v;
+    try{return JSON.parse(v);}catch(e){return fallback;}
+  }
 
   const FT_TUTORIALES=[
     {k:'sistema',t:'1 · Cómo funciona mi asesoría',sub:'Su parte, mi parte y cómo usamos la app.'},
@@ -2422,7 +2444,7 @@ function App(){
   ];
   function Tutoriales(){
     var nivel=String((cfg&&cfg.nivel)||'').toLowerCase();
-    var fila=(seguimiento||[]).find(function(s){return String(s.Asesorado||'').trim().toLowerCase()===String(user||'').trim().toLowerCase();});
+    var fila=(seguimiento||[]).find(sameAsesorado);
     var isPresencial=String(fila&&fila.Modalidad||nivel).toLowerCase()==='presencial';
     var items=FT_TUTORIALES.filter(function(t){return !(isPresencial&&t.k==='videos');});
     return h('div',null,
