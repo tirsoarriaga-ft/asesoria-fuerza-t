@@ -721,7 +721,12 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
       }
     }
     if(isViewingPast){
-      const thisWkData=hist.find(function(w){return w.wi===wk.id||w.id===wk.id;});
+      // El snapshot persistido de ESA semana es la fuente visual del histórico.
+      // Leer localStorage primero evita que, tras Guardar corrección, el render siga
+      // mostrando el objeto `hist` anterior hasta cambiar de semana/recargar.
+      var thisWkData=null;
+      try{thisWkData=JSON.parse(localStorage.getItem('ase_'+user+'_'+wk.id)||'null');}catch(e){}
+      if(!thisWkData)thisWkData=hist.find(function(w){return w.wi===wk.id||w.id===wk.id;});
       if(thisWkData){
         var skU=thisWkData.skUsed||thisWkData.sk||{};
         var skSess=skU[activeSess];
