@@ -2365,19 +2365,17 @@ function App(){
   // Estado REAL de "reporte enviado": se deriva del flag de la semana MOSTRADA en cada render.
   // (Antes se usaba `saved`, que se cacheaba al arranque y podía revivir del backup → botón fantasma.)
   const reporteYaEnviado=user?!!localStorage.getItem(`ase_${user}_reporteSent_${wk.id}`):false;
-  const weekLocked=isViewingPast||isViewingFuture;
+  const weekLocked=isViewingFuture; // semanas pasadas siguen editables; solo una semana futura real queda bloqueada
 
   function save(){
-    if(!canSaveWeek&&!isViewingPast){
+    if(isViewingFuture){
       const fmtSat=wkSat.toLocaleDateString('es-AR',{day:'numeric',month:'short'});
       setSaveErrors([`Todavía no terminó la semana. Guardar semana estará disponible el sáb ${fmtSat}.`]);
       return;
     }
-    // Validaciones solo para sem actual, no para sem pasadas
-    if(!isViewingPast){
-      const errs=validateSave();
-      if(errs.length>0){setSaveErrors(errs);return;}
-    }
+    // Toda semana que se reporte (actual o pasada) debe pasar las mismas validaciones.
+    const errs=validateSave();
+    if(errs.length>0){setSaveErrors(errs);return;}
     setSaveErrors([]);
     // Verificar si ya se mandó reporte esta sem
     const sentKey=`ase_${user}_reporteSent_${wk.id}`;
@@ -2388,7 +2386,7 @@ function App(){
     const anyAguaOk=nut.some(d=>d.ak);
     const anySueno=(hab.sleep||[]).some(Boolean);
     const anyNeat=(hab.actExtra||[]).some(Boolean);
-    if(!anyMeal&&!anyAguaOk&&!anySueno&&!anyNeat&&!isViewingPast){setCumplWarning(true);}
+    if(!anyMeal&&!anyAguaOk&&!anySueno&&!anyNeat){setCumplWarning(true);}
     else{setCumplWarning(false);}
     doSave(true);
     localStorage.setItem(sentKey,'1');
@@ -2871,16 +2869,16 @@ function App(){
     ),
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       isViewingPast&&h('div',{style:{background:'#0A0A0A',borderRadius:'12px',padding:'12px 14px',marginBottom:'10px',display:'flex',gap:'10px',alignItems:'center'}},
-        h('span',{style:{fontSize:'18px'}},'🔒'),
+        h('span',{style:{fontSize:'18px'}},'✏️'),
         h('div',null,
-          h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#fff',marginBottom:'2px'}},'Semana pasada — solo lectura'),
-          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)'}},'Avanzá a la semana actual para cargar datos')
+          h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#fff',marginBottom:'2px'}},'Semana pasada — editable'),
+          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)'}},'Podés completar o corregir esta semana y enviar el reporte con su SemanID correspondiente.')
         )
       ),
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum,onReloadHist:loadH}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek:!isViewingFuture,isViewingPast,reporteYaEnviado,wkSat}),
         tab==='dev'&&h(Devolucion,null),
         tab==='ayuda'&&h(Tutoriales,null),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
