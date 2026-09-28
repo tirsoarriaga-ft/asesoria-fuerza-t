@@ -2262,7 +2262,8 @@ function App(){
   const [saveErrors,setSaveErrors]=useState([]);
   function validateSave(){
     const errors=[];
-    // MEDICIONES: peso, cintura y al menos una sensación
+    // VALIDACIONES DURAS: solo datos que realmente deben estar respondidos para reportar.
+    // Entrenamiento se controla aparte como advertencia confirmable: no entrenar también es un dato válido.
     const meds=hab.meds||[];
     const hasPeso=meds.some(m=>parseFloat(m.p)>0);
     const hasCintura=meds.some(m=>parseFloat(m.c)>0);
@@ -2271,35 +2272,54 @@ function App(){
     if(!hasPeso&&!hab.noMediPeso)errors.push('Peso corporal: cargá una medición o marcá "No me medí"');
     if(!hasCintura&&!hab.noMediCintura)errors.push('Cintura: cargá una medición o marcá "No me medí"');
     if(!hasSens)errors.push('Sensaciones: completá Energía, Hambre, Digestión y Estrés');
-    const nutriEstado=String(localStorage.getItem(`ase_${user}_nutriConfirmado`)||'').toLowerCase();
+    const nutriEstado=String(nutriConfirmado||localStorage.getItem(`ase_${user}_nutriConfirmado`)||'').toLowerCase();
     const nsem=hab.nutriSem||{};
     if(['deficitario','adecuado','deportivo'].includes(nutriEstado)&&!Number.isInteger(nsem.dias))errors.push('Nutrición: indicá cuántos días describen tu semana');
     if(nutriEstado==='deficitario'&&Number.isInteger(nsem.dias)&&nsem.dias<=4&&!nsem.causa)errors.push('Nutrición: indicá la causa principal');
     if(nutriEstado==='deportivo'&&Number.isInteger(nsem.dias)&&nsem.dias<5&&!nsem.causa)errors.push('Nutrición: indicá la causa principal');
     if(nutriEstado==='adecuado'&&!nsem.cantidad)errors.push('Nutrición: indicá cómo fueron tus cantidades');
-    // ENTRENO: Base se valida por respuesta objetiva de protocolo, no por reps.
+    return errors;
+  }
+
+  function trainingWarning(){
     const bloqueActual=String(cfg?.bloque||'volumen').toLowerCase();
+    const sesionesReq=['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).filter(s=>(cfg.assign?.[s]||[]).flat(Infinity).length>0);
+    const faltan=[];
+
+    // BASE: no se esperan reps. La evidencia de entrenamiento son las respuestas del protocolo.
     if(bloqueActual==='base'){
-      const sesionesReq=['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).filter(s=>(cfg.assign?.[s]||[]).length>0);
       sesionesReq.forEach(s=>{
-        let bp={};try{bp=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${s}`)||'{}');}catch(e){}
+        let bp={};
+        try{bp=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${s}`)||'{}');}catch(e){}
         const ids=(cfg.assign?.[s]||[]).flat(Infinity).map(String);
         const respondio=ids.some(id=>bp[id]==='si'||bp[id]==='no'||bp[parseInt(id)]==='si'||bp[parseInt(id)]==='no');
-        if(!respondio)errors.push('Entrenamiento Base · sesión '+s+': marcá “Cumplí” o “No cumplí” en al menos un ejercicio');
+        if(!respondio)faltan.push(s);
       });
-    }else{
-      const allExes=Object.values(cfg.assign||{}).flat(Infinity);
-      const hasAnyExData=allExes.some(exId=>{
-        const found=Object.entries(cfg.assign||{}).find(([s,ids])=>ids.flat(Infinity).map(String).includes(String(exId)));
-        const sesId=found&&found[0];
-        const r1=parseInt(sessionReps?.[sesId]?.[exId]?.r1)||0;
-        const kg=sessionKg?.[sesId]?.[exId]||sessionKg?.[sesId]?.[String(exId)]||0;
-        // En Fuerza, el principal es protocolo fijo; los accesorios siguen registrando reps.
-        return r1>0&&kg>0;
-      });
-      if(!hasAnyExData)errors.push('Entrenamiento: registrá kg y reps de al menos un ejercicio complementario');
+      if(!faltan.length)return '';
+      return 'Faltan respuestas de entrenamiento en '+(faltan.length===1?'la sesión ':'las sesiones ')+faltan.join(', ')+'.\n\nEn bloque Base NO tenés que cargar repeticiones: el registro es “Cumplí / No cumplí”.\n\nSi no entrenaste '+(faltan.length===1?'esa sesión':'esas sesiones')+', está bien dejarlo vacío. Si entrenaste y te olvidaste de registrarlo, elegí Cancelar y completalo antes de enviar.\n\n¿Confirmás que está bien enviar el reporte con esos datos de entrenamiento vacíos?';
     }
-    return errors;
+
+    // OTROS BLOQUES: revisar la semana mostrada, no solamente el estado de la sesión actual.
+    let snap={};
+    try{snap=JSON.parse(localStorage.getItem(SK(wk.id,user))||'{}')||{};}catch(e){}
+    const srSnap=snap.sr||{};
+    const skSnap=snap.skUsed||snap.sk||{};
+    sesionesReq.forEach(s=>{
+      const ids=(cfg.assign?.[s]||[]).flat(Infinity).map(String);
+      // Fuerza: el primer ejercicio es principal/protocolo; para esta advertencia buscamos accesorios registrables.
+      const idsRegistrables=(bloqueActual==='fuerza'&&ids.length>1)?ids.slice(1):ids;
+      const candidatos=idsRegistrables.length?idsRegistrables:ids;
+      const hay=candidatos.some(id=>{
+        const repsObj=(sessionReps?.[s]?.[id]||sessionReps?.[s]?.[parseInt(id)]||srSnap?.[s]?.[id]||srSnap?.[s]?.[parseInt(id)]||{});
+        const reps=Object.values(repsObj||{}).some(v=>parseInt(v)>0);
+        const kgActual=sessionKg?.[s]?.[id]||sessionKg?.[s]?.[parseInt(id)]||0;
+        const kgHist=skSnap?.[s]?.[id]||skSnap?.[s]?.[parseInt(id)]||0;
+        return reps&&(parseFloat(kgActual)>0||parseFloat(kgHist)>0);
+      });
+      if(!hay)faltan.push(s);
+    });
+    if(!faltan.length)return '';
+    return 'No encuentro kg + repeticiones registradas en '+(faltan.length===1?'la sesión ':'las sesiones ')+faltan.join(', ')+'.\n\nEsto puede estar bien si no entrenaste '+(faltan.length===1?'esa sesión':'esas sesiones')+'. Si sí entrenaste, quizá te olvidaste de cargar los datos: elegí Cancelar, volvé a Entreno y completalos.\n\n¿Confirmás que está bien enviar el reporte con esos datos de entrenamiento vacíos?';
   }
   function doSave(completeWeek){
     if(completeWeek){
@@ -2376,18 +2396,16 @@ function App(){
   // Estado REAL de "reporte enviado": se deriva del flag de la semana MOSTRADA en cada render.
   // (Antes se usaba `saved`, que se cacheaba al arranque y podía revivir del backup → botón fantasma.)
   const reporteYaEnviado=user?!!localStorage.getItem(`ase_${user}_reporteSent_${wk.id}`):false;
-  const weekLocked=isViewingFuture; // semanas pasadas siguen editables; solo una semana futura real queda bloqueada
+  const weekLocked=false; // navegación libre: pasado, actual y futuro son editables; cada semana conserva su SemanID
 
   function save(){
-    if(isViewingFuture){
-      const fmtSat=wkSat.toLocaleDateString('es-AR',{day:'numeric',month:'short'});
-      setSaveErrors([`Todavía no terminó la semana. Guardar semana estará disponible el sáb ${fmtSat}.`]);
-      return;
-    }
-    // Toda semana que se reporte (actual o pasada) debe pasar las mismas validaciones.
+    // Toda semana que se reporte debe pasar las validaciones duras.
     const errs=validateSave();
     if(errs.length>0){setSaveErrors(errs);return;}
     setSaveErrors([]);
+    // Entrenamiento NO bloquea el reporte: primero confirma si el vacío es real o un olvido de carga.
+    const trainWarn=trainingWarning();
+    if(trainWarn&&!window.confirm(trainWarn))return;
     // Verificar si ya se mandó reporte esta sem
     const sentKey=`ase_${user}_reporteSent_${wk.id}`;
     if(localStorage.getItem(sentKey)){
@@ -2436,7 +2454,7 @@ function App(){
   }
   function newWeek(){
     const curNum=wk.num||1;
-    if(curNum>=realWkNum)return;
+    if(curNum>=52)return;
     goToWeekNum(curNum+1);
   }
   function prevWeek(){
@@ -2810,11 +2828,11 @@ function App(){
         h('div',{style:{display:'flex',gap:'4px',width:'100%',marginTop:'2px'}},
           h('button',{onClick:prevWeek,disabled:(wk.num||1)<=1,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:(wk.num||1)<=1?'default':'pointer',border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',color:(wk.num||1)<=1?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.6)'}},'← Anterior'),
           h('button',{onClick:newWeek,
-              disabled:(wk.num||1)>=realWkNum,
+              disabled:(wk.num||1)>=52,
               style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',
-                cursor:(wk.num||1)<realWkNum?'pointer':'default',
+                cursor:(wk.num||1)<52?'pointer':'default',
                 border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',
-                color:(wk.num||1)<realWkNum?'rgba(255,255,255,0.8)':'rgba(255,255,255,0.2)'}},'Siguiente →'),
+                color:(wk.num||1)<52?'rgba(255,255,255,0.8)':'rgba(255,255,255,0.2)'}},'Siguiente →'),
           h('button',{onClick:resetWeek,disabled:weekLocked,title:'Resetear semana',style:{borderRadius:'8px',padding:'6px 8px',fontSize:'10px',fontWeight:'600',cursor:weekLocked?'default':'pointer',border:'1px solid rgba(239,68,68,0.3)',background:weekLocked?'transparent':'rgba(239,68,68,0.1)',color:weekLocked?'rgba(239,68,68,0.3)':'#EF4444'}},'↺')
         )
       )
@@ -2830,7 +2848,7 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum,onReloadHist:loadH}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek:!isViewingFuture,isViewingPast,reporteYaEnviado,wkSat}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek:true,isViewingPast,reporteYaEnviado,wkSat}),
         tab==='dev'&&h(Devolucion,null),
         tab==='ayuda'&&h(Tutoriales,null),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
