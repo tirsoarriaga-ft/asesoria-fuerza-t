@@ -679,7 +679,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     // Notificar al panel del coach via Apps Script
     const exName=exes.find(e=>e.id===parseInt(exId))?.n||exId;
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({action:'video',user,sessId,exId,exName,url,fecha:new Date().toISOString()})
+      body:JSON.stringify({action:'video',user,asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',sessId,exId,exName,url,fecha:new Date().toISOString()})
     }).catch(()=>{});
   }
   async function uploadBlob(blob,sessId,exId){
@@ -2321,7 +2321,7 @@ function App(){
     if(!faltan.length)return '';
     return 'No encuentro kg + repeticiones registradas en '+(faltan.length===1?'la sesión ':'las sesiones ')+faltan.join(', ')+'.\n\nEsto puede estar bien si no entrenaste '+(faltan.length===1?'esa sesión':'esas sesiones')+'. Si sí entrenaste, quizá te olvidaste de cargar los datos: elegí Cancelar, volvé a Entreno y completalos.\n\n¿Confirmás que está bien enviar el reporte con esos datos de entrenamiento vacíos?';
   }
-  function doSave(completeWeek){
+  async function doSave(completeWeek){
     if(completeWeek){
       const errs=validateSave();
       if(errs.length>0){setSaveErrors(errs);return;}
@@ -2336,7 +2336,8 @@ function App(){
       const usedSK=JSON.parse(JSON.stringify(sessionKg));
       const normSK={};
       Object.entries(sessionKg).forEach(([sess,exMap])=>{normSK[sess]={};Object.entries(exMap||{}).forEach(([exId,kg])=>{normSK[sess][parseInt(exId)]=kg;});});
-      localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(normSK));
+      // sessKg es la fuente de la semana corriente: una corrección histórica/futura nunca debe pisarla.
+      if(!isViewingPast&&!isViewingFuture){localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(normSK));}
       // Snapshot de rutina de ESTA semana (para que al verla en el futuro muestre su rutina, no la actual).
       // Se guarda con IDs del sheet (ya estables). Incluye bloque/series para reflejar la semana tal cual era.
       const rutinaSnap={num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio,semanaBloque:weeksInBlock+1,fuerzaProtocolo:(bloque==='fuerza'&&protoActual())?Object.assign({},protoActual()):null};
@@ -2360,8 +2361,8 @@ function App(){
       }catch(err){}
       // Solo enviar al sheet al guardar semana completa (no en Guardar progreso)
       if(completeWeek){
-        fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-          user,asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
+        await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          action:'reporte',user,asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
           sens:hab.sens||{},
           dolor:(hab.sens||{}).dolor||'',
@@ -2378,10 +2379,37 @@ function App(){
           nutriCausa:(hab.nutriSem&&hab.nutriSem.causa)||'',
           nutriCantidad:(hab.nutriSem&&hab.nutriSem.cantidad)||'',
           nutriCausaCantidad:(hab.nutriSem&&hab.nutriSem.causaCantidad)||''
-        })}).catch(()=>{});
+        })});
       }
-    }catch(e){}
-    setSaving(false);
+      setSaving(false);
+      return true;
+    }catch(e){
+      setSaving(false);
+      return false;
+    }
+  }
+
+  async function reportExistsOnSheet(){
+    const expectedId=localStorage.getItem(`ase_${user}_asesoradoId`)||'';
+    try{
+      const rows=await fetch(SCRIPT_URL+'?action=reportes&_t='+Date.now()).then(r=>r.json());
+      return (rows||[]).some(function(r){
+        const sameWeek=String(r.SemanID||'').trim()===String(wk.id||'').trim();
+        const rowId=String(r.AsesoradoID||'').trim();
+        const rowName=String(r.Asesorado||'').trim().toLowerCase();
+        const userName=String(user||'').trim().toLowerCase();
+        const samePerson=expectedId?(rowId===expectedId||(!rowId&&rowName===userName)):rowName===userName;
+        return sameWeek&&samePerson;
+      });
+    }catch(e){return false;}
+  }
+
+  async function confirmReportSaved(){
+    for(let i=0;i<4;i++){
+      if(i)await new Promise(r=>setTimeout(r,700));
+      if(await reportExistsOnSheet())return true;
+    }
+    return false;
   }
   const [cumplWarning,setCumplWarning]=useState(false);
   // Semana real según calendario
@@ -2398,7 +2426,29 @@ function App(){
   const reporteYaEnviado=user?!!localStorage.getItem(`ase_${user}_reporteSent_${wk.id}`):false;
   const weekLocked=false; // navegación libre: pasado, actual y futuro son editables; cada semana conserva su SemanID
 
-  function save(){
+  // El estado "Reporte enviado" se reconcilia con Reportes; localStorage no decide solo.
+  useEffect(()=>{
+    if(!user||!wk.id)return;
+    let alive=true;
+    const sentKey=`ase_${user}_reporteSent_${wk.id}`;
+    const expectedId=localStorage.getItem(`ase_${user}_asesoradoId`)||'';
+    fetch(SCRIPT_URL+'?action=reportes&_t='+Date.now()).then(r=>r.json()).then(rows=>{
+      if(!alive)return;
+      const found=(rows||[]).some(function(r){
+        const sameWeek=String(r.SemanID||'').trim()===String(wk.id||'').trim();
+        const rowId=String(r.AsesoradoID||'').trim();
+        const rowName=String(r.Asesorado||'').trim().toLowerCase();
+        const userName=String(user||'').trim().toLowerCase();
+        const samePerson=expectedId?(rowId===expectedId||(!rowId&&rowName===userName)):rowName===userName;
+        return sameWeek&&samePerson;
+      });
+      if(found)localStorage.setItem(sentKey,'1'); else localStorage.removeItem(sentKey);
+      setSaved(found?true:false);
+    }).catch(()=>{});
+    return()=>{alive=false;};
+  },[user,wk.id]);
+
+  async function save(){
     // Toda semana que se reporte debe pasar las validaciones duras.
     const errs=validateSave();
     if(errs.length>0){setSaveErrors(errs);return;}
@@ -2417,8 +2467,22 @@ function App(){
     const anyNeat=(hab.actExtra||[]).some(Boolean);
     if(!anyMeal&&!anyAguaOk&&!anySueno&&!anyNeat){setCumplWarning(true);}
     else{setCumplWarning(false);}
-    doSave(true);
+    const dispatched=await doSave(true);
+    if(!dispatched){
+      localStorage.removeItem(sentKey);
+      setSaved(false);
+      setSaveErrors(['No se pudo enviar el reporte. Revisá la conexión e intentá nuevamente.']);
+      return;
+    }
+    const confirmed=await confirmReportSaved();
+    if(!confirmed){
+      localStorage.removeItem(sentKey);
+      setSaved(false);
+      setSaveErrors(['El reporte no quedó confirmado en Reportes. No se marcará como enviado. Intentá nuevamente.']);
+      return;
+    }
     localStorage.setItem(sentKey,'1');
+    setSaved(true);
   }
   function saveProgress(){
     if(weekLocked)return;
@@ -2426,7 +2490,7 @@ function App(){
     // Backup silencioso al sheet
     try{
       var draftBk={sr:sessionReps,n:nut,h:hab,hiit:hiitData};
-      fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'draft',user:user,wi:wk.id,draft:draftBk})}).catch(function(){});
+      fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'draft',user:user,asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',wi:wk.id,draft:draftBk})}).catch(function(){});
     }catch(e){}
   }
   function resetWeek(){
@@ -2436,7 +2500,7 @@ function App(){
   }
   function goToWeekNum(targetNum){
     targetNum=parseInt(targetNum)||1;
-    if(targetNum<1||targetNum>realWkNum)return;
+    if(targetNum<1||targetNum>52)return;
     const target=getWkForNum(user,targetNum);
     // BLINDAJE DE NAVEGACION: primero bloquear autosave y vaciar el estado visual.
     // load() luego restaura EXCLUSIVAMENTE sem_X desde su draft/snapshot; si no existe, queda vacía.
