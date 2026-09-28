@@ -743,10 +743,13 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const SERIES_KEYS=['r1','r2','r3','r4'].slice(0,numSeries);
 
   // FUERZA: protocolo fijo del ejercicio principal por semana del bloque.
+  // FUERZA vigente: S1 test + back-off; S2-3 80%; S4-5 85%; S6 90%; S7 95%; S8 retest.
   const FUERZA_PROTOCOLO=[
-    {sems:[1,2],series:4,reps:3,pct:80},
-    {sems:[3,4],series:4,reps:2,pct:85},
-    {sems:[5,6],series:5,reps:1,pct:90}
+    {sems:[1],series:3,reps:4,pct:70,label:'Back-off'},
+    {sems:[2,3],series:3,reps:4,pct:80},
+    {sems:[4,5],series:4,reps:3,pct:85},
+    {sems:[6],series:5,reps:2,pct:90},
+    {sems:[7],series:5,reps:1,pct:95}
   ];
   const semEnBloque=weeksInBlock+1;
   const rolFuerza=(ex)=>{
@@ -760,18 +763,24 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     if(pos===1||pos===2)return 'accesorio';
     return 'finalizador';
   };
-  const protoActual=()=>FUERZA_PROTOCOLO.find(p=>p.sems.includes(semEnBloque))||FUERZA_PROTOCOLO[FUERZA_PROTOCOLO.length-1];
+  const protoActual=()=>FUERZA_PROTOCOLO.find(p=>p.sems.includes(semEnBloque))||null;
   const rmRefKey=(ex)=>`ase_${user}_rmRef_${activeSess}_${ex.id}`;
   const getRmRef=(ex)=>{const v=parseFloat(localStorage.getItem(rmRefKey(ex)));return isNaN(v)?0:v;};
+  const rmRefFinalKey=(ex)=>`ase_${user}_rmRefFinal_${activeSess}_${ex.id}`;
+  const getRmRefFinal=(ex)=>{const v=parseFloat(localStorage.getItem(rmRefFinalKey(ex)));return isNaN(v)?0:v;};
   const setRmRef=(ex,val)=>{try{localStorage.setItem(rmRefKey(ex),String(val));}catch(e){}};
+  const setRmRefFinal=(ex,val)=>{try{localStorage.setItem(rmRefFinalKey(ex),String(val));}catch(e){}};
   const epley=(kg,reps)=>Math.round(kg*(1+reps/30));
   const esDia1Fuerza=bloque==='fuerza'&&semEnBloque===1;
+  const esRetestFuerza=bloque==='fuerza'&&semEnBloque===8;
+  const fuerzaCerrada=bloque==='fuerza'&&semEnBloque>8;
   const rmTestLSKey=`ase_${user}_rmTest_${activeSess}`;
   const [rmTest,setRmTest]=useState(()=>{try{return JSON.parse(localStorage.getItem(rmTestLSKey)||'{}');}catch(e){return{};}});
   useEffect(()=>{try{setRmTest(JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${activeSess}`)||'{}'));}catch(e){setRmTest({});}},[activeSess,user]);
   useEffect(()=>{try{localStorage.setItem(rmTestLSKey,JSON.stringify(rmTest));}catch(e){}},[rmTest,rmTestLSKey]);
   const kgPrincipal=(ex)=>{
     const p=protoActual();
+    if(!p)return 0;
     const rm=getRmRef(ex);
     if(rm>0)return Math.round((rm*p.pct/100)/2.5)*2.5;
     // Compatibilidad para quienes ya están a mitad del bloque y no hicieron el test en esta versión:
@@ -782,7 +791,8 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const seriesKeysEx=(ex)=>{
     if(bloque!=='fuerza')return SERIES_KEYS;
     const rol=rolFuerza(ex);
-    const n=rol==='principal'?protoActual().series:(rol==='accesorio'?2:1);
+    const p=protoActual();
+    const n=rol==='principal'?(p?p.series:0):(rol==='accesorio'?2:1);
     return ['r1','r2','r3','r4','r5'].slice(0,n);
   };
 
@@ -986,7 +996,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
           h('div',{style:{fontSize:'13px',fontWeight:'900',background:GRAD,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},numSeries+' series'),
           semanasParaSiguienteSerie&&h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.35)'}},'+1 en '+semanasParaSiguienteSerie+' sem')
         ),
-        bloque==='fuerza'&&h('div',{style:{textAlign:'right',fontSize:'11px',fontWeight:'700',background:GRAD,WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'kg sube c/2 sem'),
+        bloque==='fuerza'&&h('div',{style:{textAlign:'right',fontSize:'11px',fontWeight:'700',color:'#DC2626'}},semEnBloque===8?'Retesteo':(semEnBloque>8?'Bloque finalizado':'Protocolo por % e1RM')),
       ),
       bloqueInfo.hint&&h('div',{style:{marginTop:'10px',fontSize:'11px',color:'rgba(255,255,255,0.65)',lineHeight:'1.6',padding:'10px 12px',background:'rgba(255,255,255,0.06)',borderRadius:'8px',borderLeft:`3px solid ${AC}`}},bloqueInfo.hint)
     ),
@@ -1113,37 +1123,60 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                         h('button',{onClick:()=>triggerGallery(activeSess,ex.id),style:{flex:1,background:'#F5F5F5',border:'1px dashed rgba(0,0,0,0.15)',borderRadius:'8px',padding:'7px 10px',fontSize:'12px',cursor:'pointer',color:'#666',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px'}},h('span',null,'🖼️'),'Galería')
                       )
               ),
-              // FUERZA: el primer ejercicio es principal y sigue protocolo fijo.
-              (bloque==='fuerza'&&rolFuerza(ex)==='principal'&&h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
-                esDia1Fuerza
-                  ?h('div',null,
-                      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE',marginBottom:'6px'}},'Principal · Semana 1 del bloque · referencia'),
-                      h('div',{style:{fontSize:'11px',color:'#9333EA',marginBottom:'8px'}},'Cargá un test de 3–5RM para fijar la referencia del bloque.'),
+              // FUERZA: principal = test/protocolo/retest. El renglón prescribe todo; no duplica celdas de reps.
+              (bloque==='fuerza'&&rolFuerza(ex)==='principal'&&(function(){
+                const ref=getRmRef(ex), finalRef=getRmRefFinal(ex), t=rmTest[ex.id]||{};
+                const testOk=parseFloat(t.kg)>0&&parseInt(t.reps)>0;
+                const calc=testOk?epley(parseFloat(t.kg),parseInt(t.reps)):0;
+                if(esDia1Fuerza){
+                  const p=protoActual();
+                  return h('div',null,
+                    h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
+                      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'ESTABLECER REFERENCIA'),
+                      h('div',{style:{fontSize:'11px',color:'#9333EA',margin:'4px 0 8px'}},'Serie pesada/submáxima de 3–5 reps · e1RM = kg × (1 + reps/30).'),
                       h('div',{style:{display:'flex',gap:'8px'}},
-                        h('input',{type:'text',inputMode:'decimal',placeholder:'kg',value:(rmTest[ex.id]||{}).kg||'',onChange:e=>setRmTest(p=>({...p,[ex.id]:{...(p[ex.id]||{}),kg:e.target.value}})),style:{...inp,textAlign:'center'}}),
-                        h('input',{type:'text',inputMode:'numeric',placeholder:'reps',value:(rmTest[ex.id]||{}).reps||'',onChange:e=>setRmTest(p=>({...p,[ex.id]:{...(p[ex.id]||{}),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
+                        h('input',{type:'text',inputMode:'decimal',placeholder:'kg',value:t.kg||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:e.target.value}})),style:{...inp,textAlign:'center'}}),
+                        h('input',{type:'text',inputMode:'numeric',placeholder:'reps',value:t.reps||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
                       ),
-                      (parseFloat((rmTest[ex.id]||{}).kg)>0&&parseInt((rmTest[ex.id]||{}).reps)>0)&&h('button',{onClick:()=>{const t=rmTest[ex.id];setRmRef(ex,epley(parseFloat(t.kg),parseInt(t.reps)));setSaved(false);},style:{marginTop:'8px',width:'100%',background:'#7E22CE',color:'#fff',border:'none',borderRadius:'8px',padding:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Guardar referencia · e1RM '+epley(parseFloat((rmTest[ex.id]||{}).kg),parseInt((rmTest[ex.id]||{}).reps))+' kg')
+                      testOk&&h('button',{onClick:()=>{setRmRef(ex,calc);setSaved(false);},style:{marginTop:'8px',width:'100%',background:'#7E22CE',color:'#fff',border:'none',borderRadius:'8px',padding:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},(ref?'Actualizar':'Guardar')+' referencia · e1RM '+calc+' kg'),
+                      ref>0&&h('div',{style:{marginTop:'8px',fontSize:'11px',fontWeight:'700',color:'#6B21A8'}},'Referencia inicial: '+ref+' kg')
+                    ),
+                    ref>0&&h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
+                      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'Back-off · Semana 1 del bloque'),
+                      h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#6B21A8',marginTop:'4px'}},p.series+' × '+p.reps+' · '+p.pct+'% · '+kgPrincipal(ex)+' kg')
                     )
-                  :h('div',null,
-                      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'Principal · Semana '+semEnBloque+' del bloque'),
-                      h('div',{style:{fontSize:'14px',color:'#6B21A8',marginTop:'4px',fontWeight:'800'}},protoActual().series+' × '+protoActual().reps+' · '+protoActual().pct+'% · '+(kgPrincipal(ex)||'—')+' kg'),
-                      !getRmRef(ex)&&h('div',{style:{fontSize:'10px',color:'#9333EA',marginTop:'4px'}},'Referencia histórica no disponible en este dispositivo: se conserva la carga actual como objetivo.')
-                    )
-              )),
-              // Series: Base y principal de Fuerza son protocolo fijo; no se editan reps.
-              (bloque==='fuerza'&&esDia1Fuerza&&rolFuerza(ex)==='principal')?null:
+                  );
+                }
+                if(esRetestFuerza){
+                  return h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
+                    h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'RETESTEAR REFERENCIA · Cierre de Fuerza'),
+                    h('div',{style:{fontSize:'11px',color:'#9333EA',margin:'4px 0 8px'}},'Cargá kg + reps. El bloque no se reinicia automáticamente.'),
+                    h('div',{style:{display:'flex',gap:'8px'}},
+                      h('input',{type:'text',inputMode:'decimal',placeholder:'kg',value:t.kg||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:e.target.value}})),style:{...inp,textAlign:'center'}}),
+                      h('input',{type:'text',inputMode:'numeric',placeholder:'reps',value:t.reps||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
+                    ),
+                    testOk&&h('button',{onClick:()=>{setRmRefFinal(ex,calc);setSaved(false);},style:{marginTop:'8px',width:'100%',background:'#7E22CE',color:'#fff',border:'none',borderRadius:'8px',padding:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},(finalRef?'Actualizar':'Guardar')+' retest · e1RM '+calc+' kg'),
+                    ref>0&&h('div',{style:{marginTop:'8px',fontSize:'11px',color:'#6B21A8',fontWeight:'700'}},'Inicial: '+ref+' kg'+(finalRef>0?' · Final: '+finalRef+' kg · Cambio: '+(finalRef-ref>=0?'+':'')+(finalRef-ref)+' kg':''))
+                  );
+                }
+                if(fuerzaCerrada)return h('div',{style:{marginBottom:'10px',background:'#F5F5F5',border:'1px solid #DDD',borderRadius:'8px',padding:'10px',fontSize:'12px',fontWeight:'700',color:'#555'}},'Bloque Fuerza finalizado · esperando próxima planificación del coach.');
+                const p=protoActual();
+                return h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
+                  h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'Principal · Semana '+semEnBloque+' del bloque'),
+                  h('div',{style:{fontSize:'14px',color:'#6B21A8',marginTop:'4px',fontWeight:'800'}},p.series+' × '+p.reps+' · '+p.pct+'% · '+(kgPrincipal(ex)||'—')+' kg'),
+                  !ref&&h('div',{style:{fontSize:'10px',color:'#9333EA',marginTop:'4px'}},'Referencia no disponible en este dispositivo. No se reconstruye desde Sheets ni KgInicial.')
+                );
+              })()),
+              // El principal de Fuerza no necesita celdas redundantes: el protocolo ya está completo arriba.
+              (bloque==='fuerza'&&rolFuerza(ex)==='principal')?null:
               h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
                 seriesKeysEx(ex).map((k,i)=>{
                   const sug=suggestedKg(ex,i);
-                  const fuerzaPrincipal=bloque==='fuerza'&&rolFuerza(ex)==='principal';
-                  const repFija=bloque==='base'||fuerzaPrincipal;
-                  const repVal=fuerzaPrincipal?String(protoActual().reps):getRep(activeSess,ex.id,k);
+                  const repFija=bloque==='base';
+                  const repVal=getRep(activeSess,ex.id,k);
                   return h('div',{key:k},
                     h('div',{style:{...lbl,display:'flex',justifyContent:'space-between'}},h('span',null,'Serie '+(i+1)),sug&&!repFija&&h('span',{style:{color:'#F59E0B',fontWeight:'700',fontSize:'10px'}},'↓ '+sug+' kg')),
-                    repFija
-                      ?h('div',{style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',background:'#F5F5F5',color:'#666'}},repVal)
-                      :h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:repVal,onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:sug?'#F59E0B':'rgba(0,0,0,0.1)'}})
+                    repFija?h('div',{style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',background:'#F5F5F5',color:'#666'}},repVal):h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:repVal,onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:sug?'#F59E0B':'rgba(0,0,0,0.1)'}})
                   );
                 })
               ),
@@ -2337,7 +2370,7 @@ function App(){
       localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(normSK));
       // Snapshot de rutina de ESTA semana (para que al verla en el futuro muestre su rutina, no la actual).
       // Se guarda con IDs del sheet (ya estables). Incluye bloque/series para reflejar la semana tal cual era.
-      const rutinaSnap={num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio};
+      const rutinaSnap={num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio,semanaBloque:weeksInBlock+1,fuerzaProtocolo:(bloque==='fuerza'&&protoActual())?Object.assign({},protoActual()):null};
       const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,skUsed,sk:usedSK,e:exes,rutina:rutinaSnap,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
       localStorage.setItem(SK(wk.id,user),JSON.stringify(d));
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
