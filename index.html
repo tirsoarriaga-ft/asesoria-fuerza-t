@@ -961,14 +961,19 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                     d.sr[activeSess][ex.id].r1=val;
                   }else{
                     var kg=parseFloat(val);if(isNaN(kg)||kg<=0)return;
+                    // Semana histórica: skUsed y sk deben conservar el mismo kg realmente usado.
+                    // Nunca toca sessKg actual desde el botón Corregir.
                     if(!d.skUsed)d.skUsed={};if(!d.skUsed[activeSess])d.skUsed[activeSess]={};
+                    if(!d.sk)d.sk={};if(!d.sk[activeSess])d.sk[activeSess]={};
                     d.skUsed[activeSess][ex.id]=kg;
+                    d.sk[activeSess][ex.id]=kg;
                   }
                   localStorage.setItem('ase_'+user+'_'+wk.id,JSON.stringify(d));
                   // Alinear el draft para que la app no muestre lo viejo al reabrir
                   var dk='ase_'+user+'_draft_'+wk.id;var drw=localStorage.getItem(dk);
                   if(drw){try{var dr=JSON.parse(drw);if(field==='r1'){if(!dr.sr)dr.sr={};if(!dr.sr[activeSess])dr.sr[activeSess]={};if(!dr.sr[activeSess][ex.id])dr.sr[activeSess][ex.id]={};dr.sr[activeSess][ex.id].r1=val;}localStorage.setItem(dk,JSON.stringify(dr));}catch(e){}}
-                  setCorrMsg('Guardado en '+wk.id+'. Recargá la app (cerrá y abrí) para ver el cambio.');
+                  loadH();
+                  setCorrMsg('Guardado en '+wk.id+'.');
                 }catch(e){}
               }
               return h('div',{key:ex.id,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid rgba(154,52,18,0.12)'}},
@@ -978,6 +983,10 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   h('span',{style:{fontSize:'11px',color:'#B45309'}},'rep'),
                   h('input',{type:'number',defaultValue:curKg,placeholder:'kg',onBlur:function(e){writeField('kg',e.target.value.trim());},style:{width:'58px',border:'1px solid #FDBA74',borderRadius:'6px',padding:'4px 6px',fontSize:'13px',textAlign:'right',color:'#7C2D12'}}),
                   h('span',{style:{fontSize:'11px',color:'#B45309'}},'kg')
+                ),
+                bloque==='base'&&h('div',{style:{display:'flex',gap:'4px',marginLeft:'8px'}},
+                  h('button',{onClick:function(){setBaseProto(function(bp){return Object.assign({},bp,{[ex.id]:'si'});});},style:{border:'1px solid #86EFAC',background:baseProto[ex.id]==='si'?'#DCFCE7':'#fff',borderRadius:'6px',padding:'4px 6px',fontSize:'10px',cursor:'pointer'}},'Cumplí'),
+                  h('button',{onClick:function(){setBaseProto(function(bp){return Object.assign({},bp,{[ex.id]:'no'});});},style:{border:'1px solid #FCA5A5',background:baseProto[ex.id]==='no'?'#FEE2E2':'#fff',borderRadius:'6px',padding:'4px 6px',fontSize:'10px',cursor:'pointer'}},'No')
                 )
               );
             }),
@@ -1167,8 +1176,13 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   !ref&&h('div',{style:{fontSize:'10px',color:'#9333EA',marginTop:'4px'}},'Referencia no disponible en este dispositivo. No se reconstruye desde Sheets ni KgInicial.')
                 );
               })()),
-              // El principal de Fuerza no necesita celdas redundantes: el protocolo ya está completo arriba.
-              (bloque==='fuerza'&&rolFuerza(ex)==='principal')?null:
+              // BASE sin carga: primero calibrar una carga; no mostrar todavía el protocolo fijo.
+              bloque==='base'&&!getKg(ex)&&h('div',{style:{marginBottom:'10px',background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:'8px',padding:'10px 12px'}},
+                h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#334155'}},'Primero encontrá tu carga de trabajo'),
+                h('div',{style:{fontSize:'11px',color:'#64748B',lineHeight:'1.5',marginTop:'4px'}},'Probá cargas de forma progresiva hasta encontrar una que te permita hacer aproximadamente '+Math.round((ex.low+ex.hi)/2)+' repeticiones con buena técnica y esfuerzo moderado: desafiante, pero sin llegar al límite. Después guardá esos kg.')
+              ),
+              // El principal de Fuerza no necesita celdas redundantes. Base sin kg todavía no muestra protocolo.
+              ((bloque==='fuerza'&&rolFuerza(ex)==='principal')||(bloque==='base'&&!getKg(ex)))?null:
               h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
                 seriesKeysEx(ex).map((k,i)=>{
                   const sug=suggestedKg(ex,i);
@@ -2482,7 +2496,14 @@ function App(){
         ids.forEach(exId=>{
           const id=parseInt(exId);
           const estado=bp[exId]||bp[String(exId)]||bp[id];
-          const curKg=(sessionKg[sessId]?.[id])||(sessionKg[sessId]?.[String(exId)])||null;
+          let curKg=(sessionKg[sessId]?.[id])||(sessionKg[sessId]?.[String(exId)])||null;
+          // Si avanzamos desde una semana histórica, la progresión sale del kg realmente usado allí,
+          // no del sessKg actual. Así una corrección histórica de Base puede alimentar la exposición siguiente.
+          if(isViewingPast){
+            const past=(hist||[]).find(function(w){return w.wi===wk.id||w.id===wk.id;});
+            const pastSK=past?(past.skUsed||past.sk||{}):{};
+            curKg=(pastSK[sessId]?.[id])||(pastSK[sessId]?.[String(exId)])||curKg;
+          }
           if(estado!=='si'||!curKg||curKg<=0)return;
           if(!newSK[sessId])newSK[sessId]={};
           newSK[sessId][id]=rKg(curKg*1.05);
