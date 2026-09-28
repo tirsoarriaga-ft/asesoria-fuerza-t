@@ -1591,8 +1591,8 @@ var AGUA_STATES=[
   {v:'ins',ic:'○',color:'#EF4444'},
 ];
 var DS6=['L','M','X','J','V','S'];
-function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}){
-  const nutriEstado=String(localStorage.getItem('ase_'+localStorage.getItem(USER_KEY)+'_nutriConfirmado')||'').trim().toLowerCase();
+function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}){
+  const nutriEstado=String(nutriConfirmado||'').trim().toLowerCase();
   const ns=hab.nutriSem||{dias:null,causa:'',cantidad:'',causaCantidad:''};
   const dias7=['L','M','X','J','V','S','D'];
   const causas=['No lo entendí','No pude organizarme','No tuve los alimentos','Comí fuera de casa','No tuve hambre','Elegí comer distinto','Otro'];
@@ -1953,6 +1953,7 @@ function App(){
   const [menusVer,setMenusVer]=useState(0);
   const [devoluciones,setDevoluciones]=useState([]);
   const [seguimiento,setSeguimiento]=useState([]);
+  const [nutriConfirmado,setNutriConfirmado]=useState('');
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
   const [cfg,setCfg]=useState(defCfg);
   const [exesReady,setExesReady]=useState(false);
@@ -1978,6 +1979,7 @@ function App(){
   const toxC=(hab.toxics||[]).filter(Boolean).length;
 
   useEffect(()=>{const s=localStorage.getItem(USER_KEY);if(s)setUser(s);},[]);
+  useEffect(()=>{if(!user){setNutriConfirmado('');return;}setNutriConfirmado(String(localStorage.getItem(`ase_${user}_nutriConfirmado`)||'').trim().toLowerCase());},[user]);
 
   // Efecto 1: cargar ejercicios
   useEffect(()=>{
@@ -2139,25 +2141,33 @@ function App(){
           if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
         }
       }).catch(()=>{});
-    // Asesorados → identidad técnica + FechaInicio canónica
-    fetch(SCRIPT_URL+'?action=asesorados')
-      .then(r=>r.json())
-      .then(asesorados=>{
-        const asesorado=(asesorados||[]).find(r=>
-          String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase()
-        );
-        if(!asesorado)return;
-        const asesoradoId=String(asesorado.AsesoradoID||'').trim();
-        const fechaInicio=String(asesorado.FechaInicio||'').trim();
-        if(asesoradoId){localStorage.setItem(`ase_${user}_asesoradoId`,asesoradoId);}
-        else{localStorage.removeItem(`ase_${user}_asesoradoId`);}
-        if(fechaInicio){localStorage.setItem(`ase_${user}_startdate`,fechaInicio);}
-        else{localStorage.removeItem(`ase_${user}_startdate`);}
-        const nutriConfirmado=String(asesorado.NutriConfirmado||'').trim().toLowerCase();
-        if(nutriConfirmado)localStorage.setItem(`ase_${user}_nutriConfirmado`,nutriConfirmado);
-        else localStorage.removeItem(`ase_${user}_nutriConfirmado`);
-      })
-      .catch(()=>{});
+    // Asesorados + Diagnosticos → identidad/FechaInicio + NutriConfirmado canónico
+    // NutriConfirmado vive en Diagnosticos y es configuración global, NO dato semanal.
+    Promise.all([
+      fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=diagnosticos').then(r=>r.json()).catch(()=>[])
+    ]).then(([asesorados,diagnosticos])=>{
+      const asesorado=(asesorados||[]).find(r=>
+        String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase()
+      );
+      if(!asesorado)return;
+      const asesoradoId=String(asesorado.AsesoradoID||'').trim();
+      const fechaInicio=String(asesorado.FechaInicio||'').trim();
+      if(asesoradoId){localStorage.setItem(`ase_${user}_asesoradoId`,asesoradoId);}
+      else{localStorage.removeItem(`ase_${user}_asesoradoId`);}
+      if(fechaInicio){localStorage.setItem(`ase_${user}_startdate`,fechaInicio);}
+      else{localStorage.removeItem(`ase_${user}_startdate`);}
+
+      const diagnostico=(diagnosticos||[]).find(r=>{
+        const rid=String(r.AsesoradoID||'').trim();
+        if(asesoradoId&&rid)return rid===asesoradoId;
+        return String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase();
+      });
+      const nc=String((diagnostico&&diagnostico.NutriConfirmado)||'').trim().toLowerCase();
+      setNutriConfirmado(nc);
+      if(nc)localStorage.setItem(`ase_${user}_nutriConfirmado`,nc);
+      else localStorage.removeItem(`ase_${user}_nutriConfirmado`);
+    }).catch(()=>{});
     // Alimentos (hoja Menus) + Dietas en paralelo → construye la dieta del asesorado
     Promise.all([
       fetch(SCRIPT_URL+'?action=menus').then(r=>r.json()).catch(()=>[]),
@@ -2199,10 +2209,10 @@ function App(){
     var d=draft||saved2;
     if(d){
       // Hay datos locales — cargar sin tocar estados vacíos
-      if(d.n)setNut(migrateNut(d.n));
-      if(d.h)setHab(migrateHab(d.h));
-      if(d.hiit)setHiitData(d.hiit);
-      if(d.sr)setSessionReps(d.sr);
+      setNut(d.n?migrateNut(d.n):iN());
+      setHab(d.h?migrateHab(d.h):iH());
+      setHiitData(d.hiit||iHiit());
+      setSessionReps(d.sr||{});
       setSaved(localStorage.getItem('ase_'+user+'_reporteSent_'+id)?true:false);
       loadH();
       setTimeout(function(){dataLoaded.current=true;draftReady.current=true;cambiandoSemana.current=false;},700);
@@ -2218,10 +2228,10 @@ function App(){
           if(row&&row.Draft){
             try{
               var d2=JSON.parse(row.Draft);
-              if(d2.n)setNut(migrateNut(d2.n));
-              if(d2.h)setHab(migrateHab(d2.h));
-              if(d2.hiit)setHiitData(d2.hiit);
-              if(d2.sr)setSessionReps(d2.sr);
+              setNut(d2.n?migrateNut(d2.n):iN());
+              setHab(d2.h?migrateHab(d2.h):iH());
+              setHiitData(d2.hiit||iHiit());
+              setSessionReps(d2.sr||{});
               // Guardar en localStorage para la próxima vez
               localStorage.setItem('ase_'+user+'_draft_'+id,row.Draft);
               setSaved(false);
@@ -2235,7 +2245,8 @@ function App(){
           }
         })
         .catch(function(){
-          // Error de red — no resetear, dejar lo que había
+          // Si no pudimos recuperar ESTA semana, nunca conservar en pantalla datos de otra.
+          setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
         })
         .finally(function(){
           loadH();
@@ -2405,83 +2416,33 @@ function App(){
     setSessionReps({});setNut(iN());setHab(iH());setHiitData(iHiit());setSaved(false);
     localStorage.removeItem(`ase_${user}_draft_${wk.id}`);
   }
+  function goToWeekNum(targetNum){
+    targetNum=parseInt(targetNum)||1;
+    if(targetNum<1||targetNum>realWkNum)return;
+    const target=getWkForNum(user,targetNum);
+    // BLINDAJE DE NAVEGACION: primero bloquear autosave y vaciar el estado visual.
+    // load() luego restaura EXCLUSIVAMENTE sem_X desde su draft/snapshot; si no existe, queda vacía.
+    cambiandoSemana.current=true;
+    dataLoaded.current=false;
+    draftReady.current=false;
+    setNut(iN());
+    setHab(iH());
+    setSessionReps({});
+    setHiitData(iHiit());
+    setSaved(false);
+    localStorage.setItem(`ase_${user}_wknum`,String(targetNum));
+    setWk(target);
+    load(target.id);
+  }
   function newWeek(){
     const curNum=wk.num||1;
-    if(curNum>=realWkNum&&!wkFinished)return;
-    if(!saved&&!isViewingPast)save();
-    const nextNum=curNum+1;
-    if(nextNum>maxWkNum)return;
-    const bloqueActual=(cfg?.bloque||'volumen').toLowerCase();
-    const newSK=JSON.parse(JSON.stringify(sessionKg));
-    let cambioKg=false;
-
-    if(bloqueActual==='base'){
-      // BASE: la respuesta Cumplí/No cumplí manda. No depende de reps.
-      ['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).forEach(sessId=>{
-        let bp={};try{bp=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${sessId}`)||'{}');}catch(e){}
-        const ids=(cfg.assign?.[sessId]||[]).flat(Infinity);
-        ids.forEach(exId=>{
-          const id=parseInt(exId);
-          const estado=bp[exId]||bp[String(exId)]||bp[id];
-          let curKg=(sessionKg[sessId]?.[id])||(sessionKg[sessId]?.[String(exId)])||null;
-          // Si avanzamos desde una semana histórica, la progresión sale del kg realmente usado allí,
-          // no del sessKg actual. Así una corrección histórica de Base puede alimentar la exposición siguiente.
-          if(isViewingPast){
-            const past=(hist||[]).find(function(w){return w.wi===wk.id||w.id===wk.id;});
-            const pastSK=past?(past.skUsed||past.sk||{}):{};
-            curKg=(pastSK[sessId]?.[id])||(pastSK[sessId]?.[String(exId)])||curKg;
-          }
-          if(estado!=='si'||!curKg||curKg<=0)return;
-          if(!newSK[sessId])newSK[sessId]={};
-          newSK[sessId][id]=rKg(curKg*1.05);
-          cambioKg=true;
-        });
-      });
-    }else if(bloqueActual==='volumen'||bloqueActual==='intensidad'||bloqueActual==='man'||bloqueActual==='fuerza'){
-      Object.entries(sessionReps).forEach(([sessId,sessData])=>{
-        Object.entries(sessData||{}).forEach(([exId,reps])=>{
-          const exIdInt=parseInt(exId);
-          const ex=exes.find(e=>e.id===exIdInt);if(!ex)return;
-          const curKg=(sessionKg[sessId]?.[exIdInt])||(sessionKg[sessId]?.[exId])||null;
-          if(!curKg||curKg<=0)return;
-          if(bloqueActual==='fuerza'){
-            // Ejercicio 1 = principal: su carga la define % del RM, no una subida genérica del sessKg.
-            const lista=(cfg.assign?.[sessId]||[]).flat(Infinity).map(String);
-            if(lista[0]===String(exIdInt))return;
-          }
-          const r1=parseInt(reps.r1)||0;
-          if(r1<ex.hi)return;
-          if(!newSK[sessId])newSK[sessId]={};
-          newSK[sessId][exIdInt]=rKg(curKg*1.05);
-          cambioKg=true;
-        });
-      });
-    }
-    if(cambioKg){
-      const normSK={};
-      Object.entries(newSK).forEach(([sess,exMap])=>{normSK[sess]={};Object.entries(exMap||{}).forEach(([eid,kg])=>{normSK[sess][parseInt(eid)]=kg;});});
-      setSessionKg(newSK);
-      localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(normSK));
-    }
-    localStorage.setItem(`ase_${user}_wknum`,String(nextNum));
-    localStorage.removeItem(`ase_${user}_draft_sem_${nextNum}`);
-    localStorage.removeItem(`ase_${user}_draft_${getWkForNum(user,nextNum).id}`);
-    const nextWkId=getWkForNum(user,nextNum).id;
-    ['A','B','C','D','E'].forEach(s=>{try{localStorage.removeItem(`ase_${user}_baseProto_${nextWkId}_${s}`);}catch(e){}});
-    cambiandoSemana.current=true;dataLoaded.current=false;draftReady.current=false;
-    setWk(getWkForNum(user,nextNum));
-    setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
-    setTimeout(function(){dataLoaded.current=true;draftReady.current=true;cambiandoSemana.current=false;},700);
+    if(curNum>=realWkNum)return;
+    goToWeekNum(curNum+1);
   }
   function prevWeek(){
     const curNum=wk.num||1;
     if(curNum<=1)return;
-    const prevNum=curNum-1;
-    dataLoaded.current=false;
-    draftReady.current=false;
-    localStorage.setItem(`ase_${user}_wknum`,String(prevNum));
-    setWk(getWkForNum(user,prevNum));
-    load(`sem_${prevNum}`);
+    goToWeekNum(curNum-1);
   }
   const draftReady=useRef(false);
   const dataLoaded=useRef(false); // true solo cuando el draft fue cargado completamente
@@ -2848,21 +2809,12 @@ function App(){
         ),
         h('div',{style:{display:'flex',gap:'4px',width:'100%',marginTop:'2px'}},
           h('button',{onClick:prevWeek,disabled:(wk.num||1)<=1,style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',cursor:(wk.num||1)<=1?'default':'pointer',border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',color:(wk.num||1)<=1?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.6)'}},'← Anterior'),
-          isViewingPast
-            ?h('button',{onClick:()=>{
-                dataLoaded.current=false;
-                draftReady.current=false;
-                localStorage.setItem(`ase_${user}_wknum`,String(realWkNum));
-                setWk(getWkForNum(user,realWkNum));
-                load(`sem_${realWkNum}`);
-              },style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'700',cursor:'pointer',border:`1px solid ${AC}`,background:AC+'22',color:AC}},'Sem actual →')
-            :h('button',{onClick:newWeek,
-                // Nueva → disponible desde Dom si ya guardó, sino desde el próximo Dom
-                disabled:!(saved===true&&wkFinished),
-                style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',
-                  cursor:saved===true&&wkFinished?'pointer':'default',
-                  border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',
-                  color:saved===true&&wkFinished?'rgba(255,255,255,0.8)':'rgba(255,255,255,0.2)'}},'Nueva →'),
+          h('button',{onClick:newWeek,
+              disabled:(wk.num||1)>=realWkNum,
+              style:{flex:1,borderRadius:'8px',padding:'6px 4px',fontSize:'10px',fontWeight:'600',
+                cursor:(wk.num||1)<realWkNum?'pointer':'default',
+                border:'1px solid rgba(255,255,255,0.12)',background:'rgba(255,255,255,0.06)',
+                color:(wk.num||1)<realWkNum?'rgba(255,255,255,0.8)':'rgba(255,255,255,0.2)'}},'Siguiente →'),
           h('button',{onClick:resetWeek,disabled:weekLocked,title:'Resetear semana',style:{borderRadius:'8px',padding:'6px 8px',fontSize:'10px',fontWeight:'600',cursor:weekLocked?'default':'pointer',border:'1px solid rgba(239,68,68,0.3)',background:weekLocked?'transparent':'rgba(239,68,68,0.1)',color:weekLocked?'rgba(239,68,68,0.3)':'#EF4444'}},'↺')
         )
       )
@@ -2878,7 +2830,7 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum,onReloadHist:loadH}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek:!isViewingFuture,isViewingPast,reporteYaEnviado,wkSat}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek:!isViewingFuture,isViewingPast,reporteYaEnviado,wkSat}),
         tab==='dev'&&h(Devolucion,null),
         tab==='ayuda'&&h(Tutoriales,null),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
