@@ -2081,14 +2081,35 @@ function App(){
             return MAP[n]||n;
           };
           const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess,pesoRef:parseFloat(fila.PesoRef)||0,nivel:String(fila.Nivel||'').toLowerCase()};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
-          // FechaInicio: fecha de arranque para calcular semanas (lunes de esa semana)
-          const fechaInicio=String(fila.FechaInicio||'').trim();
-          if(fechaInicio){localStorage.setItem(`ase_${user}_startdate`,fechaInicio);}
-          else if(!localStorage.getItem(`ase_${user}_startdate`)){localStorage.setItem(`ase_${user}_startdate`,new Date().toISOString().split('T')[0]);}
           const tmpl=parseInt(fila.Template);
           if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
         }
       }).catch(()=>{});
+        // Asesorados → identidad técnica + FechaInicio canónica
+    fetch(SCRIPT_URL+'?action=asesorados')
+      .then(r=>r.json())
+      .then(asesorados=>{
+        const asesorado=(asesorados||[]).find(r=>
+          String(r.Asesorado||'').trim().toLowerCase()===
+          user.trim().toLowerCase()
+        );
+
+        if(!asesorado)return;
+
+        const asesoradoId=String(asesorado.AsesoradoID||'').trim();
+        const fechaInicio=String(asesorado.FechaInicio||'').trim();
+
+        if(asesoradoId){
+          localStorage.setItem(`ase_${user}_asesoradoId`,asesoradoId);
+        }
+
+        if(fechaInicio){
+          localStorage.setItem(`ase_${user}_startdate`,fechaInicio);
+        }else{
+          localStorage.removeItem(`ase_${user}_startdate`);
+        }
+      })
+      .catch(()=>{});
     // Alimentos (hoja Menus) + Dietas en paralelo → construye la dieta del asesorado
     Promise.all([
       fetch(SCRIPT_URL+'?action=menus').then(r=>r.json()).catch(()=>[]),
@@ -2242,7 +2263,9 @@ function App(){
       // Solo enviar al sheet al guardar semana completa (no en Guardar progreso)
       if(completeWeek){
         fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-          user,wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
+          user,
+          asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',
+          wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
           sens:hab.sens||{},
           dolor:(hab.sens||{}).dolor||'',
