@@ -613,7 +613,7 @@ function Login({onLogin}){
 }
 
 // ── TRAINING ──────────────────────────────────────────────────────────
-function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum}){
+function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum,onReloadHist}){
   // SNAPSHOT DE RUTINA POR SEMANA: si se está viendo una semana pasada que guardó su propia
   // rutina, usar ESA para armar la vista (ejercicios, bloque, series) en vez de la rutina actual.
   // Semanas viejas sin snapshot -> se usa la rutina actual (fallback, comportamiento previo).
@@ -971,8 +971,8 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   localStorage.setItem('ase_'+user+'_'+wk.id,JSON.stringify(d));
                   // Alinear el draft para que la app no muestre lo viejo al reabrir
                   var dk='ase_'+user+'_draft_'+wk.id;var drw=localStorage.getItem(dk);
-                  if(drw){try{var dr=JSON.parse(drw);if(field==='r1'){if(!dr.sr)dr.sr={};if(!dr.sr[activeSess])dr.sr[activeSess]={};if(!dr.sr[activeSess][ex.id])dr.sr[activeSess][ex.id]={};dr.sr[activeSess][ex.id].r1=val;}localStorage.setItem(dk,JSON.stringify(dr));}catch(e){}}
-                  loadH();
+                  if(drw){try{var dr=JSON.parse(drw);if(field==='r1'){if(!dr.sr)dr.sr={};if(!dr.sr[activeSess])dr.sr[activeSess]={};if(!dr.sr[activeSess][ex.id])dr.sr[activeSess][ex.id]={};dr.sr[activeSess][ex.id].r1=val;}else{var dkg=parseFloat(val);if(!isNaN(dkg)&&dkg>0){if(!dr.skUsed)dr.skUsed={};if(!dr.skUsed[activeSess])dr.skUsed[activeSess]={};if(!dr.sk)dr.sk={};if(!dr.sk[activeSess])dr.sk[activeSess]={};dr.skUsed[activeSess][ex.id]=dkg;dr.sk[activeSess][ex.id]=dkg;}}localStorage.setItem(dk,JSON.stringify(dr));}catch(e){}}
+                  if(onReloadHist)onReloadHist();
                   setCorrMsg('Guardado en '+wk.id+'.');
                 }catch(e){}
               }
@@ -2947,7 +2947,7 @@ function App(){
         )
       ),
       tab==='d'&&h(Dashboard,null),
-      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum}),
+      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,realWkNum,onReloadHist:loadH}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nivel}),
       tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}),
         tab==='dev'&&h(Devolucion,null),
