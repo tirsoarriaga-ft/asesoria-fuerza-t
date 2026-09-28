@@ -632,9 +632,9 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const BLOQUES={
     volumen:    {label:'Volumen',        color:'#1D9E75',emoji:'📈',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. Cada 2 semanas la app te agregará una serie efectiva extra.'},
     intensidad: {label:'Intensidad',     color:'#378ADD',emoji:'🏋️',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión. En la última serie de cada ejercicio, aplicá una técnica de intensidad.'},
-    fuerza:     {label:'Fuerza',         color:'#DC2626',emoji:'💪',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cada 2 semanas la app aumentará los kg con el fin de progresar en carga. Intentá no perder reps con el peso nuevo.'},
+    fuerza:     {label:'Fuerza',         color:'#DC2626',emoji:'💪',hint:'El primer ejercicio de cada sesión es el principal: sigue un protocolo fijo según la semana del bloque. Los demás ejercicios complementan y progresan por reps sin perder técnica.'},
     man:        {label:'Mantenimiento',  color:'#6B7280',emoji:'🔄',hint:'Vos intentá mejorar las reps entreno tras entreno con el peso indicado. Cuando llegues al techo del rango, los kg se ajustan solos para la siguiente sesión.'},
-    base:       {label:'Progresión Base',color:'#F59E0B',emoji:'🌱',hint:'Las series y reps son fijas. Los kg los elegís vos: el peso no debe generarte dolor, pérdida de técnica ni desconfianza. Solo cuando lo sentís fácil, agregás peso — pero no series ni reps.'},
+    base:       {label:'Base',color:'#F59E0B',emoji:'🌱',hint:'3 series efectivas con reps fijas. Confirmá si completaste el protocolo con buena técnica. Si cumplís, la próxima vez la app sube 5% la carga; si no, mantiene el peso.'},
     deporte:    {label:'Deporte',        color:'#8B5CF6',emoji:'🏀',hint:'El protocolo series-reps-kg ya está pautado. El objetivo es respetar lo indicado por la app y ejecutar cada rep a máxima velocidad. Si perdés velocidad, frenás la serie. Si te quedan series, podés sacar peso.'},
   };
   const bloque=(cfg?.bloque||'volumen').toLowerCase();
@@ -702,11 +702,11 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   }
   const [cfgSess,setCfgSess]=useState('A');
   const [openTec,setOpenTec]=useState(null);
-  const SESS=['A','B','C','D'].slice(0,cfg.num);
+  const SESS=['A','B','C','D','E'].slice(0,cfg.num);
 
   const saveCfg=nc=>{setCfg(nc);localStorage.setItem(CFG_KEY(user),JSON.stringify(nc));};
   const toggleEx=(s,id)=>{const cur=cfg.assign[s]||[];const na=cur.includes(id)?cur.filter(x=>x!==id):[...cur,id];saveCfg({...cfg,assign:{...cfg.assign,[s]:na}});};
-  const setNum=n=>{const na={};['A','B','C','D'].slice(0,n).forEach(s=>{na[s]=cfg.assign[s]||[];});saveCfg({...cfg,num:n,assign:na});};
+  const setNum=n=>{const na={};['A','B','C','D','E'].slice(0,n).forEach(s=>{na[s]=cfg.assign[s]||[];});saveCfg({...cfg,num:n,assign:na});};
 
   const getKg=function(ex){
     if(isViewingPast){
@@ -735,12 +735,70 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   };
 
   const numSeries=(()=>{
-    if(bloque==='base')return 4;
+    if(bloque==='base')return 3;
     if(hasAutoSeries)return Math.min(4,seriesBase+Math.floor(weeksInBlock/2));
     return seriesBase;
   })();
   const semanasParaSiguienteSerie=(hasAutoSeries&&numSeries<4)?(2-(weeksInBlock%2)||2):null;
   const SERIES_KEYS=['r1','r2','r3','r4'].slice(0,numSeries);
+
+  // FUERZA: protocolo fijo del ejercicio principal por semana del bloque.
+  const FUERZA_PROTOCOLO=[
+    {sems:[1,2],series:4,reps:3,pct:80},
+    {sems:[3,4],series:4,reps:2,pct:85},
+    {sems:[5,6],series:5,reps:1,pct:90}
+  ];
+  const semEnBloque=weeksInBlock+1;
+  const rolFuerza=(ex)=>{
+    const lista=(cfg.assign[activeSess]||[]);
+    let pos=-1,count=0;
+    for(const item of lista){
+      const ids=Array.isArray(item)?item:[item];
+      for(const id of ids){if(String(id)===String(ex.id))pos=count;count++;}
+    }
+    if(pos===0)return 'principal';
+    if(pos===1||pos===2)return 'accesorio';
+    return 'finalizador';
+  };
+  const protoActual=()=>FUERZA_PROTOCOLO.find(p=>p.sems.includes(semEnBloque))||FUERZA_PROTOCOLO[FUERZA_PROTOCOLO.length-1];
+  const rmRefKey=(ex)=>`ase_${user}_rmRef_${activeSess}_${ex.id}`;
+  const getRmRef=(ex)=>{const v=parseFloat(localStorage.getItem(rmRefKey(ex)));return isNaN(v)?0:v;};
+  const setRmRef=(ex,val)=>{try{localStorage.setItem(rmRefKey(ex),String(val));}catch(e){}};
+  const epley=(kg,reps)=>Math.round(kg*(1+reps/30));
+  const esDia1Fuerza=bloque==='fuerza'&&semEnBloque===1;
+  const rmTestLSKey=`ase_${user}_rmTest_${activeSess}`;
+  const [rmTest,setRmTest]=useState(()=>{try{return JSON.parse(localStorage.getItem(rmTestLSKey)||'{}');}catch(e){return{};}});
+  useEffect(()=>{try{setRmTest(JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${activeSess}`)||'{}'));}catch(e){setRmTest({});}},[activeSess,user]);
+  useEffect(()=>{try{localStorage.setItem(rmTestLSKey,JSON.stringify(rmTest));}catch(e){}},[rmTest,rmTestLSKey]);
+  const kgPrincipal=(ex)=>{
+    const p=protoActual();
+    const rm=getRmRef(ex);
+    if(rm>0)return Math.round((rm*p.pct/100)/2.5)*2.5;
+    // Compatibilidad para quienes ya están a mitad del bloque y no hicieron el test en esta versión:
+    // conserva la carga actual como objetivo hasta que exista una referencia, sin inventar otra carga.
+    const cur=getKg(ex);
+    return cur||0;
+  };
+  const seriesKeysEx=(ex)=>{
+    if(bloque!=='fuerza')return SERIES_KEYS;
+    const rol=rolFuerza(ex);
+    const n=rol==='principal'?protoActual().series:(rol==='accesorio'?2:1);
+    return ['r1','r2','r3','r4','r5'].slice(0,n);
+  };
+
+  // BASE: respuesta del protocolo por ejercicio, persistida por semana + sesión.
+  const baseProtoKey=`ase_${user}_baseProto_${wk.id}_${activeSess}`;
+  const [baseProto,setBaseProto]=useState(()=>{try{return JSON.parse(localStorage.getItem(baseProtoKey)||'{}');}catch(e){return{};}});
+  const baseProtoLoadedKey=useRef(baseProtoKey);
+  useEffect(()=>{
+    const k=`ase_${user}_baseProto_${wk.id}_${activeSess}`;
+    baseProtoLoadedKey.current=k;
+    try{setBaseProto(JSON.parse(localStorage.getItem(k)||'{}'));}catch(e){setBaseProto({});}
+  },[activeSess,wk.id,user]);
+  useEffect(()=>{
+    if(baseProtoLoadedKey.current!==baseProtoKey)return;
+    try{localStorage.setItem(baseProtoKey,JSON.stringify(baseProto));}catch(e){}
+  },[baseProto,baseProtoKey]);
 
   const prevBestSet=(ex)=>{
     if(!hist||hist.length===0)return null;
@@ -765,7 +823,6 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     setSessionReps(prev=>{
       const next={...prev};
       if(!next[sess])next[sess]={};
-      // Reusar la clave existente (string o int) para no duplicar; si no existe, usar int.
       let key=exId;
       if(next[sess][exId]===undefined&&next[sess][String(exId)]!==undefined)key=String(exId);
       else if(next[sess][exId]===undefined&&next[sess][parseInt(exId)]!==undefined)key=parseInt(exId);
@@ -777,17 +834,18 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   };
   const canIncreaseKg=ex=>{
     if(!hasProgression)return false;
-    if(bloque==='fuerza'){
-      // fuerza: sube c/2 semanas sin importar reps
-      const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${activeSess}_${ex.id}`))||0;
-      return wkNum>=lastUp+2;
-    }
-    return true; // volumen, intensidad, man: sube al alcanzar techo
+    if(bloque==='fuerza'&&rolFuerza(ex)==='principal')return false;
+    return true;
   };
   const nKg=ex=>{
     const curKg=getKg(ex);if(!curKg)return null;
+    if(bloque==='base')return baseProto[ex.id]==='si'?rKg(curKg*1.05):null;
+    if(bloque==='fuerza'){
+      if(rolFuerza(ex)==='principal')return null;
+      const r1f=parseInt(sessionReps?.[activeSess]?.[ex.id]?.r1)||0;
+      return r1f>=ex.hi?rKg(curKg*1.05):null;
+    }
     if(!canIncreaseKg(ex))return null;
-    if(bloque==='fuerza')return rKg(curKg*1.05); // fuerza: sube siempre al cumplir 2 sem
     const r1=parseInt(sessionReps?.[activeSess]?.[ex.id]?.r1)||0;
     return r1>=ex.hi?rKg(curKg*1.05):null;
   };
@@ -834,7 +892,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   if(loadingExes)return h('div',{style:{...card,textAlign:'center',padding:'40px 20px'}},h('div',{style:{fontSize:'30px',marginBottom:'8px'}},'⏳'),h('div',{style:{fontSize:'14px',color:'#999'}},'Cargando ejercicios...'));
   if(configuring)return h('div',null,
     h('div',{style:card},h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},h('div',{style:{fontSize:'15px',fontWeight:'800'}},'⚙️ Configurar rutina'),h('button',{onClick:()=>setConfiguring(false),style:{background:G,color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Listo ✓'))),
-    h('div',{style:card},h('div',{style:lbl},'Cantidad de sesiones'),h('div',{style:{display:'flex',gap:'8px'}},[2,3,4].map(n=>h('button',{key:n,onClick:()=>setNum(n),style:{flex:1,padding:'14px',fontSize:'16px',fontWeight:cfg.num===n?'800':'400',cursor:'pointer',borderRadius:'10px',border:'2px solid',color:cfg.num===n?'#fff':'#999',background:cfg.num===n?G:'#fff',borderColor:cfg.num===n?G:'rgba(0,0,0,0.1)'}},n+' sesiones')))),
+    h('div',{style:card},h('div',{style:lbl},'Cantidad de sesiones'),h('div',{style:{display:'flex',gap:'8px'}},[2,3,4,5].map(n=>h('button',{key:n,onClick:()=>setNum(n),style:{flex:1,padding:'14px',fontSize:'16px',fontWeight:cfg.num===n?'800':'400',cursor:'pointer',borderRadius:'10px',border:'2px solid',color:cfg.num===n?'#fff':'#999',background:cfg.num===n?G:'#fff',borderColor:cfg.num===n?G:'rgba(0,0,0,0.1)'}},n+' sesiones')))),
     h('div',{style:card},
       h('div',{style:{...lbl,marginBottom:'10px'}},'Ejercicios por sesión'),
       h('div',{style:{display:'flex',gap:'4px',marginBottom:'14px'}},SESS.map(s=>h('button',{key:s,onClick:()=>setCfgSess(s),style:{flex:1,padding:'10px 4px',fontSize:'13px',fontWeight:cfgSess===s?'800':'400',cursor:'pointer',borderRadius:'8px',border:'2px solid',color:cfgSess===s?'#fff':'#999',background:cfgSess===s?B:'#fff',borderColor:cfgSess===s?B:'rgba(0,0,0,0.1)'}},
@@ -1055,16 +1113,50 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                         h('button',{onClick:()=>triggerGallery(activeSess,ex.id),style:{flex:1,background:'#F5F5F5',border:'1px dashed rgba(0,0,0,0.15)',borderRadius:'8px',padding:'7px 10px',fontSize:'12px',cursor:'pointer',color:'#666',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px'}},h('span',null,'🖼️'),'Galería')
                       )
               ),
+              // FUERZA: el primer ejercicio es principal y sigue protocolo fijo.
+              (bloque==='fuerza'&&rolFuerza(ex)==='principal'&&h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
+                esDia1Fuerza
+                  ?h('div',null,
+                      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE',marginBottom:'6px'}},'Principal · Semana 1 del bloque · referencia'),
+                      h('div',{style:{fontSize:'11px',color:'#9333EA',marginBottom:'8px'}},'Cargá un test de 3–5RM para fijar la referencia del bloque.'),
+                      h('div',{style:{display:'flex',gap:'8px'}},
+                        h('input',{type:'text',inputMode:'decimal',placeholder:'kg',value:(rmTest[ex.id]||{}).kg||'',onChange:e=>setRmTest(p=>({...p,[ex.id]:{...(p[ex.id]||{}),kg:e.target.value}})),style:{...inp,textAlign:'center'}}),
+                        h('input',{type:'text',inputMode:'numeric',placeholder:'reps',value:(rmTest[ex.id]||{}).reps||'',onChange:e=>setRmTest(p=>({...p,[ex.id]:{...(p[ex.id]||{}),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
+                      ),
+                      (parseFloat((rmTest[ex.id]||{}).kg)>0&&parseInt((rmTest[ex.id]||{}).reps)>0)&&h('button',{onClick:()=>{const t=rmTest[ex.id];setRmRef(ex,epley(parseFloat(t.kg),parseInt(t.reps)));setSaved(false);},style:{marginTop:'8px',width:'100%',background:'#7E22CE',color:'#fff',border:'none',borderRadius:'8px',padding:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Guardar referencia · e1RM '+epley(parseFloat((rmTest[ex.id]||{}).kg),parseInt((rmTest[ex.id]||{}).reps))+' kg')
+                    )
+                  :h('div',null,
+                      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'Principal · Semana '+semEnBloque+' del bloque'),
+                      h('div',{style:{fontSize:'14px',color:'#6B21A8',marginTop:'4px',fontWeight:'800'}},protoActual().series+' × '+protoActual().reps+' · '+protoActual().pct+'% · '+(kgPrincipal(ex)||'—')+' kg'),
+                      !getRmRef(ex)&&h('div',{style:{fontSize:'10px',color:'#9333EA',marginTop:'4px'}},'Referencia histórica no disponible en este dispositivo: se conserva la carga actual como objetivo.')
+                    )
+              )),
+              // Series: Base y principal de Fuerza son protocolo fijo; no se editan reps.
+              (bloque==='fuerza'&&esDia1Fuerza&&rolFuerza(ex)==='principal')?null:
               h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
-                SERIES_KEYS.map((k,i)=>{
+                seriesKeysEx(ex).map((k,i)=>{
                   const sug=suggestedKg(ex,i);
+                  const fuerzaPrincipal=bloque==='fuerza'&&rolFuerza(ex)==='principal';
+                  const repFija=bloque==='base'||fuerzaPrincipal;
+                  const repVal=fuerzaPrincipal?String(protoActual().reps):getRep(activeSess,ex.id,k);
                   return h('div',{key:k},
-                    h('div',{style:{...lbl,display:'flex',justifyContent:'space-between'}},h('span',null,'Serie '+(i+1)),sug&&h('span',{style:{color:'#F59E0B',fontWeight:'700',fontSize:'10px'}},'↓ '+sug+' kg')),
-                    h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:getRep(activeSess,ex.id,k),onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:sug?'#F59E0B':'rgba(0,0,0,0.1)'}})
+                    h('div',{style:{...lbl,display:'flex',justifyContent:'space-between'}},h('span',null,'Serie '+(i+1)),sug&&!repFija&&h('span',{style:{color:'#F59E0B',fontWeight:'700',fontSize:'10px'}},'↓ '+sug+' kg')),
+                    repFija
+                      ?h('div',{style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',background:'#F5F5F5',color:'#666'}},repVal)
+                      :h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:repVal,onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:sug?'#F59E0B':'rgba(0,0,0,0.1)'}})
                   );
                 })
               ),
-              nk&&h('div',{style:{background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},h('span',{style:{fontSize:'12px',color:G,fontWeight:'600'}},'Próxima sesión'),h('span',{style:{fontWeight:'800',color:G,fontSize:'15px'}},'↑ '+nk+' kg'))
+              bloque==='base'&&getKg(ex)>0&&h('div',{style:{marginTop:'10px',background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:'8px',padding:'10px'}},
+                h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#9A3412',marginBottom:'8px'}},'¿Completaste el protocolo con buena técnica?'),
+                h('div',{style:{display:'flex',gap:'8px'}},
+                  h('button',{onClick:()=>setBaseProto(p=>({...p,[ex.id]:'si'})),style:{flex:1,padding:'8px',borderRadius:'8px',border:'1px solid '+(baseProto[ex.id]==='si'?G:'rgba(0,0,0,0.12)'),background:baseProto[ex.id]==='si'?G:'#fff',color:baseProto[ex.id]==='si'?'#fff':'#666',fontWeight:'700',cursor:'pointer'}},'Cumplí'),
+                  h('button',{onClick:()=>setBaseProto(p=>({...p,[ex.id]:'no'})),style:{flex:1,padding:'8px',borderRadius:'8px',border:'1px solid '+(baseProto[ex.id]==='no'?R:'rgba(0,0,0,0.12)'),background:baseProto[ex.id]==='no'?'#FEF2F2':'#fff',color:baseProto[ex.id]==='no'?R:'#666',fontWeight:'700',cursor:'pointer'}},'No cumplí')
+                ),
+                baseProto[ex.id]==='si'&&h('div',{style:{marginTop:'8px',fontSize:'12px',color:G,fontWeight:'700'}},'Próxima sesión: ↑ '+rKg(getKg(ex)*1.05)+' kg'),
+                baseProto[ex.id]==='no'&&h('div',{style:{marginTop:'8px',fontSize:'12px',color:'#666',fontWeight:'600'}},'Próxima sesión: mantené '+getKg(ex)+' kg')
+              ),
+              nk&&bloque!=='base'&&h('div',{style:{background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},h('span',{style:{fontSize:'12px',color:G,fontWeight:'600'}},'Próxima sesión'),h('span',{style:{fontWeight:'800',color:G,fontSize:'15px'}},'↑ '+nk+' kg'))
             );
           };
           const tecBanner=bloque==='intensidad'&&h('div',{style:{marginTop:'10px',background:'#EBF4FF',border:'1px solid rgba(55,138,221,0.2)',borderRadius:'10px',padding:'12px'}},
@@ -2085,29 +2177,20 @@ function App(){
           if(!isNaN(tmpl)&&TEMPLATES.includes(tmpl))localStorage.setItem(`ase_${user}_tmpl`,String(tmpl));
         }
       }).catch(()=>{});
-        // Asesorados → identidad técnica + FechaInicio canónica
+    // Asesorados → identidad técnica + FechaInicio canónica
     fetch(SCRIPT_URL+'?action=asesorados')
       .then(r=>r.json())
       .then(asesorados=>{
         const asesorado=(asesorados||[]).find(r=>
-          String(r.Asesorado||'').trim().toLowerCase()===
-          user.trim().toLowerCase()
+          String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase()
         );
-
         if(!asesorado)return;
-
         const asesoradoId=String(asesorado.AsesoradoID||'').trim();
         const fechaInicio=String(asesorado.FechaInicio||'').trim();
-
-        if(asesoradoId){
-          localStorage.setItem(`ase_${user}_asesoradoId`,asesoradoId);
-        }
-
-        if(fechaInicio){
-          localStorage.setItem(`ase_${user}_startdate`,fechaInicio);
-        }else{
-          localStorage.removeItem(`ase_${user}_startdate`);
-        }
+        if(asesoradoId){localStorage.setItem(`ase_${user}_asesoradoId`,asesoradoId);}
+        else{localStorage.removeItem(`ase_${user}_asesoradoId`);}
+        if(fechaInicio){localStorage.setItem(`ase_${user}_startdate`,fechaInicio);}
+        else{localStorage.removeItem(`ase_${user}_startdate`);}
       })
       .catch(()=>{});
     // Alimentos (hoja Menus) + Dietas en paralelo → construye la dieta del asesorado
@@ -2212,15 +2295,28 @@ function App(){
     if(!hasPeso&&!hab.noMediPeso)errors.push('Peso corporal: cargá una medición o marcá "No me medí"');
     if(!hasCintura&&!hab.noMediCintura)errors.push('Cintura: cargá una medición o marcá "No me medí"');
     if(!hasSens)errors.push('Sensaciones (Mediciones): completá Energía, Hambre, Digestión y Estrés');
-    // ENTRENO: al menos un ejercicio con kg y reps en serie 1
-    const allExes=Object.values(cfg.assign||{}).flat();
-    const hasAnyExData=allExes.some(exId=>{
-      const sesId=Object.entries(cfg.assign||{}).find(([s,ids])=>ids.includes(exId))?.[0];
-      const r1=parseInt(sessionReps?.[sesId]?.[exId]?.r1)||0;
-      const kg=sessionKg?.[sesId]?.[exId]||exes.find(e=>e.id===exId)?.kg||0;
-      return r1>0&&kg>0;
-    });
-    if(!hasAnyExData)errors.push('Entrenamiento: registrá kg y reps de al menos un ejercicio');
+    // ENTRENO: Base se valida por respuesta objetiva de protocolo, no por reps.
+    const bloqueActual=String(cfg?.bloque||'volumen').toLowerCase();
+    if(bloqueActual==='base'){
+      const sesionesReq=['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).filter(s=>(cfg.assign?.[s]||[]).length>0);
+      sesionesReq.forEach(s=>{
+        let bp={};try{bp=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${s}`)||'{}');}catch(e){}
+        const ids=(cfg.assign?.[s]||[]).flat(Infinity).map(String);
+        const respondio=ids.some(id=>bp[id]==='si'||bp[id]==='no'||bp[parseInt(id)]==='si'||bp[parseInt(id)]==='no');
+        if(!respondio)errors.push('Entrenamiento Base · sesión '+s+': marcá “Cumplí” o “No cumplí” en al menos un ejercicio');
+      });
+    }else{
+      const allExes=Object.values(cfg.assign||{}).flat(Infinity);
+      const hasAnyExData=allExes.some(exId=>{
+        const found=Object.entries(cfg.assign||{}).find(([s,ids])=>ids.flat(Infinity).map(String).includes(String(exId)));
+        const sesId=found&&found[0];
+        const r1=parseInt(sessionReps?.[sesId]?.[exId]?.r1)||0;
+        const kg=sessionKg?.[sesId]?.[exId]||sessionKg?.[sesId]?.[String(exId)]||0;
+        // En Fuerza, el principal es protocolo fijo; los accesorios siguen registrando reps.
+        return r1>0&&kg>0;
+      });
+      if(!hasAnyExData)errors.push('Entrenamiento: registrá kg y reps de al menos un ejercicio complementario');
+    }
     return errors;
   }
   function doSave(completeWeek){
@@ -2263,9 +2359,7 @@ function App(){
       // Solo enviar al sheet al guardar semana completa (no en Guardar progreso)
       if(completeWeek){
         fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-          user,
-          asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',
-          wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
+          user,asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
           sens:hab.sens||{},
           dolor:(hab.sens||{}).dolor||'',
@@ -2343,11 +2437,26 @@ function App(){
     if(!saved&&!isViewingPast)save();
     const nextNum=curNum+1;
     if(nextNum>maxWkNum)return;
-    // ── PROGRESIÓN DE CARGA: se aplica SOLO acá, al pasar a la semana nueva ──
     const bloqueActual=(cfg?.bloque||'volumen').toLowerCase();
-    const hasProg=bloqueActual==='volumen'||bloqueActual==='intensidad'||bloqueActual==='man'||bloqueActual==='fuerza';
-    if(hasProg){
-      const newSK=JSON.parse(JSON.stringify(sessionKg));
+    const newSK=JSON.parse(JSON.stringify(sessionKg));
+    let cambioKg=false;
+
+    if(bloqueActual==='base'){
+      // BASE: la respuesta Cumplí/No cumplí manda. No depende de reps.
+      ['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).forEach(sessId=>{
+        let bp={};try{bp=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${sessId}`)||'{}');}catch(e){}
+        const ids=(cfg.assign?.[sessId]||[]).flat(Infinity);
+        ids.forEach(exId=>{
+          const id=parseInt(exId);
+          const estado=bp[exId]||bp[String(exId)]||bp[id];
+          const curKg=(sessionKg[sessId]?.[id])||(sessionKg[sessId]?.[String(exId)])||null;
+          if(estado!=='si'||!curKg||curKg<=0)return;
+          if(!newSK[sessId])newSK[sessId]={};
+          newSK[sessId][id]=rKg(curKg*1.05);
+          cambioKg=true;
+        });
+      });
+    }else if(bloqueActual==='volumen'||bloqueActual==='intensidad'||bloqueActual==='man'||bloqueActual==='fuerza'){
       Object.entries(sessionReps).forEach(([sessId,sessData])=>{
         Object.entries(sessData||{}).forEach(([exId,reps])=>{
           const exIdInt=parseInt(exId);
@@ -2355,19 +2464,19 @@ function App(){
           const curKg=(sessionKg[sessId]?.[exIdInt])||(sessionKg[sessId]?.[exId])||null;
           if(!curKg||curKg<=0)return;
           if(bloqueActual==='fuerza'){
-            const lastUp=parseInt(localStorage.getItem(`ase_${user}_lastKgUp_${sessId}_${exIdInt}`))||0;
-            if(curNum<lastUp+2)return;
-            if(!newSK[sessId])newSK[sessId]={};
-            newSK[sessId][exIdInt]=rKg(curKg*1.05);
-            localStorage.setItem(`ase_${user}_lastKgUp_${sessId}_${exIdInt}`,String(curNum));
-          }else{
-            const r1=parseInt(reps.r1)||0;
-            if(r1<ex.hi)return;
-            if(!newSK[sessId])newSK[sessId]={};
-            newSK[sessId][exIdInt]=rKg(curKg*1.05);
+            // Ejercicio 1 = principal: su carga la define % del RM, no una subida genérica del sessKg.
+            const lista=(cfg.assign?.[sessId]||[]).flat(Infinity).map(String);
+            if(lista[0]===String(exIdInt))return;
           }
+          const r1=parseInt(reps.r1)||0;
+          if(r1<ex.hi)return;
+          if(!newSK[sessId])newSK[sessId]={};
+          newSK[sessId][exIdInt]=rKg(curKg*1.05);
+          cambioKg=true;
         });
       });
+    }
+    if(cambioKg){
       const normSK={};
       Object.entries(newSK).forEach(([sess,exMap])=>{normSK[sess]={};Object.entries(exMap||{}).forEach(([eid,kg])=>{normSK[sess][parseInt(eid)]=kg;});});
       setSessionKg(newSK);
@@ -2375,6 +2484,9 @@ function App(){
     }
     localStorage.setItem(`ase_${user}_wknum`,String(nextNum));
     localStorage.removeItem(`ase_${user}_draft_sem_${nextNum}`);
+    localStorage.removeItem(`ase_${user}_draft_${getWkForNum(user,nextNum).id}`);
+    const nextWkId=getWkForNum(user,nextNum).id;
+    ['A','B','C','D','E'].forEach(s=>{try{localStorage.removeItem(`ase_${user}_baseProto_${nextWkId}_${s}`);}catch(e){}});
     setWk(getWkForNum(user,nextNum));
     setNut(iN());setHab(iH());setSessionReps({});setHiitData(iHiit());setSaved(false);
   }
