@@ -2361,7 +2361,7 @@ function App(){
       }catch(err){}
       // Solo enviar al sheet al guardar semana completa (no en Guardar progreso)
       if(completeWeek){
-        await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        await fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',body:JSON.stringify({
           action:'reporte',user,asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
           sens:hab.sens||{},
@@ -2371,7 +2371,12 @@ function App(){
           contextoVida:(hab.sens||{}).contextoVida||'',
           e1rm:e1rmSnap,
           diasAgua:aguaDias,
-          sesionesEntreno:Object.values(curSR||{}).filter(function(s){return Object.values(s||{}).some(function(ex){return parseInt(ex.r1||0)>0;});}).length,
+          sesionesEntreno:(String(cfg?.bloque||'').toLowerCase()==='base'
+            ? ['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).filter(function(sess){
+                var bp={};try{bp=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${sess}`)||'{}');}catch(e){}
+                return Object.values(bp||{}).some(function(v){return v==='si'||v==='no';});
+              }).length
+            : Object.values(curSR||{}).filter(function(s){return Object.values(s||{}).some(function(ex){return parseInt(ex.r1||0)>0;});}).length),
           medidoPeso:pp!=='—'?'si':(hab.noMediPeso?'no':''),
           medidoCintura:pc!=='—'?'si':(hab.noMediCintura?'no':''),
           estadoNutricional:localStorage.getItem(`ase_${user}_nutriConfirmado`)||'',
@@ -2471,7 +2476,7 @@ function App(){
     if(!dispatched){
       localStorage.removeItem(sentKey);
       setSaved(false);
-      setSaveErrors(['No se pudo enviar el reporte. Revisá la conexión e intentá nuevamente.']);
+      setSaveErrors(['No se pudo completar el envío del reporte. Tu progreso quedó guardado en Drafts. Intentá nuevamente.']);
       return;
     }
     const confirmed=await confirmReportSaved();
@@ -2498,10 +2503,47 @@ function App(){
     setSessionReps({});setNut(iN());setHab(iH());setHiitData(iHiit());setSaved(false);
     localStorage.removeItem(`ase_${user}_draft_${wk.id}`);
   }
+  function applyBaseProgressionToWeek(targetNum){
+    // ÚNICA transición automática de Base: al entrar por primera vez en la semana REAL nueva.
+    // No copia respuestas ni reps; sólo define la carga de la nueva exposición desde la semana anterior.
+    // El marcador vuelve esta operación idempotente: navegar atrás/adelante no re-progresa.
+    targetNum=parseInt(targetNum)||1;
+    if(targetNum!==getRealWkNum(user)||targetNum<=1)return;
+    const marker=`ase_${user}_baseProgressApplied_sem_${targetNum}`;
+    if(localStorage.getItem(marker))return;
+    let cfgNow=null;try{cfgNow=JSON.parse(localStorage.getItem(CFG_KEY(user))||'null');}catch(e){}
+    if(!cfgNow||String(cfgNow.bloque||'').toLowerCase()!=='base')return;
+    const targetId=`sem_${targetNum}`;
+    // Si la semana destino ya tiene ejecución propia, no tocar su carga.
+    if(localStorage.getItem(SK(targetId,user))||localStorage.getItem(`ase_${user}_draft_${targetId}`)){localStorage.setItem(marker,'1');return;}
+    let prev=null;try{prev=JSON.parse(localStorage.getItem(SK(`sem_${targetNum-1}`,user))||'null');}catch(e){}
+    if(!prev)return;
+    let nextKg={};try{nextKg=JSON.parse(localStorage.getItem(`ase_${user}_sessKg`)||'{}')||{};}catch(e){nextKg={};}
+    let changed=false;
+    ['A','B','C','D','E'].slice(0,parseInt(cfgNow.num)||0).forEach(function(sess){
+      let bp={};try{bp=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_sem_${targetNum-1}_${sess}`)||'{}');}catch(e){}
+      const ids=(cfgNow.assign?.[sess]||[]).flat(Infinity);
+      ids.forEach(function(rawId){
+        const id=String(rawId);
+        const estado=bp[id]||bp[parseInt(id)]||'';
+        if(estado!=='si'&&estado!=='no')return;
+        const prevMap=(prev.skUsed&&prev.skUsed[sess])||(prev.sk&&prev.sk[sess])||{};
+        const kg=parseFloat(prevMap[id]||prevMap[parseInt(id)]||0);
+        if(!(kg>0))return;
+        if(!nextKg[sess])nextKg[sess]={};
+        nextKg[sess][parseInt(id)]=estado==='si'?rKg(kg*1.05):kg;
+        changed=true;
+      });
+    });
+    if(changed){localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(nextKg));setSessionKg(nextKg);}
+    localStorage.setItem(marker,'1');
+  }
+
   function goToWeekNum(targetNum){
     targetNum=parseInt(targetNum)||1;
     if(targetNum<1||targetNum>52)return;
     const target=getWkForNum(user,targetNum);
+    if(targetNum===(wk.num||1)+1)applyBaseProgressionToWeek(targetNum);
     // BLINDAJE DE NAVEGACION: primero bloquear autosave y vaciar el estado visual.
     // load() luego restaura EXCLUSIVAMENTE sem_X desde su draft/snapshot; si no existe, queda vacía.
     cambiandoSemana.current=true;
