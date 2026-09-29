@@ -870,7 +870,16 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
   const semanasEnBloque=currentWkNum===null?null:Math.max(1,currentWkNum-bloqueInicio+1);
   const CHECKPOINT_FREQ={'health phase':1,'mantenimiento':4,'deporte':4};
   const checkpointFreq=CHECKPOINT_FREQ[bloqueActual.toLowerCase()]||2;
-  const esCheckpoint=semanasEnBloque!==null&&semanasEnBloque>0&&semanasEnBloque%checkpointFreq===0;
+  // El checkpoint revisa la ÚLTIMA SEMANA CERRADA, no la semana que acaba de empezar.
+  // Ej.: lunes de semana 14 => revisar sem_13. Reportes.SemanID sigue siendo histórico.
+  const reviewWkNum=currentWkNum!==null&&currentWkNum>1?currentWkNum-1:null;
+  const reviewSemID=reviewWkNum!==null?'sem_'+reviewWkNum:'';
+  const reviewBloqueWeek=reviewWkNum===null?null:Math.max(1,reviewWkNum-bloqueInicio+1);
+  const checkpointYaHecho=reviewSemID&&Array.isArray(decisiones)&&(decisiones||[]).some(function(d){
+    return String(d.SemanID||'').trim()===reviewSemID&&String(d.Asesorado||'').trim().toLowerCase()===String(name||'').trim().toLowerCase();
+  });
+  const checkpointCorresponde=reviewBloqueWeek!==null&&reviewBloqueWeek>0&&reviewBloqueWeek%checkpointFreq===0;
+  const esCheckpoint=!!(checkpointCorresponde&&!checkpointYaHecho);
 
   const [arbolStep,setArbolStep]=useState(0);
   const [arbolResp,setArbolResp]=useState({});
@@ -1199,7 +1208,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
         tmpl,' · ',numSes,' sesiones · ',currentWkNum===null?'⚠ Falta FechaInicio':('Semana '+currentWkNum),' · ',
         h('span',{style:{fontWeight:'700',color:'#111'}},bloqueActual),
         ' sem.',semanasEnBloque===null?'—':semanasEnBloque,
-        esCheckpoint&&h('span',{style:{marginLeft:'8px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'20px'}},' Checkpoint'),
+        esCheckpoint&&h('span',{style:{marginLeft:'8px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'20px'}},' Revisar sem '+reviewWkNum),
         ' · Obj: ',h('span',{style:{fontWeight:'700',color:String(rutina?.Objetivo||'').toLowerCase()==='deficit'?B:String(rutina?.Objetivo||'').toLowerCase()==='superavit'?G:O}},String(rutina?.Objetivo||'mantenimiento'))
       )
     ),
@@ -1430,8 +1439,8 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
           h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Checkpoint · '+bloqueActual),
           h('div',{style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',marginBottom:'4px'}},
             esCheckpoint
-              ?'✅ Semana '+semanasEnBloque+' — es momento de checkpoint'
-              :semanasEnBloque===null?'Falta FechaInicio para calcular checkpoint':'Próximo: sem '+(Math.ceil(semanasEnBloque/checkpointFreq)*checkpointFreq)+' del bloque (cada '+checkpointFreq+' sem)'
+              ?'Pendiente: revisar semana total '+reviewWkNum+' · semana '+reviewBloqueWeek+' del bloque'
+              :reviewBloqueWeek===null?'Falta FechaInicio para calcular checkpoint':(checkpointYaHecho?'Última semana cerrada ('+reviewWkNum+') ya tiene checkpoint':'Última semana cerrada: '+reviewWkNum+' · bloque sem '+reviewBloqueWeek+' · checkpoint cada '+checkpointFreq+' sem')
           )
         ),
         h(ArbolCheckpoint,null),
