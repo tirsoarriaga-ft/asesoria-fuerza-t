@@ -783,7 +783,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   // Sugerencia intraserie: si serie anterior ≤ mitad del rango → bajar 10%
   const aproxUtil=(base,pct)=>{
     const kg=parseFloat(base)||0;
-    if(kg<10)return null;
+    if(kg<=0)return null;
     return rKg(kg*(pct||0.5));
   };
   const suggestedKg=(ex,serieIdx)=>{
@@ -1047,7 +1047,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                     exes.filter(e=>e.m===(findEx(ex.origId)||ex).m&&String(e.id)!==String(ex.id)).length>0&&h('button',{onClick:()=>setExEquiv(ex),style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:AC,fontWeight:'700',textDecoration:'none'}},'≡ Equivalentes'),
                     h('button',{onClick:()=>setShowHistorial(showHistorial===ex.id?null:ex.id),style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:B,fontWeight:'600',textDecoration:'none'}},'📋 Historial')
                   ),
-                  prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},'Sem. ant.: '+prev.reps+' × '+prev.kg+' kg')
+                  prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},'Último rendimiento: '+prev.reps+' × '+prev.kg+' kg')
                 ),
                 h('div',{style:{textAlign:'right'}},
                   editing
@@ -1149,7 +1149,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                 h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#334155'}},'Primero encontrá tu carga de trabajo'),
                 h('div',{style:{fontSize:'11px',color:'#64748B',lineHeight:'1.5',marginTop:'4px'}},'Probá cargas de forma progresiva hasta encontrar una que te permita hacer aproximadamente '+Math.round((ex.low+ex.hi)/2)+' repeticiones con buena técnica y esfuerzo moderado: desafiante, pero sin llegar al límite. Después guardá esos kg.')
               ),
-              // Aproximaciones: no cuentan como series efectivas. Con cargas <10 kg no se muestran kg de aproximación.
+              // Aproximaciones: no cuentan como series efectivas. Se muestran para cualquier carga de trabajo > 0.
               !((bloque==='fuerza'&&rolFuerza(ex)==='principal')||(bloque==='base'&&!getKg(ex)))&&aproxUtil(getKg(ex),0.5)&&
                 h('div',{style:{marginBottom:'8px',fontSize:'11px',color:'#64748B',background:'#F8FAFC',borderRadius:'7px',padding:'7px 9px'}},
                   bloque==='base'||bloque==='rehab'
