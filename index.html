@@ -1156,19 +1156,24 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                     ?('Aproximación · 12 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
                     :('Aproximación 1 · 12 reps · 50% · '+aproxUtil(getKg(ex),0.5)+' kg · Aproximación 2 · 6 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
                 ),
-              // El principal de Fuerza no necesita celdas redundantes. Base sin kg todavía no muestra protocolo.
+              // Fuerza principal no usa celdas redundantes. Base/Rehab muestran una pauta textual:
+              // las reps son prescripción, no un dato que el asesorado deba completar.
               ((bloque==='fuerza'&&rolFuerza(ex)==='principal')||(bloque==='base'&&!getKg(ex)))?null:
-              h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
-                seriesKeysEx(ex).map((k,i)=>{
-                  const sug=suggestedKg(ex,i);
-                  const repFija=bloque==='base'||bloque==='rehab';
-                  const repVal=getRep(activeSess,ex.id,k);
-                  return h('div',{key:k},
-                    h('div',{style:{...lbl,display:'flex',justifyContent:'space-between'}},h('span',null,'Serie '+(i+1)),sug&&!repFija&&h('span',{style:{color:'#F59E0B',fontWeight:'700',fontSize:'10px'}},'↓ '+sug+' kg')),
-                    repFija?h('div',{style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',background:'#F5F5F5',color:'#666'}},repVal):h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:repVal,onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:sug?'#F59E0B':'rgba(0,0,0,0.1)'}})
-                  );
-                })
-              ),
+              (bloque==='base'||bloque==='rehab')
+                ?h('div',{style:{marginBottom:'10px',background:'#F5F5F5',border:'1px solid #E5E7EB',borderRadius:'8px',padding:'10px 12px',textAlign:'center'}},
+                    h('div',{style:{fontSize:'15px',fontWeight:'900',color:'#333'}},'3 series de '+Math.round((ex.low+ex.hi)/2)+' reps'),
+                    h('div',{style:{fontSize:'10px',color:'#888',marginTop:'3px'}},'Carga pautada: '+(getKg(ex)||'—')+' kg')
+                  )
+                :h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
+                  seriesKeysEx(ex).map((k,i)=>{
+                    const sug=suggestedKg(ex,i);
+                    const repVal=getRep(activeSess,ex.id,k);
+                    return h('div',{key:k},
+                      h('div',{style:{...lbl,display:'flex',justifyContent:'space-between'}},h('span',null,'Serie '+(i+1)),sug&&h('span',{style:{color:'#F59E0B',fontWeight:'700',fontSize:'10px'}},'↓ '+sug+' kg')),
+                      h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:repVal,onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:sug?'#F59E0B':'rgba(0,0,0,0.1)'}})
+                    );
+                  })
+                ),
               (bloque==='base'||bloque==='rehab')&&getKg(ex)>0&&h('div',{style:{marginTop:'10px',background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:'8px',padding:'10px'}},
                 h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#9A3412',marginBottom:'8px'}},'¿Completaste las series y repeticiones indicadas con la carga pautada?'),
                 h('div',{style:{display:'flex',gap:'8px'}},
@@ -1874,7 +1879,23 @@ function App(){
   const actExtraC=(hab.actExtra||[]).filter(Boolean).length;
   const toxC=(hab.toxics||[]).filter(Boolean).length;
 
-  useEffect(()=>{const s=localStorage.getItem(USER_KEY);if(s)setUser(s);},[]);
+  useEffect(()=>{
+    const savedUser=localStorage.getItem(USER_KEY);
+    if(!savedUser)return;
+    fetch(SCRIPT_URL+'?action=asesorados')
+      .then(r=>r.json())
+      .then(rows=>{
+        const a=(rows||[]).find(r=>String(r.Asesorado||'').trim().toLowerCase()===savedUser.trim().toLowerCase());
+        if(a){
+          const id=String(a.AsesoradoID||'').trim();
+          const fi=String(a.FechaInicio||'').trim();
+          if(id)localStorage.setItem(`ase_${savedUser}_asesoradoId`,id);
+          if(fi)localStorage.setItem(`ase_${savedUser}_startdate`,fi);
+        }
+      })
+      .catch(()=>{})
+      .finally(()=>setUser(savedUser));
+  },[]);
   useEffect(()=>{if(!user){setNutriConfirmado('');return;}setNutriConfirmado(String(localStorage.getItem(`ase_${user}_nutriConfirmado`)||'').trim().toLowerCase());},[user]);
 
   // Efecto 1: cargar ejercicios
@@ -2086,7 +2107,23 @@ function App(){
     }).catch(()=>{});
   },[user,exesReady]);
 
-  const login=name=>{localStorage.setItem(USER_KEY,name);setUser(name);};
+  const login=name=>{
+    localStorage.setItem(USER_KEY,name);
+    // No montar App con una FechaInicio ficticia: primero hidratar identidad desde Asesorados.
+    fetch(SCRIPT_URL+'?action=asesorados')
+      .then(r=>r.json())
+      .then(rows=>{
+        const a=(rows||[]).find(r=>String(r.Asesorado||'').trim().toLowerCase()===name.trim().toLowerCase());
+        if(a){
+          const id=String(a.AsesoradoID||'').trim();
+          const fi=String(a.FechaInicio||'').trim();
+          if(id)localStorage.setItem(`ase_${name}_asesoradoId`,id);
+          if(fi)localStorage.setItem(`ase_${name}_startdate`,fi);
+        }
+      })
+      .catch(()=>{})
+      .finally(()=>setUser(name));
+  };
   const logout=()=>{if(confirm('¿Cambiar nombre?')){localStorage.removeItem(USER_KEY);setUser(null);}};
 
   function load(id){
