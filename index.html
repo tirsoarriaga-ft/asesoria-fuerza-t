@@ -386,7 +386,15 @@ function AjustarSemana({onClose}){
       function pri(x){return (x.field==='skUsed'||x.field==='sk')?0:1;}
       return pri(a)-pri(b);
     });
-    var result={user:u,weeks:realChanges,proto:protoChanges,force:forceKeys,count:counter.n,items:orderedItems.slice(0,60)};
+    var weekSummary={};
+    orderedItems.forEach(function(x){
+      var w=String(x.wid||'').replace('sem_','S');
+      if(!weekSummary[w])weekSummary[w]={total:0,cargas:0,reps:0};
+      weekSummary[w].total++;
+      if(x.field==='sk'||x.field==='skUsed')weekSummary[w].cargas++;
+      if(/^r\d+$/.test(String(x.field||'')))weekSummary[w].reps++;
+    });
+    var result={user:u,weeks:realChanges,proto:protoChanges,force:forceKeys,count:counter.n,items:orderedItems,weekSummary:weekSummary};
     setPlan(result);
     setMsg(result.count?'Encontré '+result.count+' dato(s) local(es) faltante(s) que pueden recuperarse.':'No encontré datos locales faltantes para recuperar.');
   }
@@ -448,6 +456,15 @@ function AjustarSemana({onClose}){
         plan&&plan.count>0&&h('div',{style:box},
           h('div',{style:tag},'Vista previa'),
           h('div',{style:{fontSize:'12px',color:'#fff',fontWeight:'700',marginBottom:'8px'}},plan.count+' dato(s) faltante(s)'),
+          h('div',{style:{fontSize:'11px',color:'#93C5FD',lineHeight:'1.55',marginBottom:'10px'}},
+            Object.keys(plan.weekSummary||{}).sort(function(a,b){return parseInt(a.replace('S',''))-parseInt(b.replace('S',''));}).map(function(w){
+              var z=plan.weekSummary[w];
+              return w+': '+z.total+' datos ('+z.cargas+' cargas, '+z.reps+' reps)';
+            }).join(' · ')
+          ),
+          h('div',{style:{fontSize:'11px',color:'#FCD34D',lineHeight:'1.45',marginBottom:'8px'}},
+            'Diagnóstico ampliado: se muestran TODOS los candidatos. Buscá “S13 · D · Prensa 45” y compará si aparece sk/skUsed = 150.'
+          ),
           plan.items.map(function(x,i){
             var sem=String(x.wid||'').replace('sem_','S');
             var val=(x.value===undefined||x.value===null||x.value==='')?'':(' = '+x.value);
@@ -455,7 +472,6 @@ function AjustarSemana({onClose}){
               sem+' · '+(x.sess?x.sess+' · ':'')+x.name+' · '+x.field+val
             );
           }),
-          plan.count>plan.items.length&&h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'6px'}},'… y '+(plan.count-plan.items.length)+' más'),
           h('div',{style:{fontSize:'11px',color:'#FCD34D',lineHeight:'1.5',marginTop:'10px'}},'Sólo completa vacíos. No pisa datos existentes, no toca sessKg y no ejecuta progresiones.'),
           h('button',{onClick:applyRecovery,style:{width:'100%',background:'#1D9E75',color:'#fff',border:'none',borderRadius:'10px',padding:'13px',fontSize:'14px',fontWeight:'800',cursor:'pointer',marginTop:'12px'}},'♻️ Recuperar '+plan.count+' dato(s)')
         )
