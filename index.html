@@ -2294,7 +2294,30 @@ function App(){
       if(!isViewingPast&&!isViewingFuture){localStorage.setItem(`ase_${user}_sessKg`,JSON.stringify(normSK));}
       // Snapshot de rutina de ESTA semana (para que al verla en el futuro muestre su rutina, no la actual).
       // Se guarda con IDs del sheet (ya estables). Incluye bloque/series para reflejar la semana tal cual era.
-      const rutinaSnap={num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio,semanaBloque:weeksInBlock+1,fuerzaProtocolo:(bloque==='fuerza'&&protoActual())?Object.assign({},protoActual()):null};
+      // Snapshot autocontenido: doSave vive en App(), por lo que NO puede usar
+      // variables/helpers locales del componente Training (weeksInBlock, bloque, protoActual).
+      const bloqueSave=String(cfg?.bloque||'base').trim().toLowerCase();
+      const bloqueInicioSave=parseInt(cfg?.bloqueInicio)||1;
+      const semanaBloqueSave=Math.max(1,(parseInt(wk?.num)||1)-bloqueInicioSave+1);
+      const fuerzaProtocolosSave={
+        1:{tipo:'test'},
+        2:{sets:3,reps:4,pct:0.80},
+        3:{sets:3,reps:4,pct:0.80},
+        4:{sets:4,reps:3,pct:0.85},
+        5:{sets:4,reps:3,pct:0.85},
+        6:{sets:5,reps:2,pct:0.90},
+        7:{sets:5,reps:1,pct:0.95},
+        8:{tipo:'retest'}
+      };
+      const rutinaSnap={
+        num:cfg.num,
+        assign:cfg.assign,
+        bloque:cfg.bloque,
+        series:cfg.series,
+        bloqueInicio:cfg.bloqueInicio,
+        semanaBloque:semanaBloqueSave,
+        fuerzaProtocolo:bloqueSave==='fuerza'?(fuerzaProtocolosSave[semanaBloqueSave]||null):null
+      };
       const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,skUsed,sk:usedSK,e:exes,rutina:rutinaSnap,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
       localStorage.setItem(SK(wk.id,user),JSON.stringify(d));
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
