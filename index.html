@@ -274,7 +274,7 @@ function AjustarSemana({onClose}){
     return sid;
   }
 
-  function mergeMissingWeek(target,source,maps,counter){
+  function mergeMissingWeek(target,source,maps,counter,wid){
     if(!source)return target;
     target=target||{};
     ['sr','skUsed','sk'].forEach(function(field){
@@ -289,11 +289,11 @@ function AjustarSemana({onClose}){
             if(!target[field][sess][id])target[field][sess][id]={};
             Object.keys(sv||{}).forEach(function(k){
               if((target[field][sess][id][k]===undefined||target[field][sess][id][k]==='')&&sv[k]!==undefined&&sv[k]!==''){
-                target[field][sess][id][k]=sv[k];counter.n++;counter.items.push((target.wi||source.wi||'?')+' · '+sess+' · '+(maps.byId[id]||id)+' · '+k);
+                target[field][sess][id][k]=sv[k];counter.n++;counter.items.push({wid:wid,sess:sess,name:(maps.byId[id]||id),field:k,value:sv[k]});
               }
             });
           }else if((tv===undefined||tv===null||tv==='')&&sv!==undefined&&sv!==null&&sv!==''){
-            target[field][sess][id]=sv;counter.n++;counter.items.push((target.wi||source.wi||'?')+' · '+sess+' · '+(maps.byId[id]||id)+' · '+field);
+            target[field][sess][id]=sv;counter.n++;counter.items.push({wid:wid,sess:sess,name:(maps.byId[id]||id),field:field,value:sv});
           }
         });
       });
@@ -339,16 +339,16 @@ function AjustarSemana({onClose}){
     });
 
     var changes=[], counter={n:0,items:[]};
-    Object.keys(weekIds).sort(function(a,b){return parseInt(a.replace('sem_',''))-parseInt(b.replace('sem_',''));}).forEach(function(wid){
+    Object.keys(weekIds).filter(function(wid){return /^sem_\d+$/.test(wid);}).sort(function(a,b){return parseInt(a.replace('sem_',''))-parseInt(b.replace('sem_',''));}).forEach(function(wid){
       var savedKey=p+wid, draftKey=p+'draft_'+wid;
       var target=parse(srcs.current[savedKey]||'null',null);
       var draft=parse(srcs.current[draftKey]||'null',null);
       var base=target||{};
-      if(draft)base=mergeMissingWeek(base,draft,maps,counter);
+      if(draft)base=mergeMissingWeek(base,draft,maps,counter,wid);
       srcs.backups.forEach(function(b){
         var sw=parse(b[savedKey]||'null',null), dw=parse(b[draftKey]||'null',null);
-        if(sw)base=mergeMissingWeek(base,sw,maps,counter);
-        if(dw)base=mergeMissingWeek(base,dw,maps,counter);
+        if(sw)base=mergeMissingWeek(base,sw,maps,counter,wid);
+        if(dw)base=mergeMissingWeek(base,dw,maps,counter,wid);
       });
       if(counter.n>0||target||draft){
         changes.push({wid:wid,key:savedKey,data:base,draftKey:draftKey,draft:draft});
@@ -362,7 +362,7 @@ function AjustarSemana({onClose}){
         var old=parse(b[k]||'{}',{}), cur=parse(get(k)||'{}',{});
         var changed=false;
         Object.keys(old||{}).forEach(function(id){
-          var v=old[id]; if((v==='si'||v==='no')&&!cur[id]){cur[id]=v;changed=true;counter.n++;counter.items.push(k.replace(p,'')+' · protocolo '+id);}
+          var v=old[id]; if((v==='si'||v==='no')&&!cur[id]){cur[id]=v;changed=true;counter.n++;counter.items.push({wid:(k.match(/sem_\d+/)||['sem_?'])[0],sess:'',name:'protocolo '+id,field:'Base',value:v});}
         });
         if(changed)protoChanges.push({key:k,data:cur});
       });
@@ -377,12 +377,16 @@ function AjustarSemana({onClose}){
         }
       });
     });
-    Object.keys(forceKeys).forEach(function(k){counter.n++;counter.items.push(k.replace(p,'')+' · referencia Fuerza');});
+    Object.keys(forceKeys).forEach(function(k){counter.n++;counter.items.push({wid:(k.match(/sem_\d+/)||['sem_?'])[0],sess:'',name:'referencia Fuerza',field:'Fuerza',value:'recuperable'});});
 
     var realChanges=changes.filter(function(c){
       var before=get(c.key)||''; return JSON.stringify(parse(before,null))!==JSON.stringify(c.data);
     });
-    var result={user:u,weeks:realChanges,proto:protoChanges,force:forceKeys,count:counter.n,items:counter.items.slice(0,30)};
+    var orderedItems=counter.items.slice().sort(function(a,b){
+      function pri(x){return (x.field==='skUsed'||x.field==='sk')?0:1;}
+      return pri(a)-pri(b);
+    });
+    var result={user:u,weeks:realChanges,proto:protoChanges,force:forceKeys,count:counter.n,items:orderedItems.slice(0,60)};
     setPlan(result);
     setMsg(result.count?'Encontré '+result.count+' dato(s) local(es) faltante(s) que pueden recuperarse.':'No encontré datos locales faltantes para recuperar.');
   }
@@ -444,7 +448,13 @@ function AjustarSemana({onClose}){
         plan&&plan.count>0&&h('div',{style:box},
           h('div',{style:tag},'Vista previa'),
           h('div',{style:{fontSize:'12px',color:'#fff',fontWeight:'700',marginBottom:'8px'}},plan.count+' dato(s) faltante(s)'),
-          plan.items.map(function(x,i){return h('div',{key:i,style:{fontSize:'11px',color:'rgba(255,255,255,0.6)',padding:'4px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}},x);}),
+          plan.items.map(function(x,i){
+            var sem=String(x.wid||'').replace('sem_','S');
+            var val=(x.value===undefined||x.value===null||x.value==='')?'':(' = '+x.value);
+            return h('div',{key:i,style:{fontSize:'11px',color:'rgba(255,255,255,0.6)',padding:'4px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
+              sem+' · '+(x.sess?x.sess+' · ':'')+x.name+' · '+x.field+val
+            );
+          }),
           plan.count>plan.items.length&&h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'6px'}},'… y '+(plan.count-plan.items.length)+' más'),
           h('div',{style:{fontSize:'11px',color:'#FCD34D',lineHeight:'1.5',marginTop:'10px'}},'Sólo completa vacíos. No pisa datos existentes, no toca sessKg y no ejecuta progresiones.'),
           h('button',{onClick:applyRecovery,style:{width:'100%',background:'#1D9E75',color:'#fff',border:'none',borderRadius:'10px',padding:'13px',fontSize:'14px',fontWeight:'800',cursor:'pointer',marginTop:'12px'}},'♻️ Recuperar '+plan.count+' dato(s)')
