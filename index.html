@@ -1490,7 +1490,7 @@ var AGUA_STATES=[
   {v:'ins',ic:'○',color:'#EF4444'},
 ];
 var DS6=['L','M','X','J','V','S'];
-function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}){
+function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,sesionesRegistradas,sesionesPautadas}){
   const nutriEstado=String(nutriConfirmado||'').trim().toLowerCase();
   const ns=hab.nutriSem||{dias:null,causa:'',cantidad:'',causaCantidad:''};
   const dias7=['L','M','X','J','V','S','D'];
@@ -1523,7 +1523,14 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
     ),
     h('div',{style:card},
       h('div',{style:{fontSize:'14px',fontWeight:'900'}},'🏋️ Entreno'),
-      h('div',{style:{fontSize:'11px',color:'#888',marginTop:'3px'}},'La cantidad de sesiones se toma de tus registros reales. Acá sólo contanos si tuviste que desviarte de la pauta.'),
+      h('div',{style:{marginTop:'8px',padding:'10px 12px',borderRadius:'10px',background:'rgba(0,0,0,0.04)',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}},
+        h('div',null,
+          h('div',{style:{fontSize:'11px',color:'#888',fontWeight:'700'}},'Sesiones con registro'),
+          h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},'Cuenta sólo ejecución real registrada')
+        ),
+        h('div',{style:{fontSize:'20px',fontWeight:'900'}},String(sesionesRegistradas||0)+'/'+String(sesionesPautadas||0))
+      ),
+      h('div',{style:{fontSize:'11px',color:'#888',marginTop:'8px'}},'La cantidad de sesiones se toma de tus registros reales. Acá sólo contanos si tuviste que desviarte de la pauta.'),
       chips([['normal','Normal'],['modificado','Tuve que modificarlo'],['no_pude','No pude entrenar como estaba pautado']],hab.entrenoEstado||'',v=>setH({entrenoEstado:v,entrenoNota:v==='normal'?'':hab.entrenoNota})),
       hab.entrenoEstado&&hab.entrenoEstado!=='normal'&&h('textarea',{defaultValue:hab.entrenoNota||'',placeholder:'¿Qué pasó?',onBlur:e=>setH({entrenoNota:e.target.value}),style:{...inp,minHeight:'60px',resize:'vertical',marginTop:'10px'}})
     ),
@@ -2815,6 +2822,10 @@ function App(){
 
   const hiitSess=cfg?.hiit||[];
   const hasHiit=hiitSess.length>0;
+  const sesionesPautadas=Math.max(0,parseInt(cfg?.num)||0);
+  const sesionesRegistradas=isViewingFuture?0:['A','B','C','D','E'].slice(0,sesionesPautadas).filter(function(sess){
+    return sessionHasRealExecution(sess);
+  }).length;
   const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'ms',l:'Mi semana',ic:'📋'},{id:'dev',l:'Devolución',ic:'💬'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
 
 
@@ -2941,7 +2952,7 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,isViewingFuture,realWkNum,onReloadHist:loadH}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek:true,isViewingPast,reporteYaEnviado,wkSat}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek:true,isViewingPast,reporteYaEnviado,wkSat,sesionesRegistradas,sesionesPautadas}),
         tab==='dev'&&h(Devolucion,null),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
     ),
