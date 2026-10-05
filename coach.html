@@ -27,6 +27,42 @@ const card={background:'#fff',border:'1px solid rgba(0,0,0,0.09)',borderRadius:'
 const lbl={fontSize:'10px',color:'#999',fontWeight:'600',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:'6px'};
 const inp={width:'100%',padding:'10px 12px',border:'1.5px solid rgba(0,0,0,0.1)',borderRadius:'8px',fontSize:'13px',color:'#111',background:'#fff',fontFamily:'inherit',outline:'none'};
 
+// ── RELOJ CANÓNICO DE SEMANAS ────────────────────────────────────────
+// Fuente: Asesorados.FechaInicio (enriquecida en rutina). SemanID es histórico, no reloj actual.
+function ftParseFechaInicio(value){
+  if(value===null||value===undefined||value==='')return null;
+  var raw=String(value).trim();
+  var n=Number(raw.replace(',','.'));
+  // Serial de Google Sheets/Excel (epoch 1899-12-30). Se acepta para robustez aunque la hoja esté formateada como fecha.
+  if(/^\d+(?:[.,]\d+)?$/.test(raw)&&isFinite(n)&&n>20000&&n<100000){
+    var base=new Date(1899,11,30);base.setHours(12,0,0,0);base.setDate(base.getDate()+Math.floor(n));return base;
+  }
+  var m,d=null;
+  if((m=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))d=new Date(+m[1],+m[2]-1,+m[3],12);
+  else if((m=raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/)))d=new Date(+m[3],+m[2]-1,+m[1],12);
+  else {var t=new Date(raw);if(!isNaN(t.getTime()))d=t;}
+  return d&&!isNaN(d.getTime())?d:null;
+}
+function ftCurrentWeek(r){
+  var d=ftParseFechaInicio(r&&r.FechaInicio);if(!d)return 0;
+  var dow=(d.getDay()+6)%7;d=new Date(d);d.setDate(d.getDate()-dow);d.setHours(0,0,0,0);
+  var z=new Date();z.setHours(0,0,0,0);
+  return Math.max(1,Math.floor((z-d)/(7*86400000))+1);
+}
+function ftBlockWeek(r){var w=ftCurrentWeek(r),bi=parseInt(r&&r.BloqueInicio)||1;return w?Math.max(1,w-bi+1):0;}
+// Estado nutricional canónico: confirmado manda; recomendado sólo es fallback. Nunca inferir desde Dietas/reportes.
+function ftNutriEstado(diag){
+  var c=String(diag&&diag.NutriConfirmado||'').trim().toLowerCase();
+  var r=String(diag&&diag.NutriRecomendado||'').trim().toLowerCase();
+  var valid={deficitario:1,adecuado:1,deportivo:1};
+  return valid[c]?c:(valid[r]?r:'');
+}
+function ftBlockDuration(b){b=String(b||'').trim().toLowerCase();return b==='fuerza'?8:(['base','volumen','intensidad','rehabilitacion','rehabilitación'].includes(b)?6:0);}
+function ftWeekSummary(r){
+  var total=ftCurrentWeek(r),block=ftBlockWeek(r),b=String(r&&r.Bloque||'').trim(),dur=ftBlockDuration(b);
+  return {total:total,block:block,bloque:b,duracion:dur,finalizado:!!(dur&&block>dur)};
+}
+
 // ── CHARTS ────────────────────────────────────────────────────────────
 function LineChart({data,color,h:ht=110,labels}){
   if(!data||data.length<2)return null;
@@ -354,8 +390,9 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
         const tmpl=rutina?.Template?String(rutina.Template)+'kcal':'—';
         const latSemanID2=lat?.SemanID||'';
         const bloqueInicio2=parseInt(rutina?.BloqueInicio)||1;
-        const latWkNum=latSemanID2?parseInt(latSemanID2.replace('sem_',''))||1:1;
-        const semsEnBloque=Math.max(1,latWkNum-bloqueInicio2+1);
+        const weekInfo=ftWeekSummary(rutina||{});
+        const latWkNum=weekInfo.total||0;
+        const semsEnBloque=weekInfo.block||0;
         const cpFreq=({'health phase':1,'mantenimiento':4,'deporte':4})[String(rutina?.Bloque||'').toLowerCase()]||2;
         const esCP=semsEnBloque%cpFreq===0;
         const redAlerts=alerts.filter(a=>a.lvl==='red').length;
@@ -376,12 +413,12 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
               h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#111'}},name),
               h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},
                 (function(){
-                  if(!lat?.Semana)return 'Sin datos';
-                  var semNum=parseInt(String(lat.SemanID||'').replace('sem_',''))||parseInt(String(lat.Semana||'').replace(/\D/g,''))||0;
-                  var bloqueN=String(rutina?.Bloque||'').trim();
-                  var semBloque=semNum?Math.max(1,semNum-bloqueInicio2+1):0;
+                  var wi=weekInfo,bloqueN=String(wi.bloque||'').trim();
                   var bloqueCap=bloqueN?(bloqueN.charAt(0).toUpperCase()+bloqueN.slice(1)):'';
-                  var txt=(bloqueCap&&semBloque?('Sem '+semBloque+' de '+bloqueCap+' · '):'')+lat.Semana;
+                  var txt='';
+                  if(!wi.total)txt='FechaInicio inválida o faltante';
+                  else if(wi.finalizado)txt='Sem total '+wi.total+' · '+bloqueCap+' finalizado';
+                  else txt='Sem total '+wi.total+(bloqueCap&&wi.block?' · '+bloqueCap+' S'+wi.block:'');
                   return h('span',{style:{color:hasCPA?'#999':O,fontWeight:hasCPA?'400':'700'}},txt);
                 })(),
                 ' · ',tmpl
@@ -835,23 +872,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
   const latSemanID=lat?.SemanID||'';
   // Semana actual: PRIMERO desde FechaInicio (calendario real, igual que la app del asesorado),
   // con fallback al SemanID del último reporte si no hay FechaInicio.
-  const currentWkNum=(function(){
-    const fi=String((rutina&&rutina.FechaInicio)||'').trim();
-    if(fi){
-      var m,f=null;
-      if(m=fi.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))f=new Date(+m[1],+m[2]-1,+m[3]);
-      else if(m=fi.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))f=new Date(+m[3],+m[2]-1,+m[1]);
-      if(f){
-        // Anclar al lunes de la semana de inicio (misma lógica que la app)
-        var dow=(f.getDay()+6)%7; // 0=lunes
-        var lunes=new Date(f); lunes.setDate(f.getDate()-dow); lunes.setHours(0,0,0,0);
-        var hoy=new Date(); hoy.setHours(0,0,0,0);
-        var sem=Math.floor((hoy-lunes)/(1000*60*60*24*7))+1;
-        if(sem>=1)return sem;
-      }
-    }
-    return latSemanID?parseInt(latSemanID.replace('sem_',''))||'—':'—';
-  })();
+  const currentWkNum=ftCurrentWeek(rutina||{})||'—';
   const bloqueActual=String(rutina?.Bloque||'—');
   const bloqueInicio=parseInt(rutina?.BloqueInicio)||1;
   const semanasEnBloque=Math.max(1,(typeof currentWkNum==='number'?currentWkNum:1)-bloqueInicio+1);
@@ -1256,8 +1277,8 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
                 h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#312E81'}},BLOQ_LABEL[String(diagnostico.BloqueRecomendado||'').toLowerCase()]||diagnostico.BloqueRecomendado||'—')
               ),
               h('div',{style:{flex:1,background:'#F0FDF4',borderRadius:'8px',padding:'10px'}},
-                h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#166534',marginBottom:'2px'}},'ESTADO NUTRICIONAL'),
-                h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#14532D'}},NUTRI_LABEL[String(diagnostico.NutriRecomendado||'').toLowerCase()]||diagnostico.NutriRecomendado||'—')
+                h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#166534',marginBottom:'2px'}},'ESTADO NUTRICIONAL VIGENTE'),
+                h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#14532D'}},NUTRI_LABEL[ftNutriEstado(diagnostico)]||ftNutriEstado(diagnostico)||'—')
               )
             ),
             diagConfirmado
@@ -2480,7 +2501,7 @@ function AuditoriaDatos({maestra,data,rutinas,diagnosticos,videosPend}){
   var rutaPorNombre={};(rutinas||[]).forEach(function(r){rutaPorNombre[norm(r.Asesorado)]=r;});
   var diagPorNombre={};(diagnosticos||[]).forEach(function(d){diagPorNombre[norm(d.Asesorado)]=d;});
   var diagPorId={};(diagnosticos||[]).forEach(function(d){if(d.AsesoradoID)diagPorId[norm(d.AsesoradoID)]=d;});
-  function parseF(s){s=String(s||'').trim();var m;if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))return new Date(+m[3],+m[2]-1,+m[1]);if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))return new Date(+m[1],+m[2]-1,+m[3]);return null;}
+  function parseF(s){return ftParseFechaInicio(s);}
   function semSinReportar(nombre){var w=data[nombre]||[];if(!w.length)return 999;var f=parseF((w[w.length-1]||{}).Fecha);if(!f)return 0;return Math.floor((new Date()-f)/(1000*60*60*24*7));}
   function semanaAse(a){var f=parseF(a.FechaInicio);if(!f)return 0;return Math.floor((new Date()-f)/(1000*60*60*24*7))+1;}
 
@@ -2496,7 +2517,7 @@ function AuditoriaDatos({maestra,data,rutinas,diagnosticos,videosPend}){
     var esNuevo=semAse<=2;
     var bloque=norm(ruta&&ruta.Bloque);
     var template=String((ruta&&ruta.Template)||'').trim();
-    var nutriConf=norm(diag&&(diag.NutriConfirmado||diag.NutriRecomendado));
+    var nutriConf=ftNutriEstado(diag);
     var tieneDatosPers=a.Sexo&&a.Edad&&a.Altura;
     var tienePeso=lat&&String(lat.Peso||'').trim()!=='';
     var tieneCintura=lat&&String(lat.Cintura||'').trim()!=='';
@@ -2674,7 +2695,6 @@ const FT_TUTORIAL_BY_PALANCA={
 function ftNorm(x){return String(x||'').trim().toLowerCase();}
 function ftNum(v){var n=parseFloat(String(v==null?'':v).replace('%','').replace(',','.'));return isNaN(n)?null:(n<=1?n*100:n);}
 function ftSemNum(v){var m=String(v||'').match(/sem_(\d+)/);return m?parseInt(m[1]):0;}
-function ftCurrentWeek(r){var fi=String(r&&r.FechaInicio||'').trim();if(!fi)return 0;var d=new Date(fi+'T00:00:00');if(isNaN(d.getTime()))return 0;var dow=(d.getDay()+6)%7;d.setDate(d.getDate()-dow);d.setHours(0,0,0,0);var z=new Date();z.setHours(0,0,0,0);return Math.max(1,Math.floor((z-d)/(7*86400000))+1);}
 function ftParseJSON(v,fb){try{return JSON.parse(v||'');}catch(e){return fb;}}
 function ftPersonMatch(row,n,id){return (id&&String(row.AsesoradoID||row.asesoradoId||'')===String(id))||ftNorm(row.Asesorado||row.asesorado)===ftNorm(n);}
 function ftLatestDev(rows,n,id,currentSem){var cur=ftSemNum(currentSem);var a=(rows||[]).filter(function(x){return ftPersonMatch(x,n,id)&&(!cur||ftSemNum(x.SemanID)<cur);}).sort(function(x,y){return ftSemNum(x.SemanID)-ftSemNum(y.SemanID);});return a.length?a[a.length-1]:null;}
