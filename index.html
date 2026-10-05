@@ -2523,9 +2523,9 @@ function App(){
     const errs=validateSave();
     if(errs.length>0){setSaveErrors(errs);return;}
     setSaveErrors([]);
-    // Entrenamiento NO bloquea el reporte: primero confirma si el vacío es real o un olvido de carga.
-    const trainWarn=trainingWarning();
-    if(trainWarn&&!window.confirm(trainWarn))return;
+    // REGLA FINAL DE REPORTE: solo Mi Semana valida si el reporte puede enviarse.
+    // Entreno, Dieta, Inicio, Devolución, videos, e1RM, kg/reps y Guardar progreso
+    // nunca bloquean ni exigen confirmación para reportar. Sus vacíos viajan como información real.
     // Verificar si ya se mandó reporte esta sem
     const sentKey=`ase_${user}_reporteSent_${wk.id}`;
     if(localStorage.getItem(sentKey)){
