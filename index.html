@@ -155,22 +155,11 @@ function parseDietas(row,foodDB){
   }).filter(Boolean);
 }
 
-// FechaInicio canónica: Asesorados.FechaInicio. Acepta YYYY-MM-DD, DD/MM/YYYY y DD-MM-YYYY.
-function parseFechaInicioLocal(raw){
-  const v=String(raw||'').trim();
-  let m=v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);
-  if(m)return new Date(+m[1],+m[2]-1,+m[3],12,0,0,0);
-  m=v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s.*)?$/);
-  if(m)return new Date(+m[3],+m[2]-1,+m[1],12,0,0,0);
-  const d=new Date(v);
-  if(!isNaN(d.getTime())){d.setHours(12,0,0,0);return d;}
-  return null;
-}
 // Semana secuencial basada en contador localStorage — Lun a Dom
 function getWkForNum(user,num){
-  const startId=localStorage.getItem(`ase_${user}_startdate`)||'';
-  let startMon=parseFechaInicioLocal(startId);
-  if(!startMon){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
+  const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
+  let startMon=new Date(startId+'T12:00:00');
+  if(isNaN(startMon.getTime())){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
   const day=startMon.getDay();
   const diffToMon=day===0?-6:1-day;
   startMon.setDate(startMon.getDate()+diffToMon);
@@ -183,9 +172,9 @@ function getWkForNum(user,num){
 }
 // Calcula la semana real según el calendario hoy
 function getRealWkNum(user){
-  const startId=localStorage.getItem(`ase_${user}_startdate`)||'';
-  let startMon=parseFechaInicioLocal(startId);
-  if(!startMon){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
+  const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
+  let startMon=new Date(startId+'T12:00:00');
+  if(isNaN(startMon.getTime())){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
   const day=startMon.getDay();
   startMon.setDate(startMon.getDate()+(day===0?-6:1-day));
   const today=new Date();today.setHours(12,0,0,0);
@@ -762,10 +751,11 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
       if(!reps)continue;
       const r1=parseInt(reps.r1)||0;
       if(r1===0)continue;
+      // El kg del último rendimiento debe pertenecer a ESA ejecución histórica.
+      // Nunca completar con la carga actual del ejercicio/sessKg.
       const kg=(w.skUsed?.[activeSess]?.[ex.id])||(w.skUsed?.[activeSess]?.[String(ex.id)])||
-               (w.sk?.[activeSess]?.[ex.id])||(w.sk?.[activeSess]?.[String(ex.id)])||
-               w.e?.find(e=>e.id===ex.id)?.kg||ex.kg;
-      return{reps:r1,kg};
+               (w.sk?.[activeSess]?.[ex.id])||(w.sk?.[activeSess]?.[String(ex.id)])||null;
+      return{reps:r1,kg:(parseFloat(kg)>0?parseFloat(kg):null)};
     }
     return null;
   };
@@ -800,22 +790,12 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     const r1=parseInt(sessionReps?.[activeSess]?.[ex.id]?.r1)||0;
     return r1>=ex.hi?rKg(curKg*1.05):null;
   };
-  // Para base: reps pre-cargadas con la mitad del rango
-  // Sugerencia intraserie: si serie anterior ≤ mitad del rango → bajar 10%
+  // Aproximaciones. No existe sugerencia automática intrasesión de bajar kg:
+  // cada bloque define su progresión entre exposiciones.
   const aproxUtil=(base,pct)=>{
     const kg=parseFloat(base)||0;
     if(kg<=0)return null;
     return rKg(kg*(pct||0.5));
-  };
-  const suggestedKg=(ex,serieIdx)=>{
-    if(serieIdx===0)return null;
-    const prevKey='r'+serieIdx;
-    const prevReps=parseInt(sessionReps?.[activeSess]?.[ex.id]?.[prevKey])||0;
-    if(!prevReps)return null;
-    const mitad=(ex.low+ex.hi)/2;
-    if(prevReps>mitad)return null;
-    const curKg=getKg(ex);if(!curKg)return null;
-    return Math.floor(curKg*0.9/2.5)*2.5;
   };
   const doSaveKg=(ex,val)=>{
     const kg=parseFloat(val);if(isNaN(kg)||kg<=0)return setEditKg(null);
@@ -1068,7 +1048,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                     exes.filter(e=>e.m===(findEx(ex.origId)||ex).m&&String(e.id)!==String(ex.id)).length>0&&h('button',{onClick:()=>setExEquiv(ex),style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:AC,fontWeight:'700',textDecoration:'none'}},'≡ Equivalentes'),
                     h('button',{onClick:()=>setShowHistorial(showHistorial===ex.id?null:ex.id),style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:B,fontWeight:'600',textDecoration:'none'}},'📋 Historial')
                   ),
-                  prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},'Último rendimiento: '+prev.reps+' × '+prev.kg+' kg')
+                  prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},prev.kg?'Último rendimiento: '+prev.reps+' × '+prev.kg+' kg':'Último rendimiento: '+prev.reps+' reps')
                 ),
                 h('div',{style:{textAlign:'right'}},
                   editing
@@ -1187,11 +1167,10 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   )
                 :h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
                   seriesKeysEx(ex).map((k,i)=>{
-                    const sug=suggestedKg(ex,i);
                     const repVal=getRep(activeSess,ex.id,k);
                     return h('div',{key:k},
-                      h('div',{style:{...lbl,display:'flex',justifyContent:'space-between'}},h('span',null,'Serie '+(i+1)),sug&&h('span',{style:{color:'#F59E0B',fontWeight:'700',fontSize:'10px'}},'↓ '+sug+' kg')),
-                      h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:repVal,onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:sug?'#F59E0B':'rgba(0,0,0,0.1)'}})
+                      h('div',{style:{...lbl,display:'flex',justifyContent:'space-between'}},h('span',null,'Serie '+(i+1))),
+                      h('input',{type:'text',inputMode:'numeric',placeholder:'Reps',value:repVal,onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp,textAlign:'center',fontSize:'22px',fontWeight:'700',borderColor:'rgba(0,0,0,0.1)'}})
                     );
                   })
                 ),
@@ -1490,7 +1469,7 @@ var AGUA_STATES=[
   {v:'ins',ic:'○',color:'#EF4444'},
 ];
 var DS6=['L','M','X','J','V','S'];
-function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,sesionesRegistradas,sesionesPautadas}){
+function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}){
   const nutriEstado=String(nutriConfirmado||'').trim().toLowerCase();
   const ns=hab.nutriSem||{dias:null,causa:'',cantidad:'',causaCantidad:''};
   const dias7=['L','M','X','J','V','S','D'];
@@ -1523,14 +1502,7 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
     ),
     h('div',{style:card},
       h('div',{style:{fontSize:'14px',fontWeight:'900'}},'🏋️ Entreno'),
-      h('div',{style:{marginTop:'8px',padding:'10px 12px',borderRadius:'10px',background:'rgba(0,0,0,0.04)',display:'flex',justifyContent:'space-between',alignItems:'center',gap:'10px'}},
-        h('div',null,
-          h('div',{style:{fontSize:'11px',color:'#888',fontWeight:'700'}},'Sesiones con registro'),
-          h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},'Cuenta sólo ejecución real registrada')
-        ),
-        h('div',{style:{fontSize:'20px',fontWeight:'900'}},String(sesionesRegistradas||0)+'/'+String(sesionesPautadas||0))
-      ),
-      h('div',{style:{fontSize:'11px',color:'#888',marginTop:'8px'}},'La cantidad de sesiones se toma de tus registros reales. Acá sólo contanos si tuviste que desviarte de la pauta.'),
+      h('div',{style:{fontSize:'11px',color:'#888',marginTop:'3px'}},'La cantidad de sesiones se toma de tus registros reales. Acá sólo contanos si tuviste que desviarte de la pauta.'),
       chips([['normal','Normal'],['modificado','Tuve que modificarlo'],['no_pude','No pude entrenar como estaba pautado']],hab.entrenoEstado||'',v=>setH({entrenoEstado:v,entrenoNota:v==='normal'?'':hab.entrenoNota})),
       hab.entrenoEstado&&hab.entrenoEstado!=='normal'&&h('textarea',{defaultValue:hab.entrenoNota||'',placeholder:'¿Qué pasó?',onBlur:e=>setH({entrenoNota:e.target.value}),style:{...inp,minHeight:'60px',resize:'vertical',marginTop:'10px'}})
     ),
@@ -2227,9 +2199,48 @@ function App(){
     }
     loadH();
   }
-  function loadH(){
-    try{const list=JSON.parse(localStorage.getItem(HK(user))||'[]');const w=list.map(id=>{try{return JSON.parse(localStorage.getItem(SK(id,user)));}catch(e){return null;}}).filter(Boolean).sort((a,b)=>(a.wi||'').localeCompare(b.wi||''));setHist(w);}catch(e){setHist([]);}
+  function mergeMissingTree(localObj,remoteObj){
+    const out=JSON.parse(JSON.stringify(localObj||{}));
+    Object.keys(remoteObj||{}).forEach(function(k){
+      const rv=remoteObj[k],lv=out[k];
+      if(rv&&typeof rv==='object'&&!Array.isArray(rv))out[k]=mergeMissingTree((lv&&typeof lv==='object'&&!Array.isArray(lv))?lv:{},rv);
+      else if(lv===undefined||lv===null||lv==='')out[k]=rv;
+    });
+    return out;
   }
+  function syncRemoteHistoricalDrafts(){
+    if(!user)return Promise.resolve();
+    const realNum=getRealWkNum(user);
+    return fetch(SCRIPT_URL+'?action=drafts').then(r=>r.json()).then(rows=>{
+      let changed=false;
+      (rows||[]).forEach(function(row){
+        if(String(row.Asesorado||'').trim().toLowerCase()!==user.trim().toLowerCase())return;
+        const id=String(row.SemanID||'').trim();
+        if(!/^sem_\d+$/.test(id))return;
+        const n=parseInt(id.replace('sem_',''))||0;
+        // Sólo importar como HISTÓRICO semanas ya ocurridas. Nunca tocar la semana actual/futura ni sessKg.
+        if(n<=0||n>=realNum||!row.Draft)return;
+        let d;try{d=JSON.parse(row.Draft);}catch(e){return;}
+        // Blindaje: sólo snapshots del formato actual, con identidad metodológica de la semana.
+        if(!d||!d.rutina||!d.rutina.bloque)return;
+        const hasExec=Object.keys(d.sr||{}).length||Object.keys(d.skUsed||{}).length;
+        if(!hasExec)return;
+        let local={};try{local=JSON.parse(localStorage.getItem(SK(id,user))||'{}')||{};}catch(e){}
+        const remote={wi:id,wl:d.wl||(getWkForNum(user,n)||{}).label||id,n:d.n||iN(),h:d.h||iH(),sr:d.sr||{},sk:d.sk||{},skUsed:d.skUsed||{},e:d.e||[],rutina:d.rutina||null,hiit:d.hiit||iHiit()};
+        // Completar huecos locales con el Draft remoto. Nunca sobreescribir un dato local existente.
+        const merged=mergeMissingTree(local,remote);
+        localStorage.setItem(SK(id,user),JSON.stringify(merged));
+        let hl=[];try{hl=JSON.parse(localStorage.getItem(HK(user))||'[]');}catch(e){}
+        if(!hl.includes(id)){hl.push(id);localStorage.setItem(HK(user),JSON.stringify(hl));}
+        changed=true;
+      });
+      if(changed)loadH();
+    }).catch(()=>{});
+  }
+  function loadH(){
+    try{const list=JSON.parse(localStorage.getItem(HK(user))||'[]');const w=list.map(id=>{try{return JSON.parse(localStorage.getItem(SK(id,user)));}catch(e){return null;}}).filter(Boolean).sort((a,b)=>(parseInt(String(a.wi||'').replace('sem_',''))||0)-(parseInt(String(b.wi||'').replace('sem_',''))||0));setHist(w);}catch(e){setHist([]);}
+  }
+  useEffect(()=>{if(user&&exesReady)syncRemoteHistoricalDrafts();},[user,exesReady]);
   const [saveErrors,setSaveErrors]=useState([]);
   function validateSave(){
     const errors=[];
@@ -2313,9 +2324,26 @@ function App(){
     try{
       const curSR=sessionRepsRef.current;
       // La PROGRESIÓN ya NO se aplica al guardar. Solo al avanzar de semana (newWeek).
-      // skUsed = sk = kg realmente usado esta semana. El kg en pantalla es siempre el que usaste.
-      const skUsed=JSON.parse(JSON.stringify(sessionKg));
-      const usedSK=JSON.parse(JSON.stringify(sessionKg));
+      // Snapshot histórico: skUsed contiene SOLO kg con evidencia de ejecución real (reps registradas).
+      // sessionKg sigue siendo la fuente local de carga vigente y jamás se reconstruye desde Drafts.
+      const skUsed={};
+      Object.entries(curSR||{}).forEach(function(entry){
+        const sess=entry[0], exMap=entry[1]||{};
+        Object.entries(exMap).forEach(function(exEntry){
+          const exId=exEntry[0], repObj=exEntry[1]||{};
+          const hasRealRep=Object.values(repObj).some(function(v){
+            return String(v??'').trim()!=='' && !isNaN(parseFloat(v));
+          });
+          if(!hasRealRep)return;
+          const kgMap=sessionKg[sess]||{};
+          const kg=kgMap[exId]!==undefined?kgMap[exId]:kgMap[parseInt(exId)];
+          if(parseFloat(kg)>0){
+            if(!skUsed[sess])skUsed[sess]={};
+            skUsed[sess][exId]=parseFloat(kg);
+          }
+        });
+      });
+      const usedSK=JSON.parse(JSON.stringify(skUsed));
       const normSK={};
       Object.entries(sessionKg).forEach(([sess,exMap])=>{normSK[sess]={};Object.entries(exMap||{}).forEach(([exId,kg])=>{normSK[sess][parseInt(exId)]=kg;});});
       // sessKg es la fuente de la semana corriente: una corrección histórica/futura nunca debe pisarla.
@@ -2344,7 +2372,6 @@ function App(){
         series:cfg.series,
         bloqueInicio:cfg.bloqueInicio,
         semanaBloque:semanaBloqueSave,
-        duracionBloque:bloqueSave==='fuerza'?8:6,
         fuerzaProtocolo:bloqueSave==='fuerza'?(fuerzaProtocolosSave[semanaBloqueSave]||null):null
       };
       const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,skUsed,sk:usedSK,e:exes,rutina:rutinaSnap,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
@@ -2385,7 +2412,16 @@ function App(){
           e1rm:e1rmSnap,
           diasAgua:aguaDias,
           sesionesEntreno:isViewingFuture?0:['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).filter(function(sess){
-            return sessionHasRealExecution(sess);
+            var b=String(cfg?.bloque||'').toLowerCase();
+            if(b==='base'||b==='rehab'||b==='rehabilitacion'){
+              var bp={};try{bp=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${sess}`)||'{}');}catch(e){}
+              return Object.values(bp||{}).some(function(v){return v==='si'||v==='no';});
+            }
+            var srSess=curSR[sess]||{};
+            var hasReps=Object.values(srSess).some(function(ex){return Object.values(ex||{}).some(function(v){return String(v||'').trim()!==''&&parseFloat(v)>=0;});});
+            var forceTest=false;try{var ft=JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${sess}`)||'{}');forceTest=Object.values(ft||{}).some(function(v){return parseFloat(v&&v.kg)>0&&parseInt(v&&v.reps)>0;});}catch(e){}
+            var intensity=false;try{for(var ii=0;ii<localStorage.length;ii++){var ik=localStorage.key(ii)||'';if(ik.indexOf(`ase_${user}_intensity_${wk.id}_${sess}_`)===0&&localStorage.getItem(ik)){intensity=true;break;}}}catch(e){}
+            return hasReps||!!forceTest||intensity;
           }).length,
           medidoPeso:pp!=='—'?'si':(hab.noMediPeso?'no':''),
           medidoCintura:pc!=='—'?'si':(hab.noMediCintura?'no':''),
@@ -2423,33 +2459,6 @@ function App(){
         return sameWeek&&samePerson;
       });
     }catch(e){return false;}
-  }
-
-  function sessionHasRealExecution(sess){
-    var b=String(cfg?.bloque||'').toLowerCase();
-    if(b==='base'||b==='rehab'||b==='rehabilitacion'){
-      var bp={};try{bp=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${sess}`)||'{}');}catch(e){}
-      return Object.values(bp||{}).some(function(v){return v==='si'||v==='no';});
-    }
-    var srSess=sessionRepsRef.current?.[sess]||{};
-    var hasReps=Object.values(srSess).some(function(ex){
-      return Object.values(ex||{}).some(function(v){return String(v??'').trim()!==''&&!isNaN(parseFloat(v));});
-    });
-    var forceTest=false;
-    try{
-      var ft=JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${sess}`)||'{}');
-      forceTest=Object.values(ft||{}).some(function(v){return parseFloat(v&&v.kg)>0&&parseInt(v&&v.reps)>0;});
-    }catch(e){}
-    var intensity=false;
-    try{
-      for(var ii=0;ii<localStorage.length;ii++){
-        var ik=localStorage.key(ii)||'';
-        if(ik.indexOf(`ase_${user}_intensity_${wk.id}_${sess}_`)===0&&String(localStorage.getItem(ik)||'').trim()){
-          intensity=true;break;
-        }
-      }
-    }catch(e){}
-    return hasReps||forceTest||intensity;
   }
 
   async function confirmReportSaved(){
@@ -2541,7 +2550,21 @@ function App(){
     setCumplWarning(false);setSaveErrors([]);doSave(false);
     // Backup silencioso al sheet
     try{
-      var draftBk={sr:sessionReps,n:nut,h:hab,hiit:hiitData,sk:sessionKg,skUsed:sessionKg,e:exes,rutina:{num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio}};
+      // El backup remoto debe representar EJECUCIÓN, no la carga vigente/prepautada.
+      // Para cada ejercicio con reps reales, snapshottear el kg que estaba en sessionKg al guardar.
+      var execKg={};
+      Object.entries(sessionReps||{}).forEach(function(entry){
+        var sess=entry[0], exMap=entry[1]||{};
+        Object.entries(exMap).forEach(function(exEntry){
+          var exId=exEntry[0], repObj=exEntry[1]||{};
+          var hasRealRep=Object.values(repObj).some(function(v){return String(v??'').trim()!==''&&!isNaN(parseFloat(v));});
+          if(!hasRealRep)return;
+          var kgMap=sessionKg[sess]||{};
+          var kg=kgMap[exId]!==undefined?kgMap[exId]:kgMap[parseInt(exId)];
+          if(parseFloat(kg)>0){if(!execKg[sess])execKg[sess]={};execKg[sess][exId]=parseFloat(kg);}
+        });
+      });
+      var draftBk={sr:sessionReps,n:nut,h:hab,hiit:hiitData,sk:execKg,skUsed:execKg,e:exes,rutina:{num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio,semanaBloque:Math.max(1,(parseInt(wk.num)||1)-(parseInt(cfg.bloqueInicio)||1)+1)}};
       fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'draft',user:user,asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',wi:wk.id,draft:draftBk})}).catch(function(){});
     }catch(e){}
   }
@@ -2822,10 +2845,6 @@ function App(){
 
   const hiitSess=cfg?.hiit||[];
   const hasHiit=hiitSess.length>0;
-  const sesionesPautadas=Math.max(0,parseInt(cfg?.num)||0);
-  const sesionesRegistradas=isViewingFuture?0:['A','B','C','D','E'].slice(0,sesionesPautadas).filter(function(sess){
-    return sessionHasRealExecution(sess);
-  }).length;
   const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'ms',l:'Mi semana',ic:'📋'},{id:'dev',l:'Devolución',ic:'💬'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
 
 
@@ -2952,7 +2971,7 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,isViewingFuture,realWkNum,onReloadHist:loadH}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek:true,isViewingPast,reporteYaEnviado,wkSat,sesionesRegistradas,sesionesPautadas}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek:true,isViewingPast,reporteYaEnviado,wkSat}),
         tab==='dev'&&h(Devolucion,null),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
     ),
