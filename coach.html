@@ -232,36 +232,6 @@ function PinScreen({onUnlock}){
   );
 }
 
-// ── RELOJ CANÓNICO DE SEMANAS ──────────────────────────────────────────
-// Fuente única: Asesorados.FechaInicio (inyectada en la rutina enriquecida).
-// Reportes.SemanID es histórico y NUNCA define la semana actual.
-function parseFechaInicioFT(v){
-  const s=String(v||'').trim();
-  if(!s)return null;
-  let m,d=null;
-  if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))d=new Date(+m[1],+m[2]-1,+m[3]);
-  else if((m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)))d=new Date(+m[3],+m[2]-1,+m[1]);
-  return d&&!isNaN(d.getTime())?d:null;
-}
-function semanaGlobalFT(fechaInicio){
-  const f=parseFechaInicioFT(fechaInicio);
-  if(!f)return null;
-  const lunes=new Date(f);
-  const dow=(lunes.getDay()+6)%7;
-  lunes.setDate(lunes.getDate()-dow);
-  lunes.setHours(0,0,0,0);
-  const hoy=new Date();hoy.setHours(0,0,0,0);
-  const n=Math.floor((hoy-lunes)/(7*86400000))+1;
-  return n>=1?n:1;
-}
-function semanaRutinaFT(r){return semanaGlobalFT(r&&r.FechaInicio);}
-function semanaBloqueFT(r){
-  const global=semanaRutinaFT(r);
-  if(global===null)return null;
-  const inicio=parseInt(r&&r.BloqueInicio)||1;
-  return Math.max(1,global-inicio+1);
-}
-
 // ── CLIENT LIST ───────────────────────────────────────────────────────
 function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
   const statusOrder={red:0,yellow:1,green:2,grey:3};
@@ -382,10 +352,12 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
         const status=getStatus(weeks,obj);const alerts=getAlerts(weeks,obj);
         const rutina=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===name.toLowerCase());
         const tmpl=rutina?.Template?String(rutina.Template)+'kcal':'—';
-        const semanaGlobal=semanaRutinaFT(rutina);
-        const semsEnBloque=semanaBloqueFT(rutina);
+        const latSemanID2=lat?.SemanID||'';
+        const bloqueInicio2=parseInt(rutina?.BloqueInicio)||1;
+        const latWkNum=latSemanID2?parseInt(latSemanID2.replace('sem_',''))||1:1;
+        const semsEnBloque=Math.max(1,latWkNum-bloqueInicio2+1);
         const cpFreq=({'health phase':1,'mantenimiento':4,'deporte':4})[String(rutina?.Bloque||'').toLowerCase()]||2;
-        const esCP=semsEnBloque!==null&&semsEnBloque%cpFreq===0;
+        const esCP=semsEnBloque%cpFreq===0;
         const redAlerts=alerts.filter(a=>a.lvl==='red').length;
         const yelAlerts=alerts.filter(a=>a.lvl==='yellow').length;
         const hasCPA=hasCPCheck(name,lat?.SemanID||'');
@@ -404,13 +376,12 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
               h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#111'}},name),
               h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},
                 (function(){
+                  if(!lat?.Semana)return 'Sin datos';
+                  var semNum=parseInt(String(lat.SemanID||'').replace('sem_',''))||parseInt(String(lat.Semana||'').replace(/\D/g,''))||0;
                   var bloqueN=String(rutina?.Bloque||'').trim();
+                  var semBloque=semNum?Math.max(1,semNum-bloqueInicio2+1):0;
                   var bloqueCap=bloqueN?(bloqueN.charAt(0).toUpperCase()+bloqueN.slice(1)):'';
-                  if(semanaGlobal===null){
-                    return h('span',{style:{color:R,fontWeight:'700'}},'⚠ Falta FechaInicio');
-                  }
-                  var hist=lat?.Semana?(' · último reporte: '+lat.Semana):' · sin reportes';
-                  var txt='Semana '+semanaGlobal+(bloqueCap&&semsEnBloque!==null?(' · Sem '+semsEnBloque+' de '+bloqueCap):'')+hist;
+                  var txt=(bloqueCap&&semBloque?('Sem '+semBloque+' de '+bloqueCap+' · '):'')+lat.Semana;
                   return h('span',{style:{color:hasCPA?'#999':O,fontWeight:hasCPA?'400':'700'}},txt);
                 })(),
                 ' · ',tmpl
@@ -862,24 +833,31 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
   const tmpl=rutina?.Template?String(rutina.Template)+' kcal':'—';
   const numSes=rutina?.NumSesiones||'—';
   const latSemanID=lat?.SemanID||'';
-  // Semana actual: reloj canónico desde Asesorados.FechaInicio.
-  // Sin FechaInicio mostramos dato faltante; nunca inferimos la semana desde Reportes.
-  const currentWkNum=semanaRutinaFT(rutina);
+  // Semana actual: PRIMERO desde FechaInicio (calendario real, igual que la app del asesorado),
+  // con fallback al SemanID del último reporte si no hay FechaInicio.
+  const currentWkNum=(function(){
+    const fi=String((rutina&&rutina.FechaInicio)||'').trim();
+    if(fi){
+      var m,f=null;
+      if(m=fi.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))f=new Date(+m[1],+m[2]-1,+m[3]);
+      else if(m=fi.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))f=new Date(+m[3],+m[2]-1,+m[1]);
+      if(f){
+        // Anclar al lunes de la semana de inicio (misma lógica que la app)
+        var dow=(f.getDay()+6)%7; // 0=lunes
+        var lunes=new Date(f); lunes.setDate(f.getDate()-dow); lunes.setHours(0,0,0,0);
+        var hoy=new Date(); hoy.setHours(0,0,0,0);
+        var sem=Math.floor((hoy-lunes)/(1000*60*60*24*7))+1;
+        if(sem>=1)return sem;
+      }
+    }
+    return latSemanID?parseInt(latSemanID.replace('sem_',''))||'—':'—';
+  })();
   const bloqueActual=String(rutina?.Bloque||'—');
   const bloqueInicio=parseInt(rutina?.BloqueInicio)||1;
-  const semanasEnBloque=currentWkNum===null?null:Math.max(1,currentWkNum-bloqueInicio+1);
+  const semanasEnBloque=Math.max(1,(typeof currentWkNum==='number'?currentWkNum:1)-bloqueInicio+1);
   const CHECKPOINT_FREQ={'health phase':1,'mantenimiento':4,'deporte':4};
   const checkpointFreq=CHECKPOINT_FREQ[bloqueActual.toLowerCase()]||2;
-  // El checkpoint revisa la ÚLTIMA SEMANA CERRADA, no la semana que acaba de empezar.
-  // Ej.: lunes de semana 14 => revisar sem_13. Reportes.SemanID sigue siendo histórico.
-  const reviewWkNum=currentWkNum!==null&&currentWkNum>1?currentWkNum-1:null;
-  const reviewSemID=reviewWkNum!==null?'sem_'+reviewWkNum:'';
-  const reviewBloqueWeek=reviewWkNum===null?null:Math.max(1,reviewWkNum-bloqueInicio+1);
-  const checkpointYaHecho=reviewSemID&&Array.isArray(decisiones)&&(decisiones||[]).some(function(d){
-    return String(d.SemanID||'').trim()===reviewSemID&&String(d.Asesorado||'').trim().toLowerCase()===String(name||'').trim().toLowerCase();
-  });
-  const checkpointCorresponde=reviewBloqueWeek!==null&&reviewBloqueWeek>0&&reviewBloqueWeek%checkpointFreq===0;
-  const esCheckpoint=!!(checkpointCorresponde&&!checkpointYaHecho);
+  const esCheckpoint=semanasEnBloque>0&&semanasEnBloque%checkpointFreq===0;
 
   const [arbolStep,setArbolStep]=useState(0);
   const [arbolResp,setArbolResp]=useState({});
@@ -954,15 +932,15 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
         ops:[{v:'si',l:'Si, reporto esta semana'},{v:'no',l:'No reporto'}]
       },
       // P2: Cumplimiento
-      {id:'q2',q:'¿El reporte permite entender qué pasó esta semana?',
+      {id:'q2',q:'Cumplio su parte esta semana?',
         datos:[
-          {l:'Nutrición',v:lat&&lat.EstadoNutricional?lat.EstadoNutricional+' · '+(lat.NutriDias||0)+'/7':'Sin dato',c:lat&&lat.NutriDias!==''?G:O},
+          {l:'Comidas',v:pctComp+'%',c:pctComp>=70?G:pctComp>=50?O:R},
           {l:'Sueno',v:ultS,c:parseInt(ultS)<4?R:G},
           {l:'Energia',v:ultE,c:ultE==='Baja toda la semana'?R:G},
           {l:'Contexto',v:ultCtx==='muy_exigente'?'Semana muy diferente':ultCtx==='exigente'?'Con cambios':'Normal',c:ultCtx==='muy_exigente'?O:'#111'},
         ],
-        esperado:'Necesitamos registros objetivos y contexto. Un reporte con baja ejecución sigue siendo información válida; si no se entiende qué pasó, primero se conversa.',
-        ops:[{v:'ok',l:'Sí, es interpretable'},{v:'bajo_ctx',l:'Es interpretable y hubo cambios de contexto'},{v:'muy_bajo',l:'No, faltan datos o entendimiento'}]
+        esperado:'Minimo eficiente: ≥70% comidas + ≥4 noches sueno. Sin esto las mediciones no tienen sentido para analizar.',
+        ops:[{v:'ok',l:'Si, ≥70% en lo principal'},{v:'bajo_ctx',l:'No, pero hubo factores externos'},{v:'muy_bajo',l:'No, sin causas claras'}]
       },
       // P3: Mediciones
       {id:'q3',q:'Las mediciones van en la direccion esperada?',
@@ -1205,10 +1183,10 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
         h('button',{onClick:()=>setShowBuilder(true),style:{background:G,color:'#fff',border:'none',borderRadius:'8px',padding:'7px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},rutina&&rutina.Asesorado?'✎ Rutina':'+ Rutina')
       ),
       h('div',{style:{fontSize:'11px',color:'#999',marginLeft:'30px'}},
-        tmpl,' · ',numSes,' sesiones · ',currentWkNum===null?'⚠ Falta FechaInicio':('Semana '+currentWkNum),' · ',
+        tmpl,' · ',numSes,' sesiones · Semana ',currentWkNum,' · ',
         h('span',{style:{fontWeight:'700',color:'#111'}},bloqueActual),
-        ' sem.',semanasEnBloque===null?'—':semanasEnBloque,
-        esCheckpoint&&h('span',{style:{marginLeft:'8px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'20px'}},' Revisar sem '+reviewWkNum),
+        ' sem.',semanasEnBloque,
+        esCheckpoint&&h('span',{style:{marginLeft:'8px',background:AC,color:'#fff',fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'20px'}},' Checkpoint'),
         ' · Obj: ',h('span',{style:{fontWeight:'700',color:String(rutina?.Objetivo||'').toLowerCase()==='deficit'?B:String(rutina?.Objetivo||'').toLowerCase()==='superavit'?G:O}},String(rutina?.Objetivo||'mantenimiento'))
       )
     ),
@@ -1439,8 +1417,8 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
           h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.4)',fontWeight:'700',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'4px'}},'Checkpoint · '+bloqueActual),
           h('div',{style:{fontSize:'13px',color:'rgba(255,255,255,0.7)',marginBottom:'4px'}},
             esCheckpoint
-              ?'Pendiente: revisar semana total '+reviewWkNum+' · semana '+reviewBloqueWeek+' del bloque'
-              :reviewBloqueWeek===null?'Falta FechaInicio para calcular checkpoint':(checkpointYaHecho?'Última semana cerrada ('+reviewWkNum+') ya tiene checkpoint':'Última semana cerrada: '+reviewWkNum+' · bloque sem '+reviewBloqueWeek+' · checkpoint cada '+checkpointFreq+' sem')
+              ?'✅ Semana '+semanasEnBloque+' — es momento de checkpoint'
+              :'Próximo: sem '+(Math.ceil(semanasEnBloque/checkpointFreq)*checkpointFreq)+' del bloque (cada '+checkpointFreq+' sem)'
           )
         ),
         h(ArbolCheckpoint,null),
@@ -2044,8 +2022,18 @@ const BLOQUES_LISTA=[['base','Base'],['rehabilitacion','Rehabilitación'],['fuer
 function RutinaBuilder({name,rutina,ejercicios,onClose,onSaved}){
   const norm=x=>String(x||'').trim().toLowerCase();
   const normB=b=>{var n=norm(b);if(n.includes('fuerza'))return'fuerza';if(n.includes('intensidad'))return'intensidad';if(n.includes('rehab'))return'rehabilitacion';if(n.includes('volumen'))return'volumen';return'base';};
-  // Semana actual del asesorado: mismo reloj canónico del resto del Coach.
-  const semActual=semanaRutinaFT(rutina);
+  // Semana actual del asesorado (desde FechaInicio, misma fórmula que la app: ancla al lunes)
+  const semActual=(()=>{
+    const fi=String((rutina&&rutina.FechaInicio)||'').trim();
+    if(!fi)return null;
+    const d=new Date(fi+'T00:00:00');
+    if(isNaN(d.getTime()))return null;
+    const day=d.getDay();const diff=(day===0?-6:1-day);
+    const lunes=new Date(d);lunes.setDate(d.getDate()+diff);
+    const hoy=new Date();hoy.setHours(0,0,0,0);
+    const semanas=Math.floor((hoy-lunes)/(7*24*60*60*1000))+1;
+    return semanas>0?semanas:1;
+  })();
   // Precargar si ya tiene rutina
   const yaExiste=!!(rutina&&rutina.Asesorado);
   const [bloque,setBloque]=useState(yaExiste?normB(rutina.Bloque):'base');
@@ -2494,7 +2482,7 @@ function AuditoriaDatos({maestra,data,rutinas,diagnosticos,videosPend}){
   var diagPorId={};(diagnosticos||[]).forEach(function(d){if(d.AsesoradoID)diagPorId[norm(d.AsesoradoID)]=d;});
   function parseF(s){s=String(s||'').trim();var m;if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))return new Date(+m[3],+m[2]-1,+m[1]);if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))return new Date(+m[1],+m[2]-1,+m[3]);return null;}
   function semSinReportar(nombre){var w=data[nombre]||[];if(!w.length)return 999;var f=parseF((w[w.length-1]||{}).Fecha);if(!f)return 0;return Math.floor((new Date()-f)/(1000*60*60*24*7));}
-  function semanaAse(a){var n=semanaGlobalFT(a&&a.FechaInicio);return n===null?0:n;}
+  function semanaAse(a){var f=parseF(a.FechaInicio);if(!f)return 0;return Math.floor((new Date()-f)/(1000*60*60*24*7))+1;}
 
   var activos=(maestra||[]).filter(function(a){var p=norm(a.Plan);return norm(a.Estado)!=='baja'&&(p==='online'||p==='presencial')&&String(a.Asesorado||'').trim();});
 
@@ -2664,7 +2652,7 @@ const FT_PALANCAS={
   'Información':['Completar reporte','Completar peso y cintura','Completar datos base','Completar registro de entrenamiento','Validar registro de comidas','Enviar video semanal'],
   'Entendimiento':['Explicar qué registrar','Explicar cómo reportar','Explicar pauta de entrenamiento','Explicar pauta nutricional','Revisar uso de la app'],
   'Logística':['Reducir fricción de horarios','Reubicar sesiones','Simplificar pauta semanal','Adaptar por trabajo/estudio','Adaptar por viaje/evento','Adaptar por dolor/salud'],
-  'Ejecución':['Retomar registro semanal','Retomar ejecución de la pauta','Priorizar entrenamiento pautado','Priorizar pauta nutricional','Cumplir mediciones'],
+  'Ejecución':['Retomar registro semanal','Cumplir mínimo eficiente','Priorizar entrenamiento pautado','Priorizar pauta nutricional','Cumplir mediciones'],
   'Prescripción':['Ajustar entrenamiento','Ajustar nutrición','Ajustar volumen/intensidad','Cambiar bloque','Revisar recuperación','Reevaluar dolor/tolerancia'],
   'Sin traba':['Mantener plan actual','Mantener y observar tendencia']
 };
@@ -2672,7 +2660,7 @@ const FT_PRUEBAS={
   'Información':['Próximo reporte recibido','Peso y cintura informados','Datos base completos','Registro de entrenamiento visible','Registro de comidas interpretable','Video recibido'],
   'Entendimiento':['Próximo registro hecho correctamente','Próximo reporte hecho correctamente','Ejecuta la pauta sin dudas','Usa correctamente la app'],
   'Logística':['Cumple la semana adaptada','Completa sesiones reubicadas','Sostiene la pauta simplificada','Confirma que la adaptación es viable'],
-  'Ejecución':['Próximo reporte interpretable','Próximo reporte en fecha','Completa sesiones pautadas','Completa mediciones pautadas'],
+  'Ejecución':['Próximo registro hecho correctamente','Próximo reporte en fecha','Completa sesiones pautadas','Completa mediciones pautadas'],
   'Prescripción':['Tendencia mejora en 2–3 semanas','Rendimiento responde','Dolor/tolerancia mejora','Peso/cintura vuelven a dirección esperada'],
   'Sin traba':['Revisar próxima auditoría','Mantener tendencia 2 semanas']
 };
@@ -2686,7 +2674,7 @@ const FT_TUTORIAL_BY_PALANCA={
 function ftNorm(x){return String(x||'').trim().toLowerCase();}
 function ftNum(v){var n=parseFloat(String(v==null?'':v).replace('%','').replace(',','.'));return isNaN(n)?null:(n<=1?n*100:n);}
 function ftSemNum(v){var m=String(v||'').match(/sem_(\d+)/);return m?parseInt(m[1]):0;}
-function ftCurrentWeek(r){var n=semanaRutinaFT(r);return n===null?0:n;}
+function ftCurrentWeek(r){var fi=String(r&&r.FechaInicio||'').trim();if(!fi)return 0;var d=new Date(fi+'T00:00:00');if(isNaN(d.getTime()))return 0;var dow=(d.getDay()+6)%7;d.setDate(d.getDate()-dow);d.setHours(0,0,0,0);var z=new Date();z.setHours(0,0,0,0);return Math.max(1,Math.floor((z-d)/(7*86400000))+1);}
 function ftParseJSON(v,fb){try{return JSON.parse(v||'');}catch(e){return fb;}}
 function ftPersonMatch(row,n,id){return (id&&String(row.AsesoradoID||row.asesoradoId||'')===String(id))||ftNorm(row.Asesorado||row.asesorado)===ftNorm(n);}
 function ftLatestDev(rows,n,id,currentSem){var cur=ftSemNum(currentSem);var a=(rows||[]).filter(function(x){return ftPersonMatch(x,n,id)&&(!cur||ftSemNum(x.SemanID)<cur);}).sort(function(x,y){return ftSemNum(x.SemanID)-ftSemNum(y.SemanID);});return a.length?a[a.length-1]:null;}
@@ -2700,41 +2688,33 @@ function ftVideoForSem(videos,n,id,r,sem){
   return (videos||[]).some(function(v){if(!ftPersonMatch(v,n,id))return false;var vd=parseAR(v.Fecha);return vd&&vd>=mon&&vd<=sun;});
 }
 function ftChecklist(r,lat,videoRequired,videoDone,enCurso){
-  var isOnline=ftNorm(r.Nivel)==='online',ses=lat?parseInt(lat.SesionesEntreno||0)||0:0,agua=lat&&lat.DiasAgua!==''?parseInt(lat.DiasAgua):null;
-  var nutEstado=lat?ftNorm(lat.EstadoNutricional):'',nutDias=lat&&lat.NutriDias!==''?parseInt(lat.NutriDias):null;
-  var entrenoEstado=lat?String(lat.EntrenoEstado||''):'';
-  if(enCurso&&!lat)return [
-    {key:'entreno',label:'Entrenamiento',estado:'no_correspondia',detalle:'Se consolida al reportar'},
-    {key:'nutri',label:'Nutrición',estado:'no_correspondia',detalle:'Semana en curso'},
-    {key:'agua',label:'Agua',estado:'no_correspondia',detalle:'Semana en curso'},
-    {key:'medidas',label:'Mediciones',estado:'no_correspondia',detalle:'Semana en curso'},
-    {key:'reporte',label:'Reporte semanal',estado:'no_correspondia',detalle:'Todavía no corresponde'},
-    {key:'video',label:'Video semanal',estado:!isOnline||!videoRequired?'no_correspondia':(videoDone?'cumplido':'incompleto'),detalle:!isOnline?'Presencial':(!videoRequired?'No requerido':(videoDone?'Recibido':'Pendiente'))}
-  ];
-  return [
-    {key:'entreno',label:'Entrenamiento',estado:lat?(ses>0||entrenoEstado?'cumplido':'incompleto'):'no_realizado',detalle:lat?(ses+' sesión(es) con registro'+(entrenoEstado?' · '+entrenoEstado:'')):'Sin reporte'},
-    {key:'nutri',label:'Nutrición',estado:lat?(nutDias!==null?'cumplido':'incompleto'):'no_realizado',detalle:lat?(nutEstado?nutEstado+' · ':'')+(nutDias!==null?nutDias+'/7 días':'sin respuesta interpretable'):'Sin reporte'},
-    {key:'agua',label:'Agua',estado:lat?(agua!==null?'cumplido':'incompleto'):'no_realizado',detalle:agua!==null?agua+'/7 días':'Sin dato'},
-    {key:'peso',label:'Peso',estado:lat?(ftNorm(lat.MedidoPeso)==='no'?'cumplido':(lat.Peso?'cumplido':'incompleto')):'no_realizado',detalle:lat?(lat.Peso?lat.Peso+' kg':(ftNorm(lat.MedidoPeso)==='no'?'Informó: no me medí':'Sin respuesta')):'Sin reporte'},
-    {key:'cintura',label:'Cintura',estado:lat?(ftNorm(lat.MedidoCintura)==='no'?'cumplido':(lat.Cintura?'cumplido':'incompleto')):'no_realizado',detalle:lat?(lat.Cintura?lat.Cintura+' cm':(ftNorm(lat.MedidoCintura)==='no'?'Informó: no me medí':'Sin respuesta')):'Sin reporte'},
-    {key:'reporte',label:'Reporte semanal',estado:lat?'cumplido':'no_realizado',detalle:lat?'Recibido':'No recibido'},
-    {key:'video',label:'Video semanal',estado:!isOnline||!videoRequired?'no_correspondia':(videoDone?'cumplido':'incompleto'),detalle:!isOnline?'Presencial':(!videoRequired?'No requerido':(videoDone?'Recibido':'Pendiente'))}
-  ];
+  var isOnline=ftNorm(r.Nivel)==='online',ses=lat?parseInt(lat.SesionesEntreno||0)||0:0,agua=lat?parseInt(lat.DiasAgua||0)||0:0;
+  var nutDias=lat&&lat.NutriDias!==''&&lat.NutriDias!=null?parseInt(lat.NutriDias):null;
+  var nutEstado=lat?ftNorm(lat.EstadoNutricional):'';
+  var nutCant=lat?String(lat.NutriCantidad||'').trim():'';
+  function st(ok,partial){return ok?'cumplido':(partial?'incompleto':'no_realizado');}
+  if(enCurso&&!lat)return [{key:'entreno',label:'Entrenamiento',estado:'no_correspondia',detalle:'Se consolida al reportar'},{key:'comidas',label:'Alimentación / registro',estado:'no_correspondia',detalle:'Semana en curso'},{key:'agua',label:'Agua / hábitos',estado:'no_correspondia',detalle:'Semana en curso'},{key:'peso',label:'Peso',estado:'no_correspondia',detalle:'Semana en curso'},{key:'cintura',label:'Cintura',estado:'no_correspondia',detalle:'Semana en curso'},{key:'reporte',label:'Reporte semanal',estado:'no_correspondia',detalle:'Todavía no corresponde'},{key:'video',label:'Video semanal',estado:!isOnline||!videoRequired?'no_correspondia':(videoDone?'cumplido':'incompleto'),detalle:!isOnline?'Presencial':(!videoRequired?'No requerido por coach':(videoDone?'Recibido':'Pendiente flexible'))}];
+  var nutDetalle=!lat?'Sin reporte':(nutDias===null?'Sin dato':((nutEstado||'sin estado')+' · '+nutDias+'/7'+((nutEstado==='adecuado'||nutEstado==='deportivo')&&nutCant?' · cantidad '+nutCant:'')));
+  return [{key:'entreno',label:'Entrenamiento',estado:lat?(ses>0?'cumplido':'no_realizado'):'no_realizado',detalle:ses?ses+' sesión(es) con ejecución registrada':'Sin sesiones con ejecución registrada'},{key:'comidas',label:'Alimentación / registro',estado:lat?(nutDias===null?'incompleto':st(nutDias>=5,nutDias>0)):'no_realizado',detalle:nutDetalle},{key:'agua',label:'Agua / hábitos',estado:lat?(lat.DiasAgua===''||lat.DiasAgua==null?'incompleto':st(agua>=4,agua>0)):'no_realizado',detalle:lat&&lat.DiasAgua!==undefined?agua+'/7 días':'Sin dato histórico'},{key:'peso',label:'Peso',estado:lat?(ftNorm(lat.MedidoPeso)==='no'?'no_realizado':(lat.Peso?'cumplido':'incompleto')):'no_realizado',detalle:lat?(lat.Peso?lat.Peso+' kg':(ftNorm(lat.MedidoPeso)==='no'?'Informó: no me medí':'Sin dato')):'Sin reporte'},{key:'cintura',label:'Cintura',estado:lat?(ftNorm(lat.MedidoCintura)==='no'?'no_realizado':(lat.Cintura?'cumplido':'incompleto')):'no_realizado',detalle:lat?(lat.Cintura?lat.Cintura+' cm':(ftNorm(lat.MedidoCintura)==='no'?'Informó: no me medí':'Sin dato')):'Sin reporte'},{key:'reporte',label:'Reporte semanal',estado:lat?'cumplido':'no_realizado',detalle:lat?'Recibido':'No recibido'},{key:'video',label:'Video semanal',estado:!isOnline||!videoRequired?'no_correspondia':(videoDone?'cumplido':'incompleto'),detalle:!isOnline?'Presencial':(!videoRequired?'No requerido por coach':(videoDone?'Recibido':'Pendiente flexible'))}];
 }
 function ftEvidence(r,lat,nut,videoRequired,videoDone){
   var ev=[];if(!lat)ev.push('Sin reporte disponible');
   if(lat){
-    if(lat.EstadoNutricional)ev.push('Nutrición '+lat.EstadoNutricional+(lat.NutriDias!==''?' · '+lat.NutriDias+'/7':''));
-    if(lat.NutriCantidad)ev.push('Cantidad: '+lat.NutriCantidad);
+    var ses=parseInt(lat.SesionesEntreno||0)||0;ev.push('Entreno: '+ses+' sesión(es) con ejecución');
+    if(lat.EntrenoEstado)ev.push('Estado entreno: '+lat.EntrenoEstado+(lat.EntrenoNota?' · '+lat.EntrenoNota:''));
+    var nd=lat.NutriDias!==''&&lat.NutriDias!=null?parseInt(lat.NutriDias):null;
+    if(lat.EstadoNutricional||nd!==null)ev.push('Nutrición: '+(lat.EstadoNutricional||'sin estado')+(nd!==null?' · '+nd+'/7':''));
+    if(lat.NutriCantidad)ev.push('Cantidad: '+lat.NutriCantidad+(lat.NutriCausaCantidad?' · '+lat.NutriCausaCantidad:''));
+    if(lat.NutriCausa)ev.push('Causa nutrición: '+lat.NutriCausa);
     if(lat.DiasAgua!==''&&lat.DiasAgua!=null)ev.push('Agua '+lat.DiasAgua+'/7');
     if(lat.DiasSueno!==''&&lat.DiasSueno!=null)ev.push('Sueño '+lat.DiasSueno+'/7');
-    if(lat.SesionesEntreno!==''&&lat.SesionesEntreno!=null)ev.push('Entreno '+lat.SesionesEntreno+' sesión(es)');
-    if(lat.EntrenoEstado)ev.push('Entreno: '+lat.EntrenoEstado);
-    if(lat.Peso)ev.push('Peso '+lat.Peso+' kg');if(lat.Cintura)ev.push('Cintura '+lat.Cintura+' cm');
-    if(lat.ContextoVida)ev.push('Contexto: '+lat.ContextoVida);
+    if(lat.Peso)ev.push('Peso '+lat.Peso+' kg');else if(ftNorm(lat.MedidoPeso)==='no')ev.push('Peso: informó no medirse');
+    if(lat.Cintura)ev.push('Cintura '+lat.Cintura+' cm');else if(ftNorm(lat.MedidoCintura)==='no')ev.push('Cintura: informó no medirse');
+    if(lat.ContextoVida)ev.push('Contexto: '+lat.ContextoVida+(lat.ContextoNota?' · '+lat.ContextoNota:''));
+    if(lat.Dolor)ev.push('Dolor: '+lat.Dolor+(lat.DolorZona?' · '+lat.DolorZona:'')+(lat.DolorIntensidad?' · '+lat.DolorIntensidad+'/10':'')+(lat.DolorNota?' · '+lat.DolorNota:''));
   }
   if(nut){if(nut.Comprension)ev.push('Comprensión: '+nut.Comprension);if(nut.Viabilidad)ev.push('Viabilidad: '+nut.Viabilidad);if(nut.Friccion)ev.push('Fricción: '+nut.Friccion);}
-  if(videoRequired&&!videoDone)ev.push('Video semanal pendiente');
+  if(videoRequired&&!videoDone)ev.push('Video semanal pendiente (flexible)');
   return ev;
 }
 function ftProofSatisfied(prev,lat){
@@ -2742,31 +2722,30 @@ function ftProofSatisfied(prev,lat){
   var p=ftNorm(prev.Prueba);
   if(p.indexOf('reporte')>=0)return !!lat;
   if(p.indexOf('peso y cintura')>=0)return !!(lat&&lat.Peso&&lat.Cintura);
-  if(p.indexOf('registro de entrenamiento')>=0||p.indexOf('sesiones')>=0)return !!(lat&&(parseInt(lat.SesionesEntreno||0)>0||(String(lat.E1RM||'').trim()&&String(lat.E1RM||'').trim()!=='{}')||String(lat.TagEjecucion||'').trim()||String(lat.NotaEntreno||'').trim()));
-  if(p.indexOf('registro de comidas')>=0)return !!(lat&&ftNum(lat['%Comidas'])!==null);
-  return false; // pruebas clínicas/tendencias requieren confirmación del coach
+  if(p.indexOf('registro de entrenamiento')>=0||p.indexOf('sesiones')>=0)return !!(lat&&parseInt(lat.SesionesEntreno||0)>0);
+  if(p.indexOf('registro de comidas')>=0||p.indexOf('registro nutric')>=0)return !!(lat&&lat.NutriDias!==''&&lat.NutriDias!=null);
+  return false;
 }
 function ftSuggest(r,weeks,nut,prev,sem){
   var lat=ftReportForSem(weeks,sem);
-  if(prev&&ftNorm(prev.Estado)!=='resuelto'&&!ftProofSatisfied(prev,lat))
-    return {traba:prev.Traba||'Información',responsable:prev.Responsable||'A confirmar',decision:prev.Decision||'Destrabar',palanca:prev.Palanca||'',prueba:prev.Prueba||'',motivo:'Pendiente anterior no resuelto: revisar antes de abrir otro ajuste',fromPrev:true};
+  if(prev&&ftNorm(prev.Estado)!=='resuelto'&&!ftProofSatisfied(prev,lat))return {traba:prev.Traba||'Información',responsable:prev.Responsable||'A confirmar',decision:prev.Decision||'Destrabar',palanca:prev.Palanca||'',prueba:prev.Prueba||'',motivo:'Pendiente anterior no resuelto: sigue siendo el primer eslabón roto',fromPrev:true};
   var faltan=[];if(!String(r.Bloque||'').trim())faltan.push('rutina/bloque');if(!String(r.Objetivo||'').trim())faltan.push('objetivo');if(!String(r.FechaInicio||'').trim())faltan.push('fecha de inicio');
   if(faltan.length)return {traba:'Información',responsable:'Mi parte',decision:'Destrabar',palanca:'Completar datos base',prueba:'Datos base completos',motivo:'Falta '+faltan.join(', ')};
-  if(!lat)return {traba:'Información',responsable:'Su parte',decision:'Destrabar',palanca:'Completar reporte',prueba:'Próximo reporte recibido',motivo:'No hay reporte para interpretar la semana'};
-  var faltanReporte=[];
-  if(!String(lat.EstadoNutricional||'').trim())faltanReporte.push('estado nutricional');
-  if(lat.NutriDias===''||lat.NutriDias==null)faltanReporte.push('registro nutricional');
-  if(lat.DiasAgua===''||lat.DiasAgua==null)faltanReporte.push('agua');
-  if(!String(lat.EntrenoEstado||'').trim())faltanReporte.push('contexto de entrenamiento');
-  if(faltanReporte.length)return {traba:'Información',responsable:'Compartida',decision:'Destrabar',palanca:'Explicar qué registrar',prueba:'Próximo reporte interpretable',motivo:'El reporte llegó, pero faltan datos para interpretarlo: '+faltanReporte.join(', ')};
+  if(!lat)return {traba:'Información',responsable:'Su parte',decision:'Destrabar',palanca:'Completar reporte',prueba:'Próximo reporte recibido',motivo:'No hay reporte para evaluar'};
+  var nutDias=lat.NutriDias!==''&&lat.NutriDias!=null?parseInt(lat.NutriDias):null;
+  if(nutDias===null)return {traba:'Información',responsable:'A confirmar',decision:'Destrabar',palanca:'Validar registro de comidas',prueba:'Registro de comidas interpretable',motivo:'Llegó el reporte, pero falta el registro nutricional que corresponde interpretar'};
   if(nut){
-    var comp=ftNorm(nut.Comprension),via=ftNorm(nut.Viabilidad);
-    if(comp&&comp.indexOf('no')===0)return {traba:'Entendimiento',responsable:'Compartida',decision:'Educar',palanca:'Explicar qué registrar',prueba:'Próximo registro hecho correctamente',motivo:'Hay evidencia de que la pauta o el registro no se comprendieron'};
-    if(via&&(via.indexOf('no viable')>=0||via.indexOf('inviable')>=0))return {traba:'Logística',responsable:'Compartida',decision:'Adaptar',palanca:'Simplificar pauta semanal',prueba:'Próximo reporte muestra una pauta ejecutable',motivo:'La pauta aparece como no viable en el contexto actual'};
+    var comp=ftNorm(nut.Comprension),via=ftNorm(nut.Viabilidad),eje=ftNorm(nut.Ejecucion);
+    if(comp&&comp.indexOf('no')===0)return {traba:'Entendimiento',responsable:'Compartida',decision:'Educar',palanca:'Explicar qué registrar',prueba:'Próximo registro hecho correctamente',motivo:'Hay evidencia de que no está comprendida la pauta o el registro'};
+    if(via&&(via.indexOf('no viable')>=0||via.indexOf('inviable')>=0))return {traba:'Logística',responsable:'Compartida',decision:'Adaptar',palanca:'Simplificar pauta semanal',prueba:'Cumple la semana adaptada',motivo:'La pauta aparece como no viable en el contexto actual'};
+    if(eje&&eje.indexOf('irregular')>=0)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Cumplir mínimo eficiente',prueba:'Completa sesiones pautadas',motivo:'Ejecución irregular: confirmar si no sabe, no puede o sabe/puede pero no hace'};
   }
-  var vals=weeks.slice(-4).map(function(w){return parseFloat(String(w.Cintura||'').replace(',','.'));}).filter(function(v){return !isNaN(v);});
-  if(vals.length<2)return {traba:'Sin traba',responsable:'—',decision:'Sostener',palanca:'Mantener y observar tendencia',prueba:'Revisar próxima auditoría',motivo:'Hay información de la semana, pero todavía no alcanza la tendencia para atribuir un problema a la prescripción'};
-  return {traba:'Sin traba',responsable:'—',decision:'Sostener',palanca:'Mantener plan actual',prueba:'Revisar próxima auditoría',motivo:'El reporte es interpretable. La decisión final se toma con tendencia + contexto, no con un porcentaje aislado'};
+  if(nutDias<5)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Cumplir mínimo eficiente',prueba:'Próximo registro hecho correctamente',motivo:'La ejecución nutricional fue baja; usar causa/contexto para distinguir Entendimiento, Logística o Su parte antes de cambiar la prescripción'};
+  var vals=weeks.slice(-3).map(function(w){return parseFloat(String(w.Cintura||'').replace(',','.'));}).filter(function(v){return !isNaN(v);});
+  if(vals.length<2)return {traba:'Sin traba',responsable:'—',decision:'Sostener',palanca:'Mantener y observar tendencia',prueba:'Mantener tendencia 2 semanas',motivo:'Su parte permite evaluar, pero todavía falta tendencia suficiente para juzgar la prescripción'};
+  var obj=ftNorm(r.Objetivo),dc=vals[vals.length-1]-vals[0],fuera=false;if(obj==='deficit')fuera=dc>=0.5;else if(obj==='mantenimiento')fuera=Math.abs(dc)>=1;
+  if(fuera)return {traba:'Prescripción',responsable:'Mi parte',decision:'Ajustar mi parte',palanca:'Ajustar nutrición',prueba:'Tendencia mejora en 2–3 semanas',motivo:'Con información y ejecución suficientes, la tendencia disponible no acompaña el objetivo'};
+  return {traba:'Sin traba',responsable:'—',decision:'Sostener',palanca:'Mantener plan actual',prueba:'Revisar próxima auditoría',motivo:'No aparece un eslabón previo roto con los datos disponibles'};
 }
 function ClosedSelect({value,onChange,options}){return h('select',{value:value,onChange:function(e){onChange(e.target.value);},style:Object.assign({},inp,{fontSize:'12px',padding:'9px 10px'})},options.map(function(o){return h('option',{key:o,value:o},o);}));}
 function SemanalV2({data,rutinas,devoluciones,nutriResumen,videos,seguimiento,onRefresh}){
@@ -2826,8 +2805,8 @@ function MensualV2({maestra,data,rutinas,decisiones,videos}){
   function mark(ok,label,detail){return {ok:ok,label:label,detail:detail};}
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'14px 12px 90px'}},h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Mensual'),h('div',{style:{fontSize:'12px',color:'#888',marginBottom:'12px'}},'Checklist de las últimas 4 semanas: qué esperaba el sistema de cada parte y qué ocurrió.'),
     activos.map(function(a){var n=a.Asesorado,id=a.AsesoradoID||'',w=(data[n]||[]).slice(-4),r=rt[ftNorm(n)]||a,allWa=audits.filter(function(z){return (id&&String(z.asesoradoId||'')===String(id))||ftNorm(z.asesorado)===ftNorm(n);}),bySem={};allWa.forEach(function(z){bySem[z.semanID||z._sem||('row_'+z._row)]=z;});var wa=Object.keys(bySem).map(function(k){return bySem[k];}).slice(-4),vid=(videos||[]).filter(function(v){return (id&&String(v.AsesoradoID||'')===String(id))||ftNorm(v.Asesorado)===ftNorm(n);});var rev=vid.filter(function(v){return ftNorm(v.Revisado)==='si'||String(v.Feedback||'').trim();}).length,pend=vid.length-rev;
-      var reportes=w.length,med=w.filter(function(x){return (x.Peso||ftNorm(x.MedidoPeso)==='no')&&(x.Cintura||ftNorm(x.MedidoCintura)==='no');}).length,ent=w.filter(function(x){return parseInt(x.SesionesEntreno||0)>0||String(x.EntrenoEstado||'').trim();}).length,nutOk=w.filter(function(x){return String(x.EstadoNutricional||'').trim()&&x.NutriDias!==''&&x.NutriDias!=null;}).length;
-      var su=[mark(reportes>=3,'Reportar semanalmente',reportes+'/4 reportes'),mark(med>=3,'Responder mediciones',med+'/4 semanas con respuesta'),mark(ent>=3,'Registrar entrenamiento',ent+'/4 semanas con evidencia'),mark(nutOk>=3,'Nutrición interpretable',nutOk+'/4 semanas con registro interpretable')];
+      var reportes=w.length,med=w.filter(function(x){return x.Peso&&x.Cintura;}).length,ent=w.filter(function(x){return parseInt(x.SesionesEntreno||0)>0;}).length,nutOk=w.filter(function(x){return x.NutriDias!==''&&x.NutriDias!=null&&parseInt(x.NutriDias)>=5;}).length;
+      var su=[mark(reportes>=3,'Reportar semanalmente',reportes+'/4 reportes'),mark(med>=3,'Peso + cintura',med+'/4 semanas con ambas mediciones'),mark(ent>=3,'Registrar entrenamiento',ent+'/4 semanas con evidencia'),mark(nutOk>=3,'Nutrición: registro interpretable',nutOk+'/4 semanas con pauta registrada ≥5 días')];
       var mi=[mark(wa.length>=3,'Revisar y decidir',wa.length+'/4 auditorías/intervenciones registradas'),mark(pend===0,'Corregir videos recibidos',vid.length?rev+'/'+vid.length+' corregidos':'Sin videos cargados'),mark(!wa.some(function(z){return z.estado!=='Resuelto'&&z.responsable==='Mi parte';}),'Cerrar pendientes de mi parte',wa.filter(function(z){return z.estado!=='Resuelto'&&z.responsable==='Mi parte';}).length+' abiertos')];
       var ab=open[id||n];function row(m){return h('div',{key:m.label,style:{display:'flex',gap:'8px',alignItems:'flex-start',padding:'7px 0',borderBottom:'1px solid #f1f1f1'}},h('span',{style:{fontWeight:'900',color:m.ok?G:R}},m.ok?'✓':'○'),h('div',{style:{flex:1}},h('div',{style:{fontSize:'12px',fontWeight:'700'}},m.label),h('div',{style:{fontSize:'10px',color:'#888'}},m.detail)));}
       return h('div',{key:id||n,style:{background:'#fff',border:'1px solid rgba(0,0,0,.08)',borderRadius:'12px',padding:'13px',marginBottom:'8px'}},h('div',{onClick:function(){setOpen(Object.assign({},open,{[id||n]:!ab}));},style:{display:'flex',justifyContent:'space-between',cursor:'pointer'}},h('div',{style:{fontSize:'14px',fontWeight:'800'}},n),h('div',{style:{fontSize:'11px',color:'#777'}},su.filter(x=>x.ok).length+'/'+su.length+' · '+mi.filter(x=>x.ok).length+'/'+mi.length)),ab&&h('div',{style:{marginTop:'10px'}},h('div',{style:Object.assign({},lbl,{color:'#111'})},'SU PARTE'),su.map(row),h('div',{style:Object.assign({},lbl,{color:'#111',marginTop:'12px'})},'MI PARTE'),mi.map(row),h('div',{style:{fontSize:'10px',color:'#999',marginTop:'10px',lineHeight:'1.5'}},'Este resumen muestra hechos registrados. No atribuye causas ni reemplaza la conversación con el asesorado.')));
