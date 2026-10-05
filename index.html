@@ -2418,10 +2418,21 @@ function App(){
               return Object.values(bp||{}).some(function(v){return v==='si'||v==='no';});
             }
             var srSess=curSR[sess]||{};
-            var hasReps=Object.values(srSess).some(function(ex){return Object.values(ex||{}).some(function(v){return String(v||'').trim()!==''&&parseFloat(v)>=0;});});
+            // Sesión registrada = ejecución real, nunca carga precargada sola.
+            // En bloques con registro libre exigimos al menos un ejercicio con reps + kg usado.
+            var hasKgReps=Object.keys(srSess).some(function(exId){
+              var repsObj=srSess[exId]||{};
+              var hasRep=Object.values(repsObj).some(function(v){return String(v??'').trim()!==''&&!isNaN(parseFloat(v))&&parseFloat(v)>0;});
+              if(!hasRep)return false;
+              var kgMap=sessionKg[sess]||{};
+              var kg=kgMap[exId]!==undefined?kgMap[exId]:kgMap[parseInt(exId)];
+              return parseFloat(kg)>0;
+            });
+            // Fuerza S1/S8: un test/retest válido también es ejecución real.
             var forceTest=false;try{var ft=JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${sess}`)||'{}');forceTest=Object.values(ft||{}).some(function(v){return parseFloat(v&&v.kg)>0&&parseInt(v&&v.reps)>0;});}catch(e){}
+            // Intensidad: la técnica registrada sigue siendo metadata de ejecución válida según la lógica cerrada.
             var intensity=false;try{for(var ii=0;ii<localStorage.length;ii++){var ik=localStorage.key(ii)||'';if(ik.indexOf(`ase_${user}_intensity_${wk.id}_${sess}_`)===0&&localStorage.getItem(ik)){intensity=true;break;}}}catch(e){}
-            return hasReps||!!forceTest||intensity;
+            return hasKgReps||!!forceTest||(b==='intensidad'&&intensity);
           }).length,
           medidoPeso:pp!=='—'?'si':(hab.noMediPeso?'no':''),
           medidoCintura:pc!=='—'?'si':(hab.noMediCintura?'no':''),
