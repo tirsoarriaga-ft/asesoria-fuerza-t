@@ -2646,7 +2646,7 @@ function AuditoriaDatos({maestra,data,rutinas,diagnosticos,videosPend}){
 // ── SEMANAL V4 · SU PARTE / MI PARTE ───────────────────────────────
 const FT_AUDIT_PREFIX='FTAUDIT:';
 const FT_TRABAS=['Información','Entendimiento','Logística','Ejecución','Prescripción','Sin traba'];
-const FT_RESP=['—','Su parte','Mi parte','Compartida','A confirmar'];
+const FT_RESP=['—','Su parte','Mi parte','Compartida','Contexto','A confirmar'];
 const FT_DEC=['Destrabar','Educar','Adaptar','Exigir su parte','Ajustar mi parte','Sostener'];
 const FT_PALANCAS={
   'Información':['Completar reporte','Completar peso y cintura','Completar datos base','Completar registro de entrenamiento','Validar registro de comidas','Enviar video semanal'],
@@ -2731,7 +2731,7 @@ function ftSuggest(r,weeks,nut,prev,sem){
   if(prev&&ftNorm(prev.Estado)!=='resuelto'&&!ftProofSatisfied(prev,lat))return {traba:prev.Traba||'Información',responsable:prev.Responsable||'A confirmar',decision:prev.Decision||'Destrabar',palanca:prev.Palanca||'',prueba:prev.Prueba||'',motivo:'Pendiente anterior no resuelto: sigue siendo el primer eslabón roto',fromPrev:true};
   var faltan=[];if(!String(r.Bloque||'').trim())faltan.push('rutina/bloque');if(!String(r.Objetivo||'').trim())faltan.push('objetivo');if(!String(r.FechaInicio||'').trim())faltan.push('fecha de inicio');
   if(faltan.length)return {traba:'Información',responsable:'Mi parte',decision:'Destrabar',palanca:'Completar datos base',prueba:'Datos base completos',motivo:'Falta '+faltan.join(', ')};
-  if(!lat)return {traba:'Información',responsable:'Su parte',decision:'Destrabar',palanca:'Completar reporte',prueba:'Próximo reporte recibido',motivo:'No hay reporte para evaluar'};
+  if(!lat)return {traba:'Información',responsable:'A confirmar',decision:'Destrabar',palanca:'Completar reporte',prueba:'Próximo reporte recibido',motivo:'No hay reporte para evaluar. Confirmar primero si faltó su parte, hubo una traba de contexto o falló una herramienta de mi parte'};
   var nutDias=lat.NutriDias!==''&&lat.NutriDias!=null?parseInt(lat.NutriDias):null;
   if(nutDias===null)return {traba:'Información',responsable:'A confirmar',decision:'Destrabar',palanca:'Validar registro de comidas',prueba:'Registro de comidas interpretable',motivo:'Llegó el reporte, pero falta el registro nutricional que corresponde interpretar'};
   if(nut){
@@ -2741,6 +2741,13 @@ function ftSuggest(r,weeks,nut,prev,sem){
     if(eje&&eje.indexOf('irregular')>=0)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Cumplir mínimo eficiente',prueba:'Completa sesiones pautadas',motivo:'Ejecución irregular: confirmar si no sabe, no puede o sabe/puede pero no hace'};
   }
   if(nutDias<5)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Cumplir mínimo eficiente',prueba:'Próximo registro hecho correctamente',motivo:'La ejecución nutricional fue baja; usar causa/contexto para distinguir Entendimiento, Logística o Su parte antes de cambiar la prescripción'};
+  // Información disponible no equivale a pauta cumplida. "No me medí" informa lo ocurrido,
+  // pero sigue siendo una acción esperada no realizada. Lo mismo con 0 sesiones ejecutadas.
+  var ses=parseInt(lat.SesionesEntreno||0)||0;
+  var noPeso=ftNorm(lat.MedidoPeso)==='no';
+  var noCintura=ftNorm(lat.MedidoCintura)==='no';
+  if(ses===0)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Priorizar entrenamiento pautado',prueba:'Completa sesiones pautadas',motivo:'El reporte llegó y es interpretable, pero no hubo sesiones con ejecución registrada. Confirmar por qué antes de atribuir responsabilidad o cambiar la prescripción'};
+  if(noPeso||noCintura)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Cumplir mediciones',prueba:'Completa mediciones pautadas',motivo:'El asesorado informó que no realizó '+(noPeso&&noCintura?'peso ni cintura':(noPeso?'el peso':'la cintura'))+'. Hay información suficiente para saber qué ocurrió, pero la acción pautada no se cumplió y limita evaluar la respuesta'};
   var vals=weeks.slice(-3).map(function(w){return parseFloat(String(w.Cintura||'').replace(',','.'));}).filter(function(v){return !isNaN(v);});
   if(vals.length<2)return {traba:'Sin traba',responsable:'—',decision:'Sostener',palanca:'Mantener y observar tendencia',prueba:'Mantener tendencia 2 semanas',motivo:'Su parte permite evaluar, pero todavía falta tendencia suficiente para juzgar la prescripción'};
   var obj=ftNorm(r.Objetivo),dc=vals[vals.length-1]-vals[0],fuera=false;if(obj==='deficit')fuera=dc>=0.5;else if(obj==='mantenimiento')fuera=Math.abs(dc)>=1;
@@ -2766,7 +2773,7 @@ function SemanalV2({data,rutinas,devoluciones,nutriResumen,videos,seguimiento,on
   function upd(x,k,v){var key=(x.id||x.nombre)+'_'+x.sem,n=Object.assign({},cur(x),{[k]:v});if(k==='traba'){n.palanca=(FT_PALANCAS[v]||[])[0]||'';n.prueba=(FT_PRUEBAS[v]||[])[0]||'';if(v==='Sin traba'){n.responsable='—';n.decision='Sostener';n.estado='Resuelto';}}setDraft(Object.assign({},draft,{[key]:n}));}
   function save(x){var c=cur(x),key=x.id||x.nombre;setSaving(key);var payload={action:'intervencionV4',asesorado:x.nombre,asesoradoId:x.id,semanID:x.sem,modalidad:x.r.Nivel||'',traba:c.traba,responsable:c.responsable,decision:c.decision,palanca:c.palanca,prueba:c.prueba,estado:c.estado,evidencia:x.ev,checklist:x.check,motivo:x.sug.motivo,tutorialKey:FT_TUTORIAL_BY_PALANCA[c.palanca]||'',notaInterna:c.nota||'',videoRequerido:x.videoRequired,videoCumplido:x.videoDone};fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).finally(function(){setSaving(null);setTimeout(function(){refreshDevoluciones();if(onRefresh)onRefresh();},1800);});}
   function toggleVideoReq(x){var key=x.id||x.nombre,val=!x.videoRequired;setVideoOverride(Object.assign({},videoOverride,{[key]:val}));setVideoSaving(Object.assign({},videoSaving,{[key]:true}));fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'seguimientoV4',asesorado:x.nombre,asesoradoId:x.id,videoSemanalRequerido:val})}).finally(function(){setVideoSaving(function(old){var z=Object.assign({},old);delete z[key];return z;});});}
-  var shown=clients.filter(function(x){if(filtro==='Todos')return true;if(filtro==='Sin reporte')return !x.lat&&!x.enCurso;if(filtro==='Su parte')return !x.enCurso&&cur(x).responsable==='Su parte';if(filtro==='Mi parte')return !x.enCurso&&cur(x).responsable==='Mi parte';if(filtro==='Compartida')return !x.enCurso&&cur(x).responsable==='Compartida';if(filtro==='Sin traba')return !x.enCurso&&cur(x).traba==='Sin traba';return true;});
+  var shown=clients.filter(function(x){if(filtro==='Todos')return true;if(filtro==='Sin reporte')return !x.lat&&!x.enCurso;if(filtro==='Su parte')return !x.enCurso&&cur(x).responsable==='Su parte';if(filtro==='Mi parte')return !x.enCurso&&cur(x).responsable==='Mi parte';if(filtro==='Compartida')return !x.enCurso&&cur(x).responsable==='Compartida';if(filtro==='Contexto')return !x.enCurso&&cur(x).responsable==='Contexto';if(filtro==='Sin traba')return !x.enCurso&&cur(x).traba==='Sin traba';return true;});
   var weekLabel=weekOffset===0?'Semana actual':(weekOffset===-1?'Semana anterior':Math.abs(weekOffset)+' semanas atrás');
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'14px 12px 90px'}},
     h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Semanal V4'),h('div',{style:{fontSize:'12px',color:'#777',lineHeight:'1.5',marginBottom:'10px'}},'Elegí la semana a auditar. Los datos históricos salen de Reportes; la semana actual sin reporte queda en curso.'),
@@ -2775,7 +2782,7 @@ function SemanalV2({data,rutinas,devoluciones,nutriResumen,videos,seguimiento,on
       h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'12px',fontWeight:'900'}},weekLabel),h('div',{style:{fontSize:'10px',color:'#888'}},weekOffset===0?'En curso si aún no reportó':'Auditoría histórica')),
       h('button',{disabled:weekOffset===0,onClick:function(){setWeekOffset(Math.min(0,weekOffset+1));setOpen({});},style:{border:'none',background:weekOffset===0?'#f5f5f5':'#eee',color:weekOffset===0?'#bbb':'#111',borderRadius:'8px',padding:'7px 10px',fontWeight:'800'}},'→')
     ),
-    h('div',{style:{display:'flex',gap:'5px',overflowX:'auto',paddingBottom:'10px'}},['Todos','Sin reporte','Su parte','Mi parte','Compartida','Sin traba'].map(function(f){return h('button',{key:f,onClick:function(){setFiltro(f);},style:{whiteSpace:'nowrap',border:'none',borderRadius:'20px',padding:'7px 10px',fontSize:'10px',fontWeight:'700',background:filtro===f?'#111':'#eee',color:filtro===f?'#fff':'#666'}},f);})),
+    h('div',{style:{display:'flex',gap:'5px',overflowX:'auto',paddingBottom:'10px'}},['Todos','Sin reporte','Su parte','Mi parte','Compartida','Contexto','Sin traba'].map(function(f){return h('button',{key:f,onClick:function(){setFiltro(f);},style:{whiteSpace:'nowrap',border:'none',borderRadius:'20px',padding:'7px 10px',fontSize:'10px',fontWeight:'700',background:filtro===f?'#111':'#eee',color:filtro===f?'#fff':'#666'}},f);})),
     shown.map(function(x){var key=x.id||x.nombre,c=cur(x),ab=open[key],col=x.enCurso?'#999':(c.traba==='Sin traba'?G:(c.responsable==='Mi parte'?R:O));return h('div',{key:key,style:{background:'#fff',border:'1px solid rgba(0,0,0,.08)',borderLeft:'4px solid '+col,borderRadius:'12px',padding:'13px',marginBottom:'8px'}},
       h('div',{onClick:function(){setOpen(Object.assign({},open,{[key]:!ab}));},style:{cursor:'pointer'}},
         h('div',{style:{display:'flex',justifyContent:'space-between'}},h('div',{style:{fontSize:'14px',fontWeight:'800'}},x.nombre+' · sem '+x.semNum),h('span',{style:{fontSize:'10px',fontWeight:'800',color:col}},x.enCurso?'EN CURSO':c.traba.toUpperCase())),
