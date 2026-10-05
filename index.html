@@ -1557,7 +1557,7 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
       ),
       h('textarea',{defaultValue:sens.nota||'',placeholder:'Algo más que tu coach debería saber...',onBlur:e=>setH({sens:Object.assign({},sens,{nota:e.target.value})}),style:{...inp,minHeight:'70px',resize:'vertical',marginTop:'14px'}})
     ),
-    h('button',{onClick:onEnviarReporte,disabled:saving||(!canSaveWeek&&!isViewingPast)||reporteYaEnviado&&false,style:{width:'100%',padding:'15px',border:'none',borderRadius:'12px',background:canSaveWeek||isViewingPast?GRAD:'#D1D5DB',color:'#fff',fontWeight:'900',fontSize:'15px',cursor:canSaveWeek||isViewingPast?'pointer':'default',marginTop:'4px'}},saving?'Enviando...':(reporteYaEnviado?'Actualizar reporte':'Enviar reporte')),
+    h('button',{onClick:onEnviarReporte,disabled:saving||(!canSaveWeek&&!isViewingPast)||reporteYaEnviado&&false,style:{width:'100%',padding:'15px',border:'none',borderRadius:'12px',background:canSaveWeek||isViewingPast?GRAD:'#D1D5DB',color:'#fff',fontWeight:'900',fontSize:'15px',cursor:canSaveWeek||isViewingPast?'pointer':'default',marginTop:'4px'}},saving?'Enviando...':(reporteYaEnviado?'✓ Reporte enviado · Actualizar':'Enviar reporte')),
     !canSaveWeek&&!isViewingPast&&h('div',{style:{fontSize:'11px',color:'#999',textAlign:'center',marginTop:'7px'}},'Disponible sáb/dom · '+wkSat.toLocaleDateString('es-AR',{day:'numeric',month:'short'}))
   );
 }
@@ -2479,7 +2479,6 @@ function App(){
     }
     return false;
   }
-  const [cumplWarning,setCumplWarning]=useState(false);
   // Semana real según calendario
   const realWkNum=user?getRealWkNum(user):1;
   const maxWkNum=user?(parseInt(localStorage.getItem(`ase_${user}_maxWkNum`))||realWkNum):realWkNum;
@@ -2531,12 +2530,6 @@ function App(){
     if(localStorage.getItem(sentKey)){
       if(!confirm('Ya enviaste el reporte de esta semana.\n\n¿Querés sobreescribirlo con los datos actuales?\n\nEn el sheet quedará solo un reporte por semana.'))return;
     }
-    const anyMeal=nut.some(d=>Object.values(d.m||{}).some(Boolean));
-    const anyAguaOk=nut.some(d=>d.ak);
-    const anySueno=(hab.sleep||[]).some(Boolean);
-    const anyNeat=(hab.actExtra||[]).some(Boolean);
-    if(!anyMeal&&!anyAguaOk&&!anySueno&&!anyNeat){setCumplWarning(true);}
-    else{setCumplWarning(false);}
     const dispatched=await doSave(true);
     if(!dispatched){
       localStorage.removeItem(sentKey);
@@ -2558,7 +2551,7 @@ function App(){
     if(weekLocked)return;
     if(isViewingPast&&!window.confirm('Estás por guardar cambios en una semana que ya pasó. ¿Continuar?'))return;
     if(isViewingFuture&&!window.confirm('Estás por guardar datos de una semana que todavía no ocurrió. No contarán como ejecución ni dispararán progresiones. ¿Continuar?'))return;
-    setCumplWarning(false);setSaveErrors([]);doSave(false);
+    setSaveErrors([]);doSave(false);
     // Backup silencioso al sheet
     try{
       // El backup remoto debe representar EJECUCIÓN, no la carga vigente/prepautada.
@@ -2952,9 +2945,6 @@ function App(){
         saveErrors.length>0&&h('div',{style:{background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:'10px',padding:'8px 10px',marginBottom:'2px',width:'100%'}},
           h('div',{style:{fontSize:'11px',fontWeight:'700',color:'#DC2626',marginBottom:'4px'}},'⚠️ Completá antes de guardar:'),
           saveErrors.map((e,i)=>h('div',{key:i,style:{fontSize:'10px',color:'#DC2626',lineHeight:'1.4'}},e))
-        ),
-        cumplWarning&&h('div',{style:{background:'#FFFBEB',border:'1px solid #FDE68A',borderRadius:'10px',padding:'8px 10px',marginBottom:'2px',width:'100%'}},
-          h('div',{style:{fontSize:'10px',color:'#92400E',lineHeight:'1.4'}},'⚠️ No registraste cumplimiento esta semana. Si te olvidaste, completá antes de guardar. Si no pudiste cumplir nada, anotalo en Notas.')
         ),
         h('button',{onClick:saveProgress,disabled:saving||weekLocked,style:{width:'100%',borderRadius:'8px',padding:'7px 10px',fontSize:'11px',fontWeight:'600',cursor:saving||weekLocked?'default':'pointer',border:'1.5px solid rgba(255,255,255,0.15)',background:saved==='progreso'?'rgba(55,138,221,0.15)':weekLocked?'rgba(255,255,255,0.04)':'rgba(255,255,255,0.08)',color:saved==='progreso'?B:weekLocked?'rgba(255,255,255,0.2)':'rgba(255,255,255,0.6)'}},saving?'...':(saved==='progreso'?'✓ Progreso guardado':weekLocked?'🔒 Solo lectura':'💾 Guardar progreso')),
         !weekLocked&&saved!==true&&h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.35)',lineHeight:'1.4',paddingTop:'4px',borderTop:'1px solid rgba(255,255,255,0.06)',marginTop:'2px'}},
