@@ -312,12 +312,23 @@ function AjustarSemana({onClose}){
         var k=localStorage.key(i);
         if(!k||k.indexOf(p)!==0)continue;
         var v=localStorage.getItem(k);
-        if(k.indexOf(p+'migbackup_')===0){
-          var b=parse(v,null); if(b&&typeof b==='object')backups.push(b);
-        }else current[k]=v;
+        var parsed=parse(v,null);
+        // T6 recovery: cualquier contenedor que guarde copias de claves reales del usuario
+        // es una fuente de recuperación válida, sin depender del nombre histórico del backup
+        // (migbackup_, premig2_, prerestore_, recoverybackup_, weekbackup_, etc.).
+        var isBackupContainer=parsed&&typeof parsed==='object'&&!Array.isArray(parsed)&&
+          Object.keys(parsed).some(function(bk){
+            return bk.indexOf(p+'sem_')===0||
+                   bk.indexOf(p+'draft_sem_')===0||
+                   bk.indexOf(p+'baseProto_sem_')===0||
+                   bk.indexOf(p+'rmTest_')===0||
+                   bk.indexOf(p+'rmRef_')===0||
+                   bk.indexOf(p+'rmRefFinal_')===0;
+          });
+        if(isBackupContainer)backups.push(parsed);
+        else current[k]=v;
       }
     }catch(e){}
-    backups.sort(function(a,b){return 0;});
     return{current:current,backups:backups};
   }
 
@@ -2249,10 +2260,33 @@ function App(){
         try{execMeta.forceTests[sess]=JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${wk.id}_${sess}`)||'{}')||{};}catch(e){}
       });
       if(bloqueSave==='base'||bloqueSave==='rehab')Object.entries(execMeta.baseProto).forEach(function(entry){const sess=entry[0],bp=entry[1]||{};Object.keys(bp).forEach(function(id){if(bp[id]!=='si'&&bp[id]!=='no')return;const kg=sessionKg?.[sess]?.[id]??sessionKg?.[sess]?.[parseInt(id)];if(parseFloat(kg)>0){if(!skUsed[sess])skUsed[sess]={};skUsed[sess][id]=parseFloat(kg);if(!usedSK[sess])usedSK[sess]={};usedSK[sess][id]=parseFloat(kg);}});});
-      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,skUsed,sk:usedSK,e:exes,rutina:rutinaSnap,exec:execMeta,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
+      // T4/T6 BLINDADO: Guardar progreso nunca puede achicar el patrimonio de una semana.
+      // El estado vivo manda cuando tiene dato; Snapshot/Draft previos completan cualquier hueco.
+      // Un campo vacío NO borra ejecución previamente guardada.
+      let prevSaved={};let prevDraftSaved={};
+      try{prevSaved=JSON.parse(localStorage.getItem(SK(wk.id,user))||'{}')||{};}catch(_e){}
+      try{prevDraftSaved=JSON.parse(localStorage.getItem(`ase_${user}_draft_${wk.id}`)||'{}')||{};}catch(_e){}
+      const mergedCurSR=mergeMissingTree(mergeMissingTree(curSR||{},prevDraftSaved.sr||{}),prevSaved.sr||{});
+      const mergedUsedSK=mergeMissingTree(
+        mergeMissingTree(skUsed||{},prevDraftSaved.skUsed||prevDraftSaved.sk||{}),
+        prevSaved.skUsed||prevSaved.sk||{}
+      );
+      const mergedExecMeta=mergeMissingTree(
+        mergeMissingTree(execMeta||{},prevDraftSaved.exec||{}),
+        prevSaved.exec||{}
+      );
+      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:mergedCurSR,skUsed:mergedUsedSK,sk:mergedUsedSK,e:exes,rutina:rutinaSnap,exec:mergedExecMeta,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
+      // Backup append-only previo a cada Guardar progreso. No participa del render normal;
+      // existe únicamente para recuperación si una versión futura interpreta mal el estado.
+      try{
+        const safety={};
+        const savedKey=SK(wk.id,user),draftKey=`ase_${user}_draft_${wk.id}`;
+        safety[savedKey]=localStorage.getItem(savedKey);
+        safety[draftKey]=localStorage.getItem(draftKey);
+        if(safety[savedKey]||safety[draftKey])localStorage.setItem(`ase_${user}_weekbackup_${wk.id}_${Date.now()}`,JSON.stringify(safety));
+      }catch(_e){}
       localStorage.setItem(SK(wk.id,user),JSON.stringify(d));
-      // T6: después de un guardado explícito, Draft y snapshot no pueden quedar en versiones distintas.
-      // Así un draft automático viejo nunca tapa visualmente un Guardar progreso más nuevo al recargar.
+      // T6: después de un guardado explícito, Draft y snapshot quedan en la misma versión.
       localStorage.setItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(d));
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
       if(!list.includes(wk.id)){list.push(wk.id);localStorage.setItem(HK(user),JSON.stringify(list));}
