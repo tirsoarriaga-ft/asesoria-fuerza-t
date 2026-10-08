@@ -495,19 +495,16 @@ function Login({onLogin}){
 
 // ── TRAINING ──────────────────────────────────────────────────────────
 function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,hist,wk,loadingExes,isViewingPast,isViewingFuture,realWkNum,onReloadHist}){
-  // SNAPSHOT DE RUTINA POR SEMANA: si se está viendo una semana pasada que guardó su propia
-  // rutina, usar ESA para armar la vista (ejercicios, bloque, series) en vez de la rutina actual.
-  // Semanas viejas sin snapshot -> se usa la rutina actual (fallback, comportamiento previo).
+  // T3: el pasado se renderiza SOLO desde el snapshot de ESA semana.
+  var _historicalSnapshotMissing=false;
+  var _wSnap=null;
   if(isViewingPast&&hist&&wk){
-    var _wSnap=hist.find(function(w){return w.wi===wk.id||w.id===wk.id;});
+    _wSnap=hist.find(function(w){return w.wi===wk.id||w.id===wk.id;})||null;
     if(_wSnap&&_wSnap.rutina&&_wSnap.rutina.assign){
-      cfg=Object.assign({},cfg,{
-        num:_wSnap.rutina.num||cfg.num,
-        assign:_wSnap.rutina.assign,
-        bloque:_wSnap.rutina.bloque||cfg.bloque,
-        series:_wSnap.rutina.series||cfg.series,
-        bloqueInicio:_wSnap.rutina.bloqueInicio||cfg.bloqueInicio
-      });
+      cfg=Object.assign({},cfg,{num:_wSnap.rutina.num||0,assign:_wSnap.rutina.assign,bloque:_wSnap.rutina.bloque||'volumen',series:_wSnap.rutina.series||2,bloqueInicio:_wSnap.rutina.bloqueInicio||1});
+    }else{
+      _historicalSnapshotMissing=true;
+      cfg={num:0,assign:{A:[],B:[],C:[],D:[],E:[]},bloque:'volumen',series:2,bloqueInicio:1};
     }
   }
   const BLOQUES={
@@ -659,20 +656,25 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     return 'finalizador';
   };
   const protoActual=()=>FUERZA_PROTOCOLO.find(p=>p.sems.includes(semEnBloque))||null;
-  const rmRefKey=(ex)=>`ase_${user}_rmRef_${activeSess}_${ex.id}`;
-  const getRmRef=(ex)=>{const v=parseFloat(localStorage.getItem(rmRefKey(ex)));return isNaN(v)?0:v;};
-  const rmRefFinalKey=(ex)=>`ase_${user}_rmRefFinal_${activeSess}_${ex.id}`;
-  const getRmRefFinal=(ex)=>{const v=parseFloat(localStorage.getItem(rmRefFinalKey(ex)));return isNaN(v)?0:v;};
+  // Fuerza: la referencia pertenece al bloque, no al usuario para siempre.
+  const rmRefKey=(ex)=>`ase_${user}_rmRef_b${bloqueInicio}_${activeSess}_${ex.id}`;
+  const rmRefLegacyKey=(ex)=>`ase_${user}_rmRef_${activeSess}_${ex.id}`;
+  const getRmRef=(ex)=>{if(isViewingPast&&_wSnap?.exec?.forceRefs){const z=parseFloat(_wSnap.exec.forceRefs?.[activeSess]?.[ex.id]||_wSnap.exec.forceRefs?.[activeSess]?.[String(ex.id)]);return isNaN(z)?0:z;}let v=parseFloat(localStorage.getItem(rmRefKey(ex)));if(isNaN(v)&&!isViewingPast){v=parseFloat(localStorage.getItem(rmRefLegacyKey(ex)));if(!isNaN(v))try{localStorage.setItem(rmRefKey(ex),String(v));}catch(e){}}return isNaN(v)?0:v;};
+  const rmRefFinalKey=(ex)=>`ase_${user}_rmRefFinal_b${bloqueInicio}_${activeSess}_${ex.id}`;
+  const rmRefFinalLegacyKey=(ex)=>`ase_${user}_rmRefFinal_${activeSess}_${ex.id}`;
+  const getRmRefFinal=(ex)=>{if(isViewingPast&&_wSnap?.exec?.forceFinalRefs){const z=parseFloat(_wSnap.exec.forceFinalRefs?.[activeSess]?.[ex.id]||_wSnap.exec.forceFinalRefs?.[activeSess]?.[String(ex.id)]);return isNaN(z)?0:z;}let v=parseFloat(localStorage.getItem(rmRefFinalKey(ex)));if(isNaN(v)&&!isViewingPast){v=parseFloat(localStorage.getItem(rmRefFinalLegacyKey(ex)));if(!isNaN(v))try{localStorage.setItem(rmRefFinalKey(ex),String(v));}catch(e){}}return isNaN(v)?0:v;};
   const setRmRef=(ex,val)=>{try{localStorage.setItem(rmRefKey(ex),String(val));}catch(e){}};
   const setRmRefFinal=(ex,val)=>{try{localStorage.setItem(rmRefFinalKey(ex),String(val));}catch(e){}};
   const epley=(kg,reps)=>Math.round(kg*(1+reps/30));
   const esDia1Fuerza=bloque==='fuerza'&&semEnBloque===1;
   const esRetestFuerza=bloque==='fuerza'&&semEnBloque===8;
   const fuerzaCerrada=bloque==='fuerza'&&semEnBloque>8;
-  const rmTestLSKey=`ase_${user}_rmTest_${activeSess}`;
-  const [rmTest,setRmTest]=useState(()=>{try{return JSON.parse(localStorage.getItem(rmTestLSKey)||'{}');}catch(e){return{};}});
-  useEffect(()=>{try{setRmTest(JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${activeSess}`)||'{}'));}catch(e){setRmTest({});}},[activeSess,user]);
-  useEffect(()=>{try{localStorage.setItem(rmTestLSKey,JSON.stringify(rmTest));}catch(e){}},[rmTest,rmTestLSKey]);
+  // Test/retest = ejecución semanal, no estado global de la sesión.
+  const rmTestLSKey=`ase_${user}_rmTest_${wk.id}_${activeSess}`;
+  const readRmTest=()=>{if(isViewingPast&&_wSnap?.exec?.forceTests)return _wSnap.exec.forceTests[activeSess]||{};try{const scoped=JSON.parse(localStorage.getItem(rmTestLSKey)||'null');if(scoped)return scoped;if(!isViewingPast&&!isViewingFuture){const legacy=JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${activeSess}`)||'null');if(legacy){localStorage.setItem(rmTestLSKey,JSON.stringify(legacy));return legacy;}}}catch(e){}return {};};
+  const [rmTest,setRmTest]=useState(readRmTest);
+  useEffect(()=>{setRmTest(readRmTest());},[activeSess,user,wk.id,isViewingPast]);
+  useEffect(()=>{if(!isViewingPast&&!isViewingFuture)try{localStorage.setItem(rmTestLSKey,JSON.stringify(rmTest));}catch(e){}},[rmTest,rmTestLSKey,isViewingPast,isViewingFuture]);
   const kgPrincipal=(ex)=>{
     const p=protoActual();
     if(!p)return 0;
@@ -703,10 +705,8 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   },[baseProto,baseProtoKey]);
 
   const getBaseProto=function(exId){
-    if(isViewingPast&&correcting){
-      const kp=String(exId)+'|proto';
-      if(Object.prototype.hasOwnProperty.call(corrEdits,kp))return corrEdits[kp]||'';
-    }
+    if(isViewingPast&&correcting){const kp=String(exId)+'|proto';if(Object.prototype.hasOwnProperty.call(corrEdits,kp))return corrEdits[kp]||'';}
+    if(isViewingPast&&_wSnap?.exec?.baseProto){const bp=_wSnap.exec.baseProto[activeSess]||{};return bp[exId]||bp[String(exId)]||baseProto[exId]||baseProto[String(exId)]||'';}
     return baseProto[exId]||baseProto[String(exId)]||'';
   };
   const toggleBaseProto=function(exId,val){
@@ -724,8 +724,14 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const intensityExecutionKey=(ex)=>`ase_${user}_intensity_${wk.id}_${activeSess}_${ex.id}`;
   const getIntensityPrescription=(ex)=>localStorage.getItem(intensityPrescriptionKey(ex))||'';
   const getIntensityExecution=(ex)=>{
-    const k=intensityExecutionKey(ex);
-    const own=localStorage.getItem(k);
+    if(isViewingPast){
+      const snap=_wSnap?.exec?.intensity?.[activeSess]||{};
+      if(Object.prototype.hasOwnProperty.call(snap,String(ex.id)))return snap[String(ex.id)]||'';
+      if(Object.prototype.hasOwnProperty.call(snap,ex.id))return snap[ex.id]||'';
+      const ownPast=localStorage.getItem(intensityExecutionKey(ex));
+      return ownPast===null?'':ownPast; // jamás caer a la prescripción actual al mirar pasado
+    }
+    const own=localStorage.getItem(intensityExecutionKey(ex));
     if(own!==null)return own;
     return getIntensityPrescription(ex);
   };
@@ -838,6 +844,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const duracionBloque=bloque==='fuerza'?8:6;
   if(semEnBloque>duracionBloque)return h('div',{style:{...card,textAlign:'center',padding:'36px 20px',border:'1px solid #E5E7EB'}},h('div',{style:{fontSize:'28px',marginBottom:'8px'}},'⏸️'),h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#111'}},'Bloque finalizado, esperando planificación'),h('div',{style:{fontSize:'12px',color:'#777',marginTop:'6px'}},'El bloque '+bloqueInfo.label+' terminó en la semana '+duracionBloque+'. No se genera una semana nueva automáticamente.'));
   return h('div',null,
+    _historicalSnapshotMissing&&h('div',{style:{background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:'12px',padding:'12px 14px',marginBottom:'12px',color:'#9A3412',fontSize:'12px',fontWeight:'700',lineHeight:'1.5'}},'Histórico protegido: esta semana no tiene snapshot de rutina suficiente. No se reconstruye con la planificación actual.'),
     h('div',{style:card},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},
         h('div',{style:lbl},'Sesión de hoy'),
@@ -2010,7 +2017,7 @@ function App(){
               // Esto permite mirar desde otro dispositivo sin reconstruir sessKg de la semana actual.
               localStorage.setItem('ase_'+user+'_draft_'+id,row.Draft);
               if(d2.sk||d2.skUsed||d2.sr){
-                var snapRemote={wi:id,wl:(getWkForNum(user,parseInt(String(id).replace('sem_',''))||1)||{}).label||id,n:d2.n||iN(),h:d2.h||iH(),sr:d2.sr||{},sk:d2.sk||{},skUsed:d2.skUsed||d2.sk||{},e:d2.e||[],rutina:d2.rutina||null,hiit:d2.hiit||iHiit()};
+                var snapRemote={wi:id,wl:(getWkForNum(user,parseInt(String(id).replace('sem_',''))||1)||{}).label||id,n:d2.n||iN(),h:d2.h||iH(),sr:d2.sr||{},sk:d2.sk||{},skUsed:d2.skUsed||d2.sk||{},e:d2.e||[],rutina:d2.rutina||null,exec:d2.exec||{},hiit:d2.hiit||iHiit()};
                 localStorage.setItem(SK(id,user),JSON.stringify(snapRemote));
                 var hl=[];try{hl=JSON.parse(localStorage.getItem(HK(user))||'[]');}catch(_e){}
                 if(!hl.includes(id)){hl.push(id);localStorage.setItem(HK(user),JSON.stringify(hl));}
@@ -2064,7 +2071,7 @@ function App(){
         const hasExec=Object.keys(d.sr||{}).length||Object.keys(d.skUsed||{}).length;
         if(!hasExec)return;
         let local={};try{local=JSON.parse(localStorage.getItem(SK(id,user))||'{}')||{};}catch(e){}
-        const remote={wi:id,wl:d.wl||(getWkForNum(user,n)||{}).label||id,n:d.n||iN(),h:d.h||iH(),sr:d.sr||{},sk:d.sk||{},skUsed:d.skUsed||{},e:d.e||[],rutina:d.rutina||null,hiit:d.hiit||iHiit()};
+        const remote={wi:id,wl:d.wl||(getWkForNum(user,n)||{}).label||id,n:d.n||iN(),h:d.h||iH(),sr:d.sr||{},sk:d.sk||{},skUsed:d.skUsed||{},e:d.e||[],rutina:d.rutina||null,exec:d.exec||{},hiit:d.hiit||iHiit()};
         // Completar huecos locales con el Draft remoto. Nunca sobreescribir un dato local existente.
         const merged=mergeMissingTree(local,remote);
         localStorage.setItem(SK(id,user),JSON.stringify(merged));
@@ -2212,8 +2219,19 @@ function App(){
         semanaBloque:semanaBloqueSave,
         fuerzaProtocolo:bloqueSave==='fuerza'?(fuerzaProtocolosSave[semanaBloqueSave]||null):null
       };
-      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,skUsed,sk:usedSK,e:exes,rutina:rutinaSnap,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
+      const execMeta={baseProto:{},intensity:{},forceTests:{},forceRefs:{},forceFinalRefs:{}};
+      ['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).forEach(function(sess){
+        try{execMeta.baseProto[sess]=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${sess}`)||'{}')||{};}catch(e){}
+        const ids=(cfg?.assign?.[sess]||[]).flat(Infinity).map(String);
+        ids.forEach(function(id){const iv=localStorage.getItem(`ase_${user}_intensity_${wk.id}_${sess}_${id}`);if(iv){if(!execMeta.intensity[sess])execMeta.intensity[sess]={};execMeta.intensity[sess][id]=iv;}const rv=localStorage.getItem(`ase_${user}_rmRef_b${bloqueInicioSave}_${sess}_${id}`)||localStorage.getItem(`ase_${user}_rmRef_${sess}_${id}`);if(rv){if(!execMeta.forceRefs[sess])execMeta.forceRefs[sess]={};execMeta.forceRefs[sess][id]=rv;}const rfv=localStorage.getItem(`ase_${user}_rmRefFinal_b${bloqueInicioSave}_${sess}_${id}`)||localStorage.getItem(`ase_${user}_rmRefFinal_${sess}_${id}`);if(rfv){if(!execMeta.forceFinalRefs[sess])execMeta.forceFinalRefs[sess]={};execMeta.forceFinalRefs[sess][id]=rfv;}});
+        try{execMeta.forceTests[sess]=JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${wk.id}_${sess}`)||'{}')||{};}catch(e){}
+      });
+      if(bloqueSave==='base'||bloqueSave==='rehab')Object.entries(execMeta.baseProto).forEach(function(entry){const sess=entry[0],bp=entry[1]||{};Object.keys(bp).forEach(function(id){if(bp[id]!=='si'&&bp[id]!=='no')return;const kg=sessionKg?.[sess]?.[id]??sessionKg?.[sess]?.[parseInt(id)];if(parseFloat(kg)>0){if(!skUsed[sess])skUsed[sess]={};skUsed[sess][id]=parseFloat(kg);if(!usedSK[sess])usedSK[sess]={};usedSK[sess][id]=parseFloat(kg);}});});
+      const d={wi:wk.id,wl:wk.label,n:nut,h:hab,sr:curSR,skUsed,sk:usedSK,e:exes,rutina:rutinaSnap,exec:execMeta,pp,pc,pC,pS,actExtra:actExtraC,toxics:toxC,sens:hab.sens||{},aguaDias,aguaPromedio,hiit:hiitData};
       localStorage.setItem(SK(wk.id,user),JSON.stringify(d));
+      // T6: después de un guardado explícito, Draft y snapshot no pueden quedar en versiones distintas.
+      // Así un draft automático viejo nunca tapa visualmente un Guardar progreso más nuevo al recargar.
+      localStorage.setItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(d));
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
       if(!list.includes(wk.id)){list.push(wk.id);localStorage.setItem(HK(user),JSON.stringify(list));}
       setSaved(completeWeek?true:'progreso');loadH();
@@ -2280,7 +2298,7 @@ function App(){
           nutriCantidad:(hab.nutriSem&&hab.nutriSem.cantidad)||'',
           nutriCausaCantidad:(hab.nutriSem&&hab.nutriSem.causaCantidad)||''
         };
-        const reportDraft={sr:curSR,n:nut,h:hab,hiit:hiitData,sk:usedSK,skUsed:skUsed,e:exes,rutina:rutinaSnap};
+        const reportDraft={wi:wk.id,wl:wk.label,sr:curSR,n:nut,h:hab,hiit:hiitData,sk:usedSK,skUsed:skUsed,e:exes,rutina:rutinaSnap,exec:execMeta};
         // Igual que Guardar progreso: POST simple a `draft`. Si Safari no deja leer la respuesta,
         // no lo tratamos como fallo; inmediatamente verificamos la fila real en Reportes.
         await fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify({
@@ -2329,7 +2347,7 @@ function App(){
   // Estado REAL de "reporte enviado": se deriva del flag de la semana MOSTRADA en cada render.
   // (Antes se usaba `saved`, que se cacheaba al arranque y podía revivir del backup → botón fantasma.)
   const reporteYaEnviado=user?!!localStorage.getItem(`ase_${user}_reporteSent_${wk.id}`):false;
-  const weekLocked=false; // navegación libre: pasado, actual y futuro son editables; cada semana conserva su SemanID
+  const weekLocked=isViewingFuture; // futuro = prescripción visible, ejecución bloqueada
 
   // El estado "Reporte enviado" se reconcilia con Reportes; localStorage no decide solo.
   useEffect(()=>{
@@ -2355,7 +2373,7 @@ function App(){
 
   async function save(){
     if(isViewingPast&&!window.confirm('Estás por modificar y enviar un reporte de una semana que ya pasó. ¿Continuar?'))return;
-    if(isViewingFuture&&!window.confirm('Estás por modificar y enviar datos de una semana que todavía no ocurrió. Estos datos no contarán como ejecución ni dispararán progresiones. ¿Continuar?'))return;
+    if(isViewingFuture){setSaveErrors(['Las semanas futuras son solo de visualización. No se puede registrar ni enviar ejecución antes de que ocurran.']);return;}
     // Toda semana que se reporte debe pasar las validaciones duras.
     const errs=validateSave();
     if(errs.length>0){setSaveErrors(errs);return;}
@@ -2385,11 +2403,11 @@ function App(){
     localStorage.setItem(sentKey,'1');
     setSaved(true);
   }
-  function saveProgress(){
+  async function saveProgress(){
     if(weekLocked)return;
     if(isViewingPast&&!window.confirm('Estás por guardar cambios en una semana que ya pasó. ¿Continuar?'))return;
-    if(isViewingFuture&&!window.confirm('Estás por guardar datos de una semana que todavía no ocurrió. No contarán como ejecución ni dispararán progresiones. ¿Continuar?'))return;
-    setSaveErrors([]);doSave(false);
+    if(isViewingFuture){setSaveErrors(['Las semanas futuras son solo de visualización. No se puede guardar ejecución antes de que ocurran.']);return;}
+    setSaveErrors([]);await doSave(false);
     // Backup silencioso al sheet
     try{
       // El backup remoto debe representar EJECUCIÓN, no la carga vigente/prepautada.
@@ -2406,7 +2424,8 @@ function App(){
           if(parseFloat(kg)>0){if(!execKg[sess])execKg[sess]={};execKg[sess][exId]=parseFloat(kg);}
         });
       });
-      var draftBk={sr:sessionReps,n:nut,h:hab,hiit:hiitData,sk:execKg,skUsed:execKg,e:exes,rutina:{num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio,semanaBloque:Math.max(1,(parseInt(wk.num)||1)-(parseInt(cfg.bloqueInicio)||1)+1)}};
+      var justSaved={};try{justSaved=JSON.parse(localStorage.getItem(SK(wk.id,user))||'{}')||{};}catch(e){}
+      var draftBk={wi:wk.id,wl:wk.label,sr:justSaved.sr||sessionReps,n:justSaved.n||nut,h:justSaved.h||hab,hiit:justSaved.hiit||hiitData,sk:justSaved.sk||execKg,skUsed:justSaved.skUsed||execKg,e:justSaved.e||exes,rutina:justSaved.rutina||{num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio,semanaBloque:Math.max(1,(parseInt(wk.num)||1)-(parseInt(cfg.bloqueInicio)||1)+1)},exec:justSaved.exec||{}};
       fetch(SCRIPT_URL,{method:'POST',body:JSON.stringify({action:'draft',user:user,asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',wi:wk.id,draft:draftBk})}).catch(function(){});
     }catch(e){}
   }
@@ -2526,6 +2545,7 @@ function App(){
   // Auto-guardar borrador — NUNCA corre hasta que dataLoaded sea true
   useEffect(()=>{
     if(!user||!wk.id||!wk.num)return;
+    if(wk.num>getRealWkNum(user))return; // futuro: jamás crear ejecución ni draft editable
     if(!dataLoaded.current)return;
     if(!draftReady.current)return;
     if(cambiandoSemana.current)return;
@@ -2539,7 +2559,9 @@ function App(){
       if(existingDraft||existingSaved)return;
       return;
     }
-    var draft={sr:sessionReps,n:nut,h:hab,hiit:hiitData,sk:sessionKg,skUsed:sessionKg,e:exes,rutina:{num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio}};
+    var savedExec={};try{savedExec=JSON.parse(localStorage.getItem(SK(wk.id,user))||'{}')||{};}catch(e){}
+    // Auto-draft conserva lo tipeado, pero NUNCA convierte sessKg (carga vigente) en skUsed (ejecución).
+    var draft={wi:wk.id,wl:wk.label,sr:sessionReps,n:nut,h:hab,hiit:hiitData,sk:savedExec.sk||{},skUsed:savedExec.skUsed||{},e:(savedExec.e&&savedExec.e.length)?savedExec.e:exes,rutina:savedExec.rutina||{num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio},exec:savedExec.exec||{}};
     localStorage.setItem('ase_'+user+'_draft_'+wk.id,JSON.stringify(draft));
   },[sessionReps,nut,hab,hiitData,user,wk.id]);
 
