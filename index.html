@@ -1679,7 +1679,15 @@ function migrarIDsEstables(user,rows,force){
 }
 
 function App(){
-  const [user,setUser]=useState(null);
+  // T1 sesión: hidratar usuario antes del primer render para evitar el flash de Login.
+  // Si existe ase_user, la app monta directamente con esa identidad; el fetch posterior
+  // solo refresca AsesoradoID/FechaInicio y no decide si hay sesión.
+  const initialUser=(()=>{try{return localStorage.getItem(USER_KEY)||null;}catch(e){return null;}})();
+  const [user,setUser]=useState(initialUser);
+  const [sessionReady,setSessionReady]=useState(()=>{
+    if(!initialUser)return true;
+    try{return !!localStorage.getItem(`ase_${initialUser}_startdate`);}catch(e){return false;}
+  });
   const [tab,setTab]=useState('d');
   const [selExOpt,setSelExOpt]=useState(0);
   const [wk,setWk]=useState({id:'sem_1',num:1,label:'...'});
@@ -1726,7 +1734,8 @@ function App(){
 
   useEffect(()=>{
     const savedUser=localStorage.getItem(USER_KEY);
-    if(!savedUser)return;
+    if(!savedUser){setSessionReady(true);return;}
+    // La sesión ya fue hidratada sincrónicamente. Esta consulta solo refresca identidad/fecha.
     fetch(SCRIPT_URL+'?action=asesorados')
       .then(r=>r.json())
       .then(rows=>{
@@ -1739,7 +1748,7 @@ function App(){
         }
       })
       .catch(()=>{})
-      .finally(()=>setUser(savedUser));
+      .finally(()=>setSessionReady(true));
   },[]);
   useEffect(()=>{if(!user){setNutriConfirmado('');return;}setNutriConfirmado(String(localStorage.getItem(`ase_${user}_nutriConfirmado`)||'').trim().toLowerCase());},[user]);
 
@@ -1779,7 +1788,11 @@ function App(){
       const wkId=`sem_${wkNum}`;
       const draftStr=localStorage.getItem(`ase_${user}_draft_${wkId}`);
       const savedStr=localStorage.getItem(SK(wkId,user));
-      const d=draftStr?JSON.parse(draftStr):(savedStr?JSON.parse(savedStr):null);
+      // T3/T6 legacy: en semanas pasadas manda el snapshot explícitamente guardado;
+      // en la semana actual el draft puede contener cambios más recientes todavía no confirmados.
+      const draftObj=draftStr?JSON.parse(draftStr):null;
+      const savedObj=savedStr?JSON.parse(savedStr):null;
+      const d=(wkNum<realNum)?(savedObj||draftObj):(draftObj||savedObj);
       if(d){
         if(d.sr)setSessionReps(d.sr);
         if(d.n)setNut(migrateNut(d.n));
@@ -1954,7 +1967,9 @@ function App(){
 
   const login=name=>{
     localStorage.setItem(USER_KEY,name);
-    // No montar App con una FechaInicio ficticia: primero hidratar identidad desde Asesorados.
+    setSessionReady(false);
+    setUser(name);
+    // Usuario nuevo: no usar una FechaInicio ficticia mientras se hidrata identidad.
     fetch(SCRIPT_URL+'?action=asesorados')
       .then(r=>r.json())
       .then(rows=>{
@@ -1967,9 +1982,9 @@ function App(){
         }
       })
       .catch(()=>{})
-      .finally(()=>setUser(name));
+      .finally(()=>setSessionReady(true));
   };
-  const logout=()=>{if(confirm('¿Cambiar nombre?')){localStorage.removeItem(USER_KEY);setUser(null);}};
+  const logout=()=>{if(confirm('¿Cambiar nombre?')){localStorage.removeItem(USER_KEY);setSessionReady(true);setUser(null);}};
 
   function load(id){
     dataLoaded.current=false;
@@ -1982,14 +1997,16 @@ function App(){
       draft=draftStr?JSON.parse(draftStr):null;
       saved2=savedStr?JSON.parse(savedStr):null;
     }catch(e){}
-    var d=draft||saved2;
+    var targetNum=parseInt(String(id).replace('sem_',''))||1;
+    // Pasado confirmado: preferir snapshot guardado sobre un draft legacy potencialmente viejo.
+    // Actual: preferir draft para conservar cambios auto-guardados aún no confirmados.
+    var d=(targetNum<getRealWkNum(user))?(saved2||draft):(draft||saved2);
     if(d){
       // Hay datos locales — cargar sin tocar estados vacíos
       setNut(d.n?migrateNut(d.n):iN());
       setHab(d.h?migrateHab(d.h):iH());
       setHiitData(d.hiit||iHiit());
       setSessionReps(d.sr||{});
-      var targetNum=parseInt(String(id).replace('sem_',''))||1;
       if(targetNum!==getRealWkNum(user))setSessionKg(d.skUsed||d.sk||{});
       else {try{setSessionKg(JSON.parse(localStorage.getItem(`ase_${user}_sessKg`)||'{}')||{});}catch(_e){setSessionKg({});}}
       setSaved(localStorage.getItem('ase_'+user+'_reporteSent_'+id)?true:false);
@@ -2800,6 +2817,7 @@ function App(){
   const showAjustar=new URLSearchParams(window.location.search).get('ajustar')==='true';
   if(showAjustar)return h(AjustarSemana,{onClose:()=>window.location.href=window.location.pathname});
   if(!user)return h(Login,{onLogin:login});
+  if(!sessionReady)return h('div',{style:{maxWidth:'480px',margin:'0 auto',minHeight:'100vh',background:'#0A0A0A',display:'flex',alignItems:'center',justifyContent:'center',color:'rgba(255,255,255,0.72)',fontSize:'13px',fontWeight:'700'}},'Cargando tu sesión…');
   const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F0EFED',minHeight:'100vh'}},
