@@ -1792,7 +1792,11 @@ function App(){
       // en la semana actual el draft puede contener cambios más recientes todavía no confirmados.
       const draftObj=draftStr?JSON.parse(draftStr):null;
       const savedObj=savedStr?JSON.parse(savedStr):null;
-      const d=(wkNum<realNum)?(savedObj||draftObj):(draftObj||savedObj);
+      // T4/T6: en semana actual, Draft y Snapshot se FUSIONAN.
+      // El Draft conserva cambios más recientes; el Snapshot completa cualquier campo/sesión
+      // que el Draft parcial no tenga. Así una fuente incompleta nunca vuelve invisible
+      // ejecución ya guardada. En pasado, el Snapshot confirmado sigue teniendo prioridad.
+      const d=(wkNum<realNum)?(savedObj||draftObj):mergeMissingTree(draftObj||{},savedObj||{});
       if(d){
         if(d.sr)setSessionReps(d.sr);
         if(d.n)setNut(migrateNut(d.n));
@@ -1999,8 +2003,9 @@ function App(){
     }catch(e){}
     var targetNum=parseInt(String(id).replace('sem_',''))||1;
     // Pasado confirmado: preferir snapshot guardado sobre un draft legacy potencialmente viejo.
-    // Actual: preferir draft para conservar cambios auto-guardados aún no confirmados.
-    var d=(targetNum<getRealWkNum(user))?(saved2||draft):(draft||saved2);
+    // Actual: fusionar Draft + Snapshot; el Draft manda donde tiene dato y el Snapshot
+    // completa huecos para que nunca desaparezca ejecución previamente guardada.
+    var d=(targetNum<getRealWkNum(user))?(saved2||draft):mergeMissingTree(draft||{},saved2||{});
     if(d){
       // Hay datos locales — cargar sin tocar estados vacíos
       setNut(d.n?migrateNut(d.n):iN());
@@ -2577,8 +2582,12 @@ function App(){
       return;
     }
     var savedExec={};try{savedExec=JSON.parse(localStorage.getItem(SK(wk.id,user))||'{}')||{};}catch(e){}
-    // Auto-draft conserva lo tipeado, pero NUNCA convierte sessKg (carga vigente) en skUsed (ejecución).
-    var draft={wi:wk.id,wl:wk.label,sr:sessionReps,n:nut,h:hab,hiit:hiitData,sk:savedExec.sk||{},skUsed:savedExec.skUsed||{},e:(savedExec.e&&savedExec.e.length)?savedExec.e:exes,rutina:savedExec.rutina||{num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio},exec:savedExec.exec||{}};
+    var prevDraft={};try{prevDraft=JSON.parse(localStorage.getItem('ase_'+user+'_draft_'+wk.id)||'{}')||{};}catch(e){}
+    // T4/T6: auto-draft nunca puede achicar el patrimonio visible de la semana.
+    // Partimos del estado vivo y completamos huecos con el Draft previo y el Snapshot guardado.
+    // NUNCA convierte sessKg (carga vigente) en skUsed (ejecución).
+    var mergedSR=mergeMissingTree(mergeMissingTree(sessionReps||{},prevDraft.sr||{}),savedExec.sr||{});
+    var draft={wi:wk.id,wl:wk.label,sr:mergedSR,n:nut,h:hab,hiit:hiitData,sk:savedExec.sk||prevDraft.sk||{},skUsed:savedExec.skUsed||prevDraft.skUsed||{},e:(savedExec.e&&savedExec.e.length)?savedExec.e:((prevDraft.e&&prevDraft.e.length)?prevDraft.e:exes),rutina:savedExec.rutina||prevDraft.rutina||{num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio},exec:savedExec.exec||prevDraft.exec||{}};
     localStorage.setItem('ase_'+user+'_draft_'+wk.id,JSON.stringify(draft));
   },[sessionReps,nut,hab,hiitData,user,wk.id]);
 
@@ -2814,6 +2823,18 @@ function App(){
   const [showInstall,setShowInstall]=useState(()=>!window.navigator.standalone&&!window.matchMedia('(display-mode: standalone)').matches&&!localStorage.getItem('ft_install_shown'));
   function dismissInstall(){localStorage.setItem('ft_install_shown','1');setShowInstall(false);}
 
+  // T2/T3: la cabecera temporal también debe respetar el snapshot de la semana vista.
+  // Mirar pasado no puede seguir mostrando el bloque/semana del presente.
+  let headerCfg=cfg||{};
+  if(isViewingPast){
+    let hw=null;
+    try{hw=JSON.parse(localStorage.getItem(SK(wk.id,user))||'null');}catch(e){}
+    if(!hw)hw=(hist||[]).find(function(x){return x.wi===wk.id||x.id===wk.id;})||null;
+    if(hw&&hw.rutina)headerCfg=Object.assign({},headerCfg,hw.rutina);
+  }
+  const headerBloque=String(headerCfg?.bloque||'Bloque');
+  const headerSemBloque=(isViewingPast&&headerCfg?.semanaBloque)?parseInt(headerCfg.semanaBloque):Math.max(1,(wk.num||1)-(parseInt(headerCfg?.bloqueInicio)||1)+1);
+
   const showAjustar=new URLSearchParams(window.location.search).get('ajustar')==='true';
   if(showAjustar)return h(AjustarSemana,{onClose:()=>window.location.href=window.location.pathname});
   if(!user)return h(Login,{onLogin:login});
@@ -2839,7 +2860,7 @@ function App(){
           h('button',{onClick:logout,style:{background:'none',border:'none',cursor:'pointer',fontSize:'10px',color:'rgba(255,255,255,0.25)',padding:0}},'cambiar')
         ),
         h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'1px'}},
-          'Sem '+Math.max(1,(wk.num||1)-(parseInt(cfg?.bloqueInicio)||1)+1)+' de '+String(cfg?.bloque||'Bloque').charAt(0).toUpperCase()+String(cfg?.bloque||'bloque').slice(1)+' · Sem '+(wk.num||1)+' total · '+String(wk.label||'').replace(/^Sem\s+\d+\s*·\s*/,'')
+          'Sem '+headerSemBloque+' de '+headerBloque.charAt(0).toUpperCase()+headerBloque.slice(1)+' · Sem '+(wk.num||1)+' total · '+String(wk.label||'').replace(/^Sem\s+\d+\s*·\s*/,'')
         )
       ),
       h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-end',minWidth:'160px'}},
