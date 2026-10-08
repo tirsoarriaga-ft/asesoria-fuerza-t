@@ -241,6 +241,7 @@ function AjustarSemana({onClose}){
   var [nombre,setNombre]=useState('');
   var [msg,setMsg]=useState('');
   var [plan,setPlan]=useState(null);
+  var [selectedRecoveryWeek,setSelectedRecoveryWeek]=useState('all');
   var [ejRows,setEjRows]=useState([]);
 
   var dark={background:'rgba(255,255,255,0.08)',border:'1.5px solid rgba(255,255,255,0.12)',color:'#fff',borderRadius:'10px',padding:'11px 12px',width:'100%',fontSize:'14px',fontFamily:'inherit',outline:'none'};
@@ -397,27 +398,43 @@ function AjustarSemana({onClose}){
       function pri(x){return (x.field==='skUsed'||x.field==='sk')?0:1;}
       return pri(a)-pri(b);
     });
-    var result={user:u,weeks:realChanges,proto:protoChanges,force:forceKeys,count:counter.n,items:orderedItems.slice(0,60)};
+    var result={user:u,weeks:realChanges,proto:protoChanges,force:forceKeys,count:counter.n,items:orderedItems};
+    var weekSet={}; orderedItems.forEach(function(x){if(/^sem_\d+$/.test(String(x.wid||'')))weekSet[x.wid]=true;});
+    var availableWeeks=Object.keys(weekSet).sort(function(a,b){return parseInt(a.replace('sem_',''))-parseInt(b.replace('sem_',''));});
+    result.availableWeeks=availableWeeks;
+    setSelectedRecoveryWeek(availableWeeks.indexOf('sem_15')>=0?'sem_15':'all');
     setPlan(result);
     setMsg(result.count?'Encontré '+result.count+' dato(s) local(es) faltante(s) que pueden recuperarse.':'No encontré datos locales faltantes para recuperar.');
   }
 
+  function recoveryItems(){
+    if(!plan)return [];
+    return (plan.items||[]).filter(function(x){return selectedRecoveryWeek==='all'||x.wid===selectedRecoveryWeek;});
+  }
+  function recoveryCount(){return recoveryItems().length;}
+
   function applyRecovery(){
     if(!plan||!plan.count)return;
-    if(!window.confirm('Se completarán únicamente datos vacíos. No se reemplazará ningún valor visible, no se tocará sessKg y no se ejecutarán progresiones. ¿Recuperar ahora?'))return;
+    var chosen=selectedRecoveryWeek;
+    var chosenCount=recoveryCount();
+    if(!chosenCount){setMsg('No hay datos faltantes para ese filtro.');return;}
+    var label=chosen==='all'?'todas las semanas':chosen.replace('sem_','S');
+    if(!window.confirm('Vas a recuperar '+chosenCount+' dato(s) de '+label+'. Sólo se completarán vacíos: no se reemplazará ningún valor visible, no se tocará sessKg y no se ejecutarán progresiones. ¿Continuar?'))return;
     var p=pfx(plan.user);
+    var weeks=plan.weeks.filter(function(x){return chosen==='all'||x.wid===chosen;});
+    var proto=plan.proto.filter(function(x){return chosen==='all'||x.key.indexOf(chosen)>=0;});
+    var force={}; Object.keys(plan.force||{}).forEach(function(k){if(chosen==='all'||k.indexOf(chosen)>=0)force[k]=plan.force[k];});
     // Backup de seguridad de las claves que sí vamos a tocar.
     var safety={};
-    plan.weeks.forEach(function(x){safety[x.key]=get(x.key);safety[x.draftKey]=get(x.draftKey);});
-    plan.proto.forEach(function(x){safety[x.key]=get(x.key);});
-    Object.keys(plan.force||{}).forEach(function(k){safety[k]=get(k);});
+    weeks.forEach(function(x){safety[x.key]=get(x.key);safety[x.draftKey]=get(x.draftKey);});
+    proto.forEach(function(x){safety[x.key]=get(x.key);});
+    Object.keys(force).forEach(function(k){safety[k]=get(k);});
     put(p+'recoverybackup_'+Date.now(),JSON.stringify(safety));
 
     var hist=parse(get(p+'hist')||'[]',[]);
-    plan.weeks.forEach(function(x){
+    weeks.forEach(function(x){
       put(x.key,JSON.stringify(x.data));
       if(!hist.includes(x.wid))hist.push(x.wid);
-      // Si hay draft, alinearlo con los campos recuperados para que no vuelva a ocultarlos.
       var dr=parse(get(x.draftKey)||'null',null);
       if(dr){
         dr.sr=x.data.sr||dr.sr||{};
@@ -428,9 +445,9 @@ function AjustarSemana({onClose}){
     });
     hist.sort(function(a,b){return parseInt(a.replace('sem_',''))-parseInt(b.replace('sem_',''));});
     put(p+'hist',JSON.stringify(hist));
-    plan.proto.forEach(function(x){put(x.key,JSON.stringify(x.data));});
-    Object.keys(plan.force||{}).forEach(function(k){put(k,plan.force[k]);});
-    setMsg('✅ Recuperación terminada. Se completaron '+plan.count+' dato(s). Recargá la app para verlos.');
+    proto.forEach(function(x){put(x.key,JSON.stringify(x.data));});
+    Object.keys(force).forEach(function(k){put(k,force[k]);});
+    setMsg('✅ Recuperación terminada: '+chosenCount+' dato(s) de '+label+'. Recargá la app y verificá. Después podés volver a Revisar para recuperar el resto.');
     setPlan(null);
   }
 
@@ -458,17 +475,26 @@ function AjustarSemana({onClose}){
         msg&&h('div',{style:{...box,fontSize:'12px',lineHeight:'1.5',color:msg.indexOf('✅')===0?'#86EFAC':'rgba(255,255,255,0.75)'}},msg),
         plan&&plan.count>0&&h('div',{style:box},
           h('div',{style:tag},'Vista previa'),
-          h('div',{style:{fontSize:'12px',color:'#fff',fontWeight:'700',marginBottom:'8px'}},plan.count+' dato(s) faltante(s)'),
-          plan.items.map(function(x,i){
+          h('div',{style:{fontSize:'12px',color:'#fff',fontWeight:'700',marginBottom:'8px'}},plan.count+' dato(s) faltante(s) en total'),
+          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)',marginBottom:'7px'}},'Elegí qué semana recuperar primero:'),
+          h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
+            (plan.availableWeeks||[]).map(function(w){
+              var active=selectedRecoveryWeek===w;
+              var c=(plan.items||[]).filter(function(x){return x.wid===w;}).length;
+              return h('button',{key:w,onClick:function(){setSelectedRecoveryWeek(w);},style:{background:active?AC:'rgba(255,255,255,0.08)',color:'#fff',border:'1px solid '+(active?AC:'rgba(255,255,255,0.12)'),borderRadius:'8px',padding:'7px 9px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},w.replace('sem_','S')+' · '+c);
+            }),
+            h('button',{onClick:function(){setSelectedRecoveryWeek('all');},style:{background:selectedRecoveryWeek==='all'?AC:'rgba(255,255,255,0.08)',color:'#fff',border:'1px solid '+(selectedRecoveryWeek==='all'?AC:'rgba(255,255,255,0.12)'),borderRadius:'8px',padding:'7px 9px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Todas · '+plan.count)
+          ),
+          h('div',{style:{fontSize:'12px',color:'#86EFAC',fontWeight:'800',marginBottom:'8px'}},(selectedRecoveryWeek==='all'?'Todas las semanas':selectedRecoveryWeek.replace('sem_','S'))+' · '+recoveryCount()+' dato(s)'),
+          recoveryItems().map(function(x,i){
             var sem=String(x.wid||'').replace('sem_','S');
             var val=(x.value===undefined||x.value===null||x.value==='')?'':(' = '+x.value);
             return h('div',{key:i,style:{fontSize:'11px',color:'rgba(255,255,255,0.6)',padding:'4px 0',borderBottom:'1px solid rgba(255,255,255,0.05)'}},
               sem+' · '+(x.sess?x.sess+' · ':'')+x.name+' · '+x.field+val
             );
           }),
-          plan.count>plan.items.length&&h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.4)',marginTop:'6px'}},'… y '+(plan.count-plan.items.length)+' más'),
           h('div',{style:{fontSize:'11px',color:'#FCD34D',lineHeight:'1.5',marginTop:'10px'}},'Sólo completa vacíos. No pisa datos existentes, no toca sessKg y no ejecuta progresiones.'),
-          h('button',{onClick:applyRecovery,style:{width:'100%',background:'#1D9E75',color:'#fff',border:'none',borderRadius:'10px',padding:'13px',fontSize:'14px',fontWeight:'800',cursor:'pointer',marginTop:'12px'}},'♻️ Recuperar '+plan.count+' dato(s)')
+          h('button',{onClick:applyRecovery,style:{width:'100%',background:'#1D9E75',color:'#fff',border:'none',borderRadius:'10px',padding:'13px',fontSize:'14px',fontWeight:'800',cursor:'pointer',marginTop:'12px'}},'♻️ Recuperar '+recoveryCount()+' dato(s) de '+(selectedRecoveryWeek==='all'?'todas':selectedRecoveryWeek.replace('sem_','S')))
         )
       )
   );
