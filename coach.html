@@ -2216,9 +2216,11 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   var [busqueda,setBusqueda]=useState('');
   var [subTab,setSubTab]=useState('todos'); // todos | moroso | hoy | aldia
   var [mesOffset,setMesOffset]=useState(0); // 0 = mes actual, -1 = mes pasado, etc.
-  // "hoy" desplazado según el mes que estás viendo (para navegar por mes)
-  var hoy=new Date(); hoy.setHours(0,0,0,0); hoy.setDate(15); hoy.setMonth(hoy.getMonth()+mesOffset);
-  var nombreMes=hoy.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
+  // Separar SIEMPRE la fecha real del mes que se está consultando.
+  // Navegar el calendario nunca puede adelantar/atrasar 'hoy' para calcular mora.
+  var hoyReal=new Date(); hoyReal.setHours(0,0,0,0);
+  var mesVista=new Date(hoyReal.getFullYear(),hoyReal.getMonth()+mesOffset,1); mesVista.setHours(0,0,0,0);
+  var nombreMes=mesVista.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
   var norm=function(x){return String(x||'').trim().toLowerCase();};
   function parseFecha(s){
     s=String(s||'').trim(); if(!s)return null;
@@ -2231,17 +2233,20 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     var fi=parseFecha(fInicio); if(!fi)return null;
     fi.setHours(0,0,0,0);
     var diaCobro=fi.getDate();
-    var vencEsteMes=new Date(hoy.getFullYear(),hoy.getMonth(),diaCobro); vencEsteMes.setHours(0,0,0,0);
-    var vencActual;
-    if(hoy>=vencEsteMes){ vencActual=vencEsteMes; }
-    else { vencActual=new Date(hoy.getFullYear(),hoy.getMonth()-1,diaCobro); vencActual.setHours(0,0,0,0); }
-    // GUARDA: el ciclo en curso nunca puede ser anterior a la fecha de alta del cliente.
-    // Un cliente que recién arranca no tiene deuda de meses previos a su inicio.
-    if(vencActual<fi){ vencActual=new Date(fi); }
+    // La fila representa el vencimiento DEL MES ELEGIDO en el calendario.
+    // Si el día no existe (29/30/31), se usa el último día real de ese mes.
+    function vencEnMes(y,m){
+      var ultimo=new Date(y,m+1,0).getDate();
+      var d=new Date(y,m,Math.min(diaCobro,ultimo)); d.setHours(0,0,0,0); return d;
+    }
+    var vencActual=vencEnMes(mesVista.getFullYear(),mesVista.getMonth());
+    // Antes del alta no existe ciclo para cobrar.
+    if(vencActual<fi)return null;
     var mesActual=(vencActual.getFullYear()-fi.getFullYear())*12+(vencActual.getMonth()-fi.getMonth())+1;
-    if(mesActual<1)mesActual=1;
-    var diasVencido=Math.round((hoy-vencActual)/(1000*60*60*24));
-    var prox=new Date(vencActual); prox.setMonth(prox.getMonth()+1);
+    if(mesActual<1)return null;
+    var proxMes=new Date(vencActual.getFullYear(),vencActual.getMonth()+1,1);
+    var prox=vencEnMes(proxMes.getFullYear(),proxMes.getMonth());
+    var diasVencido=Math.floor((hoyReal-vencActual)/(1000*60*60*24));
     return {mesActual:mesActual,vencActual:vencActual,proxVenc:prox,diasVencido:diasVencido,diaCobro:diaCobro};
   }
   function pagoDeMes(aseId,mes){
@@ -2301,7 +2306,7 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     hoy:{l:'Vence hoy',c:'#D97706',bg:'#FFFBEB'},
     pronto:{l:'Vence pronto',c:'#D97706',bg:'#FFFBEB'},
     pendiente:{l:'Al día',c:'#1D9E75',bg:'#F0FDF4'},
-    aldia:{l:'Pagado',c:'#1D9E75',bg:'#F0FDF4'},
+    aldia:{l:'Al día',c:'#1D9E75',bg:'#F0FDF4'},
     sinfecha:{l:'Sin fecha',c:'#999',bg:'#F7F7F7'}
   };
   // Totales (sobre todos, no sobre el filtro)
@@ -2310,12 +2315,12 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   // Contadores por sub-pestaña
   var nMoroso=filas.filter(function(f){return f.estado==='vencido';}).length;
   var nHoy=filas.filter(function(f){return f.estado==='hoy';}).length;
-  var nAldia=filas.filter(function(f){return f.estado==='aldia';}).length;
+  var nAldia=filas.filter(function(f){return f.estado==='aldia'||f.estado==='pendiente';}).length;
   // Aplicar filtros: sub-pestaña + búsqueda
   var vis=filas.filter(function(f){
     if(subTab==='moroso'&&f.estado!=='vencido')return false;
     if(subTab==='hoy'&&f.estado!=='hoy')return false;
-    if(subTab==='aldia'&&f.estado!=='aldia')return false;
+    if(subTab==='aldia'&&f.estado!=='aldia'&&f.estado!=='pendiente')return false;
     if(busqueda.trim()&&norm(f.a.Asesorado).indexOf(norm(busqueda))<0)return false;
     return true;
   });
@@ -2388,7 +2393,13 @@ function CobrosPanel({maestra,pagos,onRefresh}){
         ),
         f.estado!=='sinfecha'&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
           h('div',{style:{fontSize:'11px',color:'#666'}},
-            f.pagado?('✓ Mes '+f.c.mesActual+' pagado · próx '+venceStr):('Mes '+f.c.mesActual+' · venció '+venceStr)
+            f.pagado
+              ?('✓ Mes '+f.c.mesActual+' pagado · próx '+venceStr)
+              :(f.estado==='vencido'
+                  ?('Mes '+f.c.mesActual+' · venció '+venceStr)
+                  :(f.estado==='hoy'
+                      ?('Mes '+f.c.mesActual+' · vence hoy')
+                      :('Mes '+f.c.mesActual+' · vence '+venceStr)))
           ),
           f.pagado
             ?h('button',{onClick:function(){desmarcarPago(f.a,f.c.mesActual);},
