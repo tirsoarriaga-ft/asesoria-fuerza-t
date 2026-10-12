@@ -2043,168 +2043,51 @@ const BLOQUES_LISTA=[['base','Base'],['rehabilitacion','Rehabilitación'],['fuer
 function RutinaBuilder({name,rutina,ejercicios,onClose,onSaved}){
   const norm=x=>String(x||'').trim().toLowerCase();
   const normB=b=>{var n=norm(b);if(n.includes('fuerza'))return'fuerza';if(n.includes('intensidad'))return'intensidad';if(n.includes('rehab'))return'rehabilitacion';if(n.includes('volumen'))return'volumen';return'base';};
-  // Semana actual del asesorado (desde FechaInicio, misma fórmula que la app: ancla al lunes)
-  const semActual=(()=>{
-    const fi=String((rutina&&rutina.FechaInicio)||'').trim();
-    if(!fi)return null;
-    const d=new Date(fi+'T00:00:00');
-    if(isNaN(d.getTime()))return null;
-    const day=d.getDay();const diff=(day===0?-6:1-day);
-    const lunes=new Date(d);lunes.setDate(d.getDate()+diff);
-    const hoy=new Date();hoy.setHours(0,0,0,0);
-    const semanas=Math.floor((hoy-lunes)/(7*24*60*60*1000))+1;
-    return semanas>0?semanas:1;
-  })();
-  // Precargar si ya tiene rutina
+  const letras=['A','B','C','D','E'];
   const yaExiste=!!(rutina&&rutina.Asesorado);
   const [bloque,setBloque]=useState(yaExiste?normB(rutina.Bloque):'base');
   const [numSes,setNumSes]=useState(yaExiste?(parseInt(rutina.NumSesiones)||3):3);
   const [series,setSeries]=useState(yaExiste?(parseInt(rutina.Series)||3):3);
   const [bloqueInicio,setBloqueInicio]=useState(yaExiste?(parseInt(rutina.BloqueInicio)||1):1);
-  // Sesiones: array de arrays de nombres de ejercicio. Precargar desde SesionA-E si existe.
-  const initSes=()=>{
-    const S=[];
-    ['A','B','C','D','E'].forEach(l=>{
-      const raw=yaExiste?String(rutina['Sesion'+l]||'').trim():'';
-      S.push(raw?raw.split(',').map(x=>x.trim()).filter(Boolean):[]);
-    });
-    return S;
-  };
-  const [sesiones,setSesiones]=useState(initSes);
-  const [sesActiva,setSesActiva]=useState(0);
-  const [buscar,setBuscar]=useState('');
-  const [filtroMusc,setFiltroMusc]=useState('');
-  const [saving,setSaving]=useState(false);
-  const [msg,setMsg]=useState('');
-
-  // Lista de músculos únicos para el filtro
-  const musculos=[...new Set((ejercicios||[]).map(e=>String(e['MÚSCULO']||e.Musculo||'').trim()).filter(Boolean))].sort();
-  // Ejercicios filtrados
-  const exFiltrados=(ejercicios||[]).filter(e=>{
-    const nom=String(e.NOMBRE||e.Nombre||'').trim();
-    if(!nom)return true?false:false;
-    if(filtroMusc&&norm(e['MÚSCULO']||e.Musculo)!==norm(filtroMusc))return false;
-    if(buscar&&!norm(nom).includes(norm(buscar)))return false;
-    return !!nom;
-  });
-  const letras=['A','B','C','D','E'];
-  function agregarEx(nom){
-    setSesiones(prev=>{const n=prev.map(s=>[...s]);if(!n[sesActiva].includes(nom))n[sesActiva].push(nom);return n;});
-  }
-  function quitarEx(idx){
-    setSesiones(prev=>{const n=prev.map(s=>[...s]);n[sesActiva].splice(idx,1);return n;});
-  }
-  function moverEx(idx,dir){
-    setSesiones(prev=>{const n=prev.map(s=>[...s]);const s=n[sesActiva];const j=idx+dir;if(j<0||j>=s.length)return prev;const t=s[idx];s[idx]=s[j];s[j]=t;return n;});
-  }
-  function guardar(){
-    // Validar: cada sesión activa (según numSes) debe tener al menos 1 ejercicio
-    for(let i=0;i<numSes;i++){
-      if(!sesiones[i]||sesiones[i].length===0){setMsg('La sesión '+letras[i]+' está vacía. Agregá al menos un ejercicio.');setSesActiva(i);return;}
-    }
-    setSaving(true);setMsg('');
-    const payload={action:'guardarRutina',asesorado:name,bloque:bloque,bloqueInicio:bloqueInicio,numSesiones:numSes,series:(bloque==='volumen'?series:'')};
-    // Sesiones A-E: las activas con sus ejercicios (coma), las que sobran vacías ("")
-    letras.forEach((l,i)=>{ payload['sesion'+l]=(i<numSes)?(sesiones[i]||[]).join(', '):''; });
-    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
-      .finally(()=>{ setTimeout(()=>{ setSaving(false); if(onSaved)onSaved(); },1300); });
-  }
-  const info=BLOQUE_INFO[bloque]||BLOQUE_INFO.base;
-  return h('div',{style:{position:'fixed',inset:0,background:'#F7F7F7',zIndex:200,overflowY:'auto'}},
-    h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'16px 16px 40px'}},
-      // Header
-      h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px'}},
-        h('button',{onClick:onClose,style:{background:'none',border:'none',fontSize:'22px',cursor:'pointer',color:'#666',padding:0}},'‹'),
-        h('div',null,
-          h('div',{style:{fontSize:'18px',fontWeight:'800'}},yaExiste?'Editar rutina':'Armar rutina'),
-          h('div',{style:{fontSize:'12px',color:'#999'}},name)
-        )
-      ),
-      // Paso 1: bloque
-      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Bloque'),
-      h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'10px'}},
-        BLOQUES_LISTA.map(b=>h('button',{key:b[0],onClick:()=>setBloque(b[0]),style:{padding:'8px 12px',borderRadius:'8px',border:'1px solid '+(bloque===b[0]?G:'rgba(0,0,0,0.12)'),background:bloque===b[0]?G:'#fff',color:bloque===b[0]?'#fff':'#666',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},b[1]))
-      ),
-      // Qué define el bloque (lo que NO se pregunta)
-      h('div',{style:{background:'#EEF2FF',border:'1px solid #C7D2FE',borderRadius:'8px',padding:'10px',marginBottom:'16px'}},
-        h('div',{style:{fontSize:'10px',fontWeight:'800',color:'#4338CA',marginBottom:'2px'}},'ESTE BLOQUE YA DEFINE (no hace falta configurarlo)'),
-        h('div',{style:{fontSize:'11px',color:'#3730A3',lineHeight:'1.5'}},info.define)
-      ),
-      // Paso 2: número de sesiones
-      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Sesiones por semana'),
-      h('div',{style:{display:'flex',gap:'6px',marginBottom:'16px'}},
-        [2,3,4,5].map(n=>h('button',{key:n,onClick:()=>setNumSes(n),style:{flex:1,padding:'10px',borderRadius:'8px',border:'1px solid '+(numSes===n?G:'rgba(0,0,0,0.12)'),background:numSes===n?G:'#fff',color:numSes===n?'#fff':'#666',fontSize:'14px',fontWeight:'700',cursor:'pointer'}},n))
-      ),
-      // Decisión abierta: series (solo volumen)
-      info.abre.includes('series')&&h('div',{style:{marginBottom:'16px'}},
-        h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Series efectivas de arranque'),
-        h('div',{style:{display:'flex',gap:'6px'}},
-          [2,3,4].map(n=>h('button',{key:n,onClick:()=>setSeries(n),style:{flex:1,padding:'10px',borderRadius:'8px',border:'1px solid '+(series===n?AC:'rgba(0,0,0,0.12)'),background:series===n?AC:'#fff',color:series===n?'#fff':'#666',fontSize:'14px',fontWeight:'700',cursor:'pointer'}},n))
-        )
-      ),
-      // BloqueInicio
-      h('div',{style:{marginBottom:'16px'}},
-        h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Semana de inicio del bloque'),
-        semActual!==null
-          ?h('div',{style:{background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
-              h('div',{style:{fontSize:'12px',color:'#065F46',fontWeight:'700',marginBottom:'2px'}},name+' está en su semana '+semActual),
-              h('div',{style:{fontSize:'11px',color:'#047857',lineHeight:'1.4'}},'Para que arranque en la semana 1 de este bloque (test/pauta inicial), poné '+semActual+'.'),
-              h('button',{onClick:()=>setBloqueInicio(semActual),style:{marginTop:'6px',background:G,color:'#fff',border:'none',borderRadius:'6px',padding:'5px 10px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Usar '+semActual+' (arranca en semana 1)')
-            )
-          :h('div',{style:{fontSize:'11px',color:'#999',marginBottom:'6px'}},'No se pudo calcular la semana actual (falta FechaInicio). Poné el número de la semana actual del asesorado.'),
-        h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
-          h('input',{type:'number',value:bloqueInicio,onChange:e=>setBloqueInicio(parseInt(e.target.value)||1),style:{width:'80px',padding:'8px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px',textAlign:'center'}}),
-          semActual!==null&&h('span',{style:{fontSize:'11px',color:'#999'}},'→ arranca en semana '+Math.max(1,semActual-bloqueInicio+1)+' del bloque')
-        )
-      ),
-      // Paso 3: selector de ejercicios por sesión
-      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#444',marginBottom:'6px',textTransform:'uppercase',letterSpacing:'0.05em'}},'Ejercicios por sesión'),
-      // Pestañas de sesión
-      h('div',{style:{display:'flex',gap:'4px',marginBottom:'10px'}},
-        letras.slice(0,numSes).map((l,i)=>h('button',{key:l,onClick:()=>setSesActiva(i),style:{flex:1,padding:'8px',borderRadius:'8px',border:'none',background:sesActiva===i?'#111':'#E8E8E8',color:sesActiva===i?'#fff':'#666',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},l+' ('+(sesiones[i]||[]).length+')'))
-      ),
-      // Ejercicios ya en la sesión activa
-      (sesiones[sesActiva]||[]).length>0&&h('div',{style:{background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.08)',padding:'8px',marginBottom:'12px'}},
-        (sesiones[sesActiva]||[]).map((nom,idx)=>h('div',{key:idx,style:{display:'flex',alignItems:'center',gap:'6px',padding:'6px 0',borderBottom:idx<sesiones[sesActiva].length-1?'1px solid rgba(0,0,0,0.05)':'none'}},
-          h('span',{style:{fontSize:'11px',color:'#999',fontWeight:'700',width:'18px'}},(idx+1)+'.'),
-          h('span',{style:{flex:1,fontSize:'13px',color:'#111'}},nom),
-          h('button',{onClick:()=>moverEx(idx,-1),disabled:idx===0,style:{background:'none',border:'none',cursor:idx===0?'default':'pointer',color:idx===0?'#ddd':'#888',fontSize:'14px',padding:'2px 4px'}},'▲'),
-          h('button',{onClick:()=>moverEx(idx,1),disabled:idx===sesiones[sesActiva].length-1,style:{background:'none',border:'none',cursor:'pointer',color:idx===sesiones[sesActiva].length-1?'#ddd':'#888',fontSize:'14px',padding:'2px 4px'}},'▼'),
-          h('button',{onClick:()=>quitarEx(idx),style:{background:'none',border:'none',cursor:'pointer',color:'#D92D20',fontSize:'16px',padding:'2px 6px'}},'×')
-        ))
-      ),
-      // Buscador + filtro
-      h('input',{type:'text',value:buscar,onChange:e=>setBuscar(e.target.value),placeholder:'Buscar ejercicio…',style:{width:'100%',boxSizing:'border-box',padding:'9px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'13px',marginBottom:'8px'}}),
-      h('div',{style:{display:'flex',gap:'6px',overflowX:'auto',marginBottom:'8px',paddingBottom:'4px'}},
-        h('button',{onClick:()=>setFiltroMusc(''),style:{flexShrink:0,padding:'5px 10px',borderRadius:'20px',border:'none',background:!filtroMusc?'#111':'#E8E8E8',color:!filtroMusc?'#fff':'#666',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Todos'),
-        musculos.map(m=>h('button',{key:m,onClick:()=>setFiltroMusc(m),style:{flexShrink:0,padding:'5px 10px',borderRadius:'20px',border:'none',background:norm(filtroMusc)===norm(m)?'#111':'#E8E8E8',color:norm(filtroMusc)===norm(m)?'#fff':'#666',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},m))
-      ),
-      // Lista de ejercicios seleccionables
-      h('div',{style:{background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.08)',maxHeight:'240px',overflowY:'auto',marginBottom:'16px'}},
-        exFiltrados.length===0
-          ?h('div',{style:{padding:'20px',textAlign:'center',color:'#bbb',fontSize:'12px'}},'Sin resultados')
-          :exFiltrados.slice(0,80).map((e,i)=>{
-              const nom=String(e.NOMBRE||e.Nombre||'').trim();
-              const ya=(sesiones[sesActiva]||[]).includes(nom);
-              return h('div',{key:i,onClick:()=>!ya&&agregarEx(nom),style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 12px',borderBottom:i<Math.min(exFiltrados.length,80)-1?'1px solid rgba(0,0,0,0.05)':'none',cursor:ya?'default':'pointer',opacity:ya?0.4:1}},
-                h('div',null,
-                  h('div',{style:{fontSize:'13px',color:'#111'}},nom),
-                  h('div',{style:{fontSize:'10px',color:'#999'}},String(e['MÚSCULO']||e.Musculo||''))
-                ),
-                ya?h('span',{style:{fontSize:'11px',color:G,fontWeight:'700'}},'✓ agregado'):h('span',{style:{fontSize:'18px',color:G,fontWeight:'700'}},'+')
-              );
-            })
-      ),
-      // Tip biseries
-      h('div',{style:{fontSize:'10px',color:'#999',marginBottom:'16px',lineHeight:'1.4'}},'Tip: para biseries, agregá los ejercicios y después uní sus nombres con " + " editando en el sheet (por ahora). El constructor los carga como ejercicios separados.'),
-      msg&&h('div',{style:{fontSize:'12px',color:'#B42318',fontWeight:'600',marginBottom:'10px'}},msg),
-      // Guardar
-      h('div',{style:{display:'flex',gap:'8px'}},
-        h('button',{onClick:onClose,style:{flex:1,padding:'14px',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.15)',background:'#fff',color:'#666',fontSize:'13px',fontWeight:'700',cursor:'pointer'}},'Cancelar'),
-        h('button',{onClick:guardar,disabled:saving,style:{flex:2,padding:'14px',borderRadius:'10px',border:'none',background:saving?'#ccc':G,color:'#fff',fontSize:'13px',fontWeight:'700',cursor:saving?'default':'pointer'}},saving?'Guardando…':(yaExiste?'Guardar cambios':'Crear rutina'))
-      )
-    )
-  );
+  const [exList,setExList]=useState(ejercicios||[]);
+  const byName=n=>(exList||[]).find(e=>norm(e.NOMBRE||e.Nombre)===norm(n));
+  const exId=e=>String(e&&(e.ID!==undefined?e.ID:e.id)||'');
+  function legacySession(l){return String((rutina&&rutina['Sesion'+l])||'').split(',').map(x=>x.trim()).filter(Boolean).map(n=>{const e=byName(n);return e?{kind:'exercise',ejercicioId:exId(e)}:null;}).filter(Boolean);}
+  function readSession(l){try{const raw=String((rutina&&rutina['Sesion'+l+'Data'])||'').trim();if(raw){const v=JSON.parse(raw);if(Array.isArray(v))return v;}}catch(e){}return legacySession(l);}
+  const [sesiones,setSesiones]=useState(()=>letras.map(readSession));
+  const [sesActiva,setSesActiva]=useState(0),[buscar,setBuscar]=useState(''),[modo,setModo]=useState('');
+  const [saving,setSaving]=useState(false),[msg,setMsg]=useState('');
+  const [newEx,setNewEx]=useState({nombre:'',musculo:'',repMin:8,repMax:12,tutorial:''});
+  const [group,setGroup]=useState({tipo:'Biserie',ids:[],vueltas:3,descanso:'2 min'});
+  const [cx,setCx]=useState({nombre:'',musculo:'',repMin:1,repMax:1,tutorial:'',parts:[{nombre:'',id:'',reps:3},{nombre:'',id:'',reps:3}]});
+  const semActual=(()=>{const fi=String((rutina&&rutina.FechaInicio)||'').trim();if(!fi)return null;const d=new Date(fi+'T00:00:00');if(isNaN(d))return null;const day=d.getDay(),lu=new Date(d);lu.setDate(d.getDate()+(day===0?-6:1-day));const h=new Date();h.setHours(0,0,0,0);return Math.max(1,Math.floor((h-lu)/604800000)+1);})();
+  const refreshEx=()=>fetch(SCRIPT_URL+'?action=ejercicios').then(r=>r.json()).then(r=>{setExList(r||[]);return r||[];});
+  const addItem=item=>setSesiones(p=>{const n=p.map(x=>x.slice());n[sesActiva].push(item);return n;});
+  const removeItem=i=>setSesiones(p=>{const n=p.map(x=>x.slice());n[sesActiva].splice(i,1);return n;});
+  const moveItem=(i,d)=>setSesiones(p=>{const n=p.map(x=>x.slice()),x=n[sesActiva],j=i+d;if(j<0||j>=x.length)return p;[x[i],x[j]]=[x[j],x[i]];return n;});
+  const getEx=id=>(exList||[]).find(e=>exId(e)===String(id));
+  const itemNames=item=>item.kind==='group'?(item.items||[]).map(z=>{const e=getEx(z.ejercicioId);return e?String(e.NOMBRE||e.Nombre):'';}).filter(Boolean).join(' + '):(()=>{const e=getEx(item.ejercicioId);return e?String(e.NOMBRE||e.Nombre):'';})();
+  function createMaster(payload,after){setMsg('Guardando…');fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({action:'guardarEjercicio'},payload))}).then(()=>new Promise(r=>setTimeout(r,900))).then(refreshEx).then(rows=>{const e=(rows||[]).find(x=>norm(x.NOMBRE||x.Nombre)===norm(payload.nombre));if(!e)throw Error('No se encontró el ejercicio creado');after(e);setMsg('');}).catch(()=>setMsg('No pude confirmar el alta. Revisá conexión y volvé a intentar.'));}
+  function saveNewExercise(){if(!newEx.nombre.trim())return setMsg('Falta el nombre.');createMaster({...newEx,tipoEntidad:'ejercicio'},e=>{addItem({kind:'exercise',ejercicioId:exId(e)});setModo('');setNewEx({nombre:'',musculo:'',repMin:8,repMax:12,tutorial:''});});}
+  function saveGroup(){if(group.ids.length<2)return setMsg('La agrupación necesita 2 o más ejercicios.');addItem({kind:'group',grupoId:'grp_'+Date.now(),tipoGrupo:group.tipo,vueltas:parseInt(group.vueltas)||'',descansoGrupo:group.descanso||'',items:group.ids.map((id,i)=>({ejercicioId:String(id),orden:i+1}))});setGroup({tipo:'Biserie',ids:[],vueltas:3,descanso:'2 min'});setModo('');}
+  function saveComplex(){if(!cx.nombre.trim())return setMsg('Falta el nombre del complex.');const parts=cx.parts.filter(p=>p.nombre.trim()||p.id).map(p=>{const e=p.id?getEx(p.id):null;return{ejercicioId:e?exId(e):'',nombre:e?String(e.NOMBRE||e.Nombre):p.nombre.trim(),reps:parseInt(p.reps)||1};});if(parts.length<2)return setMsg('El complex necesita al menos 2 movimientos.');createMaster({nombre:cx.nombre,musculo:cx.musculo,repMin:cx.repMin,repMax:cx.repMax,tutorial:cx.tutorial,tipoEntidad:'complex',secuencia:parts},e=>{addItem({kind:'exercise',ejercicioId:exId(e)});setModo('');});}
+  function guardar(){for(let i=0;i<numSes;i++)if(!sesiones[i].length){setSesActiva(i);return setMsg('La sesión '+letras[i]+' está vacía.');}setSaving(true);const payload={action:'guardarRutina',asesorado:name,bloque,bloqueInicio,numSesiones:numSes,series:(bloque==='volumen'?series:'')};letras.forEach((l,i)=>{const arr=i<numSes?sesiones[i]:[];payload['sesion'+l]=arr.map(itemNames).filter(Boolean).join(', ');payload['sesion'+l+'Data']=arr.length?JSON.stringify(arr):'';});fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).finally(()=>setTimeout(()=>{setSaving(false);onSaved&&onSaved();},1200));}
+  const exFiltered=(exList||[]).filter(e=>norm(e.NOMBRE||e.Nombre).includes(norm(buscar)));
+  const box={background:'#fff',border:'1px solid rgba(0,0,0,.08)',borderRadius:'10px',padding:'12px',marginBottom:'12px'};
+  const small={...inp,fontSize:'12px',padding:'8px 9px'};
+  return h('div',{style:{position:'fixed',inset:0,background:'#F7F7F7',zIndex:200,overflowY:'auto'}},h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'16px 16px 40px'}},
+    h('div',{style:{display:'flex',gap:'10px',alignItems:'center',marginBottom:'16px'}},h('button',{onClick:onClose,style:{background:'none',border:'none',fontSize:'24px'}},'‹'),h('div',null,h('div',{style:{fontSize:'18px',fontWeight:'800'}},yaExiste?'Editar rutina':'Armar rutina'),h('div',{style:{fontSize:'12px',color:'#999'}},name))),
+    h('div',{style:box},h('div',{style:lbl},'Bloque'),h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}},BLOQUES_LISTA.map(b=>h('button',{key:b[0],onClick:()=>setBloque(b[0]),style:{padding:'8px 10px',border:'none',borderRadius:'8px',background:bloque===b[0]?G:'#eee',color:bloque===b[0]?'#fff':'#555',fontWeight:'700'}},b[1]))),h('div',{style:{...lbl,marginTop:'12px'}},'Sesiones'),h('div',{style:{display:'flex',gap:'5px'}},[2,3,4,5].map(n=>h('button',{key:n,onClick:()=>setNumSes(n),style:{flex:1,padding:'8px',border:'none',borderRadius:'7px',background:numSes===n?'#111':'#eee',color:numSes===n?'#fff':'#555'}},n))),bloque==='volumen'&&h('div',{style:{marginTop:'10px'}},h('div',{style:lbl},'Series efectivas de arranque'),h('select',{value:series,onChange:e=>setSeries(parseInt(e.target.value)),style:small},[2,3,4].map(n=>h('option',{key:n,value:n},n)))),h('div',{style:{marginTop:'10px'}},h('div',{style:lbl},'Semana de inicio del bloque'+(semActual?' · actual '+semActual:'')),h('input',{type:'number',value:bloqueInicio,onChange:e=>setBloqueInicio(parseInt(e.target.value)||1),style:small}))),
+    h('div',{style:{display:'flex',gap:'4px',marginBottom:'10px'}},letras.slice(0,numSes).map((l,i)=>h('button',{key:l,onClick:()=>setSesActiva(i),style:{flex:1,padding:'9px',border:'none',borderRadius:'8px',background:sesActiva===i?'#111':'#e8e8e8',color:sesActiva===i?'#fff':'#666',fontWeight:'800'}},l+' ('+sesiones[i].length+')'))),
+    h('div',{style:box},h('div',{style:lbl},'Sesión '+letras[sesActiva]),sesiones[sesActiva].length?sesiones[sesActiva].map((it,i)=>h('div',{key:i,style:{padding:'9px 0',borderBottom:'1px solid #eee'}},h('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},h('span',{style:{fontSize:'11px',color:'#999'}},i+1),h('div',{style:{flex:1}},h('div',{style:{fontSize:'13px',fontWeight:'700'}},itemNames(it)||'Ejercicio'),it.kind==='group'&&h('div',{style:{fontSize:'10px',color:AC,fontWeight:'700'}},it.tipoGrupo+' · '+(it.vueltas||'—')+' vueltas · descanso '+(it.descansoGrupo||'—'))),h('button',{onClick:()=>moveItem(i,-1),style:{border:'none',background:'none'}},'↑'),h('button',{onClick:()=>moveItem(i,1),style:{border:'none',background:'none'}},'↓'),h('button',{onClick:()=>removeItem(i),style:{border:'none',background:'none',color:R}},'×')))):h('div',{style:{fontSize:'12px',color:'#aaa'}},'Sin ejercicios')),
+    !modo&&h('button',{onClick:()=>setModo('menu'),style:{width:'100%',padding:'13px',border:'1px dashed '+G,borderRadius:'10px',background:'#fff',color:G,fontWeight:'800',marginBottom:'12px'}},'+ Agregar'),
+    modo==='menu'&&h('div',{style:box},h('div',{style:lbl},'¿Qué querés agregar?'),[['exercise','Ejercicio'],['group','Agrupación'],['complex','Complex / ejercicio compuesto']].map(x=>h('button',{key:x[0],onClick:()=>setModo(x[0]),style:{width:'100%',padding:'11px',marginBottom:'6px',border:'1px solid #ddd',borderRadius:'8px',background:'#fff',fontWeight:'700',textAlign:'left'}},x[1])),h('button',{onClick:()=>setModo(''),style:{border:'none',background:'none',color:'#888'}},'Cancelar')),
+    modo==='exercise'&&h('div',{style:box},h('div',{style:lbl},'Ejercicio'),h('input',{value:buscar,onChange:e=>setBuscar(e.target.value),placeholder:'Buscar ejercicio…',style:{...small,marginBottom:'8px'}}),h('div',{style:{maxHeight:'180px',overflowY:'auto'}},exFiltered.slice(0,60).map(e=>h('div',{key:exId(e),onClick:()=>{addItem({kind:'exercise',ejercicioId:exId(e)});setModo('');},style:{padding:'8px',borderBottom:'1px solid #eee',fontSize:'12px',cursor:'pointer'}},String(e.NOMBRE||e.Nombre),norm(e.TipoEntidad)==='complex'?' · COMPLEX':''))),h('div',{style:{...lbl,marginTop:'12px'}},'Crear ejercicio'),['nombre','musculo','tutorial'].map(k=>h('input',{key:k,value:newEx[k],onChange:e=>setNewEx({...newEx,[k]:e.target.value}),placeholder:k==='nombre'?'Nombre':k==='musculo'?'Músculo':'URL tutorial (opcional)',style:{...small,marginBottom:'6px'}})),h('div',{style:{display:'flex',gap:'6px'}},h('input',{type:'number',value:newEx.repMin,onChange:e=>setNewEx({...newEx,repMin:e.target.value}),placeholder:'Rep min',style:small}),h('input',{type:'number',value:newEx.repMax,onChange:e=>setNewEx({...newEx,repMax:e.target.value}),placeholder:'Rep max',style:small})),h('button',{onClick:saveNewExercise,style:{width:'100%',marginTop:'8px',padding:'10px',border:'none',borderRadius:'8px',background:G,color:'#fff',fontWeight:'800'}},'Crear y agregar')),
+    modo==='group'&&h('div',{style:box},h('div',{style:lbl},'Agrupación'),h('select',{value:group.tipo,onChange:e=>setGroup({...group,tipo:e.target.value}),style:{...small,marginBottom:'8px'}},['Biserie','Triserie','Circuito','Complex divisible','Otro'].map(x=>h('option',{key:x},x))),h('input',{value:buscar,onChange:e=>setBuscar(e.target.value),placeholder:'Buscar ejercicios…',style:{...small,marginBottom:'6px'}}),h('div',{style:{maxHeight:'170px',overflowY:'auto',marginBottom:'8px'}},exFiltered.filter(e=>norm(e.TipoEntidad)!=='complex').slice(0,60).map(e=>{const id=exId(e),on=group.ids.includes(id);return h('div',{key:id,onClick:()=>setGroup({...group,ids:on?group.ids.filter(x=>x!==id):group.ids.concat(id)}),style:{padding:'8px',borderBottom:'1px solid #eee',fontSize:'12px',background:on?'#EAF7F2':'#fff'}},(on?'✓ ':'')+String(e.NOMBRE||e.Nombre));})),h('div',{style:{display:'flex',gap:'6px'}},h('input',{type:'number',value:group.vueltas,onChange:e=>setGroup({...group,vueltas:e.target.value}),placeholder:'Vueltas',style:small}),h('input',{value:group.descanso,onChange:e=>setGroup({...group,descanso:e.target.value}),placeholder:'Descanso',style:small})),h('button',{onClick:saveGroup,style:{width:'100%',marginTop:'8px',padding:'10px',border:'none',borderRadius:'8px',background:G,color:'#fff',fontWeight:'800'}},'Guardar agrupación')),
+    modo==='complex'&&h('div',{style:box},h('div',{style:lbl},'Complex inseparable'),h('div',{style:{fontSize:'11px',color:'#777',marginBottom:'8px'}},'Elegí uno existente o creá uno nuevo como unidad única.'),h('div',{style:{maxHeight:'120px',overflowY:'auto',marginBottom:'8px'}},(exList||[]).filter(e=>norm(e.TipoEntidad)==='complex').map(e=>h('div',{key:exId(e),onClick:()=>{addItem({kind:'exercise',ejercicioId:exId(e)});setModo('');},style:{padding:'7px 8px',borderBottom:'1px solid #eee',fontSize:'12px',cursor:'pointer'}},'+ '+String(e.NOMBRE||e.Nombre)))),h('input',{value:cx.nombre,onChange:e=>setCx({...cx,nombre:e.target.value}),placeholder:'Nombre del complex',style:{...small,marginBottom:'6px'}}),h('input',{value:cx.tutorial,onChange:e=>setCx({...cx,tutorial:e.target.value}),placeholder:'Tutorial del complex (opcional)',style:{...small,marginBottom:'8px'}}),cx.parts.map((p,i)=>h('div',{key:i,style:{display:'grid',gridTemplateColumns:'1fr 1fr 58px 28px',gap:'5px',marginBottom:'5px'}},h('select',{value:p.id,onChange:e=>{const q=cx.parts.slice(),id=e.target.value,ex=id?getEx(id):null;q[i]={...q[i],id:id,nombre:ex?String(ex.NOMBRE||ex.Nombre):q[i].nombre};setCx({...cx,parts:q});},style:small},h('option',{value:''},'Existente…'),(exList||[]).filter(e=>norm(e.TipoEntidad)!=='complex').map(e=>h('option',{key:exId(e),value:exId(e)},String(e.NOMBRE||e.Nombre)))),h('input',{value:p.nombre,onChange:e=>{const q=cx.parts.slice();q[i]={...q[i],nombre:e.target.value,id:''};setCx({...cx,parts:q});},placeholder:'o texto libre',style:small}),h('input',{type:'number',value:p.reps,onChange:e=>{const q=cx.parts.slice();q[i]={...q[i],reps:e.target.value};setCx({...cx,parts:q});},style:small}),h('button',{onClick:()=>setCx({...cx,parts:cx.parts.filter((_,j)=>j!==i)}),style:{border:'none',background:'#eee',borderRadius:'6px'}},'×'))),h('button',{onClick:()=>setCx({...cx,parts:cx.parts.concat({nombre:'',id:'',reps:3})}),style:{border:'none',background:'none',color:G,fontWeight:'700'}},'+ movimiento'),h('div',{style:{fontSize:'10px',color:'#888',margin:'8px 0'}},'Si el movimiento coincide con un ejercicio maestro podés escribir su nombre; si no existe queda guardado como texto dentro del complex.'),h('button',{onClick:saveComplex,style:{width:'100%',padding:'10px',border:'none',borderRadius:'8px',background:G,color:'#fff',fontWeight:'800'}},'Crear complex y agregar')),
+    msg&&h('div',{style:{fontSize:'12px',color:msg==='Guardando…'?'#777':R,marginBottom:'8px'}},msg),
+    h('div',{style:{display:'flex',gap:'8px'}},h('button',{onClick:onClose,style:{flex:1,padding:'13px',border:'1px solid #ddd',borderRadius:'10px',background:'#fff'}},'Cancelar'),h('button',{onClick:guardar,disabled:saving,style:{flex:2,padding:'13px',border:'none',borderRadius:'10px',background:saving?'#bbb':G,color:'#fff',fontWeight:'800'}},saving?'Guardando…':'Guardar rutina'))
+  ));
 }
 // ── PESTAÑA COBROS: facturación integrada (vencimientos desde FechaInicio + registro de pagos) ──
 function CobrosPanel({maestra,pagos,onRefresh}){
