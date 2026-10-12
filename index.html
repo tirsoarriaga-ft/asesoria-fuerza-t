@@ -1093,6 +1093,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                     exes.filter(e=>e.m===(findEx(ex.origId)||ex).m&&String(e.id)!==String(ex.id)).length>0&&h('button',{onClick:()=>setExEquiv(ex),style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:AC,fontWeight:'700',textDecoration:'none'}},'≡ Equivalentes'),
                     h('button',{onClick:()=>setShowHistorial(showHistorial===ex.id?null:ex.id),style:{background:'none',border:'none',cursor:'pointer',fontSize:'11px',color:B,fontWeight:'600',textDecoration:'none'}},'📋 Historial')
                   ),
+                  ex.tipo==='complex'&&ex.secuencia&&ex.secuencia.length>0&&h('div',{style:{marginTop:'8px',padding:'8px 10px',background:'#F8FAFC',borderRadius:'8px',fontSize:'11px',lineHeight:'1.6',color:'#334155'}},ex.secuencia.map((p,i)=>h('div',{key:i},(p.nombre||'Movimiento')+' ×'+(p.reps||1)))),
                   prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},prev.kg?'Último rendimiento: '+prev.reps+' × '+prev.kg+' kg':'Último rendimiento: '+prev.reps+' reps')
                 ),
                 h('div',{style:{textAlign:'right'}},
@@ -1241,11 +1242,12 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
           };
           const tecBanner=null;
           if(isBiserie){
+            const gkey=activeSess+'|'+group.map(e=>String(e.origId||e.id)).join('-');const gm=(cfg.groupMeta||{})[gkey]||{};
+            const glabel=String(gm.tipo|| (group.length>2?'Serie gigante':'Biserie')).toUpperCase();
             return h('div',{key:'g'+gi,style:card},
-              h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}},h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}}),h('span',{style:{fontSize:'10px',fontWeight:'800',color:'#999',letterSpacing:'0.1em'}},group.length>2?'SERIE GIGANTE':'BISERIE'),h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}})),
-              group.map(ex=>exCard(ex)),
-              tecBanner
-            );
+              h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}},h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}}),h('span',{style:{fontSize:'10px',fontWeight:'800',color:'#999',letterSpacing:'0.1em'}},glabel),h('div',{style:{flex:1,height:'1px',background:'rgba(0,0,0,0.08)'}})),
+              (gm.vueltas||gm.descanso)&&h('div',{style:{fontSize:'11px',color:'#777',textAlign:'center',marginBottom:'12px'}},(gm.vueltas?gm.vueltas+' vueltas':'')+(gm.vueltas&&gm.descanso?' · ':'')+(gm.descanso?'Descanso '+gm.descanso+' al terminar el grupo':'')),
+              group.map((ex,ix)=>h('div',{key:'wrap'+ex.id},h('div',{style:{fontSize:'10px',fontWeight:'900',color:AC,marginBottom:'4px'}},String.fromCharCode(65+gi)+(ix+1)),exCard(ex))),tecBanner);
           }
           return h('div',{key:'g'+gi,style:card},exCard(group[0]),tecBanner);
         })
@@ -1853,8 +1855,9 @@ function App(){
           const exData=rows.map((r,i)=>{
             // ID = columna ID del sheet (key estable). i+1 solo como fallback. NUNCA leer KgInicial.
             var sheetId=parseInt(r.ID!==undefined?r.ID:(r.id!==undefined?r.id:''));
+            var seq=[];try{seq=JSON.parse(String(r.Secuencia||'')||'[]');if(!Array.isArray(seq))seq=[];}catch(_e){seq=[];}
             return{id:isNaN(sheetId)?i+1:sheetId,n:String(r.Nombre||r.NOMBRE||r.nombre||''),m:String(r.Musculo||r.Músculo||r.MÚSCULO||''),
-              low:parseInt(r.RepMin||r['Rep Min'])||8,hi:parseInt(r.RepMax||r['Rep Max'])||12,kg:null,url:String(r.Tutorial||r.TUTORIAL||''),r1:'',r2:''};
+              low:parseInt(r.RepMin||r['Rep Min'])||8,hi:parseInt(r.RepMax||r['Rep Max'])||12,kg:null,url:String(r.Tutorial||r.TUTORIAL||''),tipo:String(r.TipoEntidad||'ejercicio').toLowerCase(),secuencia:seq,r1:'',r2:''};
           });
           setExes(exData);exesRef.current=exData;
           // Migración automática DESACTIVADA — se corre a mano desde ?ajustar=true cuando el mapeo sea confiable.
@@ -1916,16 +1919,22 @@ function App(){
           const num=parseInt(fila.NumSesiones)||3;
           const assign={};
           const norm2=n=>n.trim().toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');
-          ['A','B','C','D'].slice(0,num).forEach(s=>{
-            const nombres=String(fila['Sesion'+s]||'').split(',').map(n=>n.trim()).filter(Boolean);
-            assign[s]=nombres.map(nombre=>{
-              if(nombre.includes('+')){
-                // biserie o serie gigante: 2+ ejercicios separados por +
-                return nombre.split('+').map(n=>{const ex=exesRef.current.find(e=>norm2(e.n)===norm2(n.trim()));return ex?ex.id:null;}).filter(Boolean);
-              }
-              const ex=exesRef.current.find(e=>norm2(e.n)===norm2(nombre.trim()));
-              return ex?ex.id:null;
-            }).filter(v=>v!==null);
+          const groupMeta={};
+          ['A','B','C','D','E'].slice(0,num).forEach(s=>{
+            var structured=null;try{const raw=String(fila['Sesion'+s+'Data']||'').trim();if(raw)structured=JSON.parse(raw);}catch(_e){structured=null;}
+            if(Array.isArray(structured)&&structured.length){
+              assign[s]=structured.map(function(item){
+                if(item&&item.kind==='group'){
+                  const ids=(item.items||[]).sort((a,b)=>(a.orden||0)-(b.orden||0)).map(x=>parseInt(x.ejercicioId)).filter(x=>!isNaN(x));
+                  if(ids.length)groupMeta[s+'|'+ids.join('-')]={grupoId:item.grupoId||'',tipo:item.tipoGrupo||'Agrupación',vueltas:item.vueltas||'',descanso:item.descansoGrupo||''};
+                  return ids;
+                }
+                const id=parseInt(item&&item.ejercicioId);return isNaN(id)?null:id;
+              }).filter(v=>v!==null&&(!Array.isArray(v)||v.length));
+            }else{
+              const nombres=String(fila['Sesion'+s]||'').split(',').map(n=>n.trim()).filter(Boolean);
+              assign[s]=nombres.map(nombre=>{if(nombre.includes('+'))return nombre.split('+').map(n=>{const ex=exesRef.current.find(e=>norm2(e.n)===norm2(n.trim()));return ex?ex.id:null;}).filter(Boolean);const ex=exesRef.current.find(e=>norm2(e.n)===norm2(nombre.trim()));return ex?ex.id:null;}).filter(v=>v!==null);
+            }
           });
           const hiitSess=['A','B','C','D'].map(s=>{
             const nom=String(fila['HIIT'+s]||'').trim();
@@ -1937,7 +1946,7 @@ function App(){
             const MAP={'rehabilitacion':'rehab','rehab':'rehab','progresion base':'base','progresionbase':'base','base':'base','intensidad':'intensidad','volumen':'volumen','fuerza':'fuerza'};
             return MAP[n]||n;
           };
-          const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess,pesoRef:parseFloat(fila.PesoRef)||0,nivel:String(fila.Nivel||'').toLowerCase()};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
+          const newCfg={num,assign,groupMeta,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess,pesoRef:parseFloat(fila.PesoRef)||0,nivel:String(fila.Nivel||'').toLowerCase()};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
           const tmpl=parseInt(fila.Template);
           if(!isNaN(tmpl)&&tmpl>0)localStorage.setItem(`ase_${user}_tmpl`,String(tmpl)); else localStorage.removeItem(`ase_${user}_tmpl`);
         }
