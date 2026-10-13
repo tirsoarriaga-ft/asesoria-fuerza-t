@@ -1751,10 +1751,9 @@ function App(){
   // solo refresca AsesoradoID/FechaInicio y no decide si hay sesión.
   const initialUser=(()=>{try{return localStorage.getItem(USER_KEY)||null;}catch(e){return null;}})();
   const [user,setUser]=useState(initialUser);
-  const [sessionReady,setSessionReady]=useState(()=>{
-    if(!initialUser)return true;
-    try{return !!localStorage.getItem(`ase_${initialUser}_startdate`);}catch(e){return false;}
-  });
+  // Una sesión existente NO se considera lista hasta refrescar identidad + FechaInicio desde Sheets.
+  // Evita calcular SemanaTotal con un startdate local viejo (caso Lucas).
+  const [sessionReady,setSessionReady]=useState(()=>!initialUser);
   const [tab,setTab]=useState('d');
   const [selExOpt,setSelExOpt]=useState(0);
   const [wk,setWk]=useState({id:'sem_1',num:1,label:'...'});
@@ -1810,8 +1809,12 @@ function App(){
         if(a){
           const id=String(a.AsesoradoID||'').trim();
           const fi=String(a.FechaInicio||'').trim();
-          if(id)localStorage.setItem(`ase_${savedUser}_asesoradoId`,id);
-          if(fi)localStorage.setItem(`ase_${savedUser}_startdate`,fi);
+          if(id)localStorage.setItem(`ase_${savedUser}_asesoradoId`,id); else localStorage.removeItem(`ase_${savedUser}_asesoradoId`);
+          if(fi)localStorage.setItem(`ase_${savedUser}_startdate`,fi); else localStorage.removeItem(`ase_${savedUser}_startdate`);
+        }else{
+          // Si el nombre ya no existe, no conservar identidad/fecha canónicas obsoletas.
+          localStorage.removeItem(`ase_${savedUser}_asesoradoId`);
+          localStorage.removeItem(`ase_${savedUser}_startdate`);
         }
       })
       .catch(()=>{})
@@ -1821,7 +1824,7 @@ function App(){
 
   // Efecto 1: cargar ejercicios
   useEffect(()=>{
-    if(!user)return;
+    if(!user||!sessionReady)return;
     cambiandoSemana.current=true;dataLoaded.current=false;draftReady.current=false;
     // Calcular sem real del calendario
     const realNum=getRealWkNum(user);
@@ -1948,7 +1951,7 @@ function App(){
           setTimeout(function(){dataLoaded.current=true;draftReady.current=true;cambiandoSemana.current=false;},700);
         }
       });
-  },[user]);
+  },[user,sessionReady]);
 
   // Efecto 2: cargar rutinas y menús después de ejercicios
   useEffect(()=>{
@@ -1957,7 +1960,8 @@ function App(){
     fetch(SCRIPT_URL+'?action=rutinas')
       .then(r=>r.json())
       .then(rutinas=>{
-        const fila=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase());
+        const currentId=String(localStorage.getItem(`ase_${user}_asesoradoId`)||'').trim();
+        const fila=rutinas.find(r=>{const rid=String(r.AsesoradoID||'').trim();return currentId&&rid?rid===currentId:String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase();});
         if(fila){
           const num=parseInt(fila.NumSesiones)||3;
           const assign={};
@@ -2038,7 +2042,8 @@ function App(){
     ]).then(([menusRows,dietasRows])=>{
       const foodDB=buildFoodDB(menusRows||[]);
       localStorage.setItem(`ase_${user}_foodDB`,JSON.stringify(foodDB)); // guardar para equivalencias
-      const dietaFila=(dietasRows||[]).find(r=>String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase());
+      const currentId=String(localStorage.getItem(`ase_${user}_asesoradoId`)||'').trim();
+      const dietaFila=(dietasRows||[]).find(r=>{const rid=String(r.AsesoradoID||'').trim();return currentId&&rid?rid===currentId:String(r.Asesorado||'').trim().toLowerCase()===user.trim().toLowerCase();});
       if(dietaFila){
         const tmpl=parseInt(dietaFila.Template);
         if(!isNaN(tmpl)&&tmpl>0)localStorage.setItem(`ase_${user}_tmpl`,String(tmpl)); else localStorage.removeItem(`ase_${user}_tmpl`);
@@ -2065,8 +2070,11 @@ function App(){
         if(a){
           const id=String(a.AsesoradoID||'').trim();
           const fi=String(a.FechaInicio||'').trim();
-          if(id)localStorage.setItem(`ase_${name}_asesoradoId`,id);
-          if(fi)localStorage.setItem(`ase_${name}_startdate`,fi);
+          if(id)localStorage.setItem(`ase_${name}_asesoradoId`,id); else localStorage.removeItem(`ase_${name}_asesoradoId`);
+          if(fi)localStorage.setItem(`ase_${name}_startdate`,fi); else localStorage.removeItem(`ase_${name}_startdate`);
+        }else{
+          localStorage.removeItem(`ase_${name}_asesoradoId`);
+          localStorage.removeItem(`ase_${name}_startdate`);
         }
       })
       .catch(()=>{})
@@ -2378,7 +2386,7 @@ function App(){
       localStorage.setItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(d));
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
       if(!list.includes(wk.id)){list.push(wk.id);localStorage.setItem(HK(user),JSON.stringify(list));}
-      setSaved(completeWeek?true:'progreso');loadH();
+      setSaved(completeWeek?false:'progreso');loadH();
       const e1rmSnap={};
       try{
         const savedD=JSON.parse(localStorage.getItem(SK(wk.id,user))||'{}');
@@ -2458,17 +2466,12 @@ function App(){
   }
 
   async function reportExistsOnSheet(){
-    const expectedId=localStorage.getItem(`ase_${user}_asesoradoId`)||'';
+    const expectedId=String(localStorage.getItem(`ase_${user}_asesoradoId`)||'').trim();
     try{
-      const rows=await fetch(SCRIPT_URL+'?action=reportes&_t='+Date.now()).then(r=>r.json());
-      return (rows||[]).some(function(r){
-        const sameWeek=String(r.SemanID||'').trim()===String(wk.id||'').trim();
-        const rowId=String(r.AsesoradoID||'').trim();
-        const rowName=String(r.Asesorado||'').trim().toLowerCase();
-        const userName=String(user||'').trim().toLowerCase();
-        const samePerson=expectedId?(rowId===expectedId||(!rowId&&rowName===userName)):rowName===userName;
-        return sameWeek&&samePerson;
-      });
+      const q=new URLSearchParams({action:'reporteestado',semanId:String(wk.id||''),_t:String(Date.now())});
+      if(expectedId)q.set('asesoradoId',expectedId); else q.set('asesorado',String(user||''));
+      const res=await fetch(SCRIPT_URL+'?'+q.toString()).then(r=>r.json());
+      return !!(res&&res.ok&&res.existe);
     }catch(e){return false;}
   }
 
@@ -2495,25 +2498,16 @@ function App(){
 
   // El estado "Reporte enviado" se reconcilia con Reportes; localStorage no decide solo.
   useEffect(()=>{
-    if(!user||!wk.id)return;
+    if(!user||!wk.id||!sessionReady)return;
     let alive=true;
     const sentKey=`ase_${user}_reporteSent_${wk.id}`;
-    const expectedId=localStorage.getItem(`ase_${user}_asesoradoId`)||'';
-    fetch(SCRIPT_URL+'?action=reportes&_t='+Date.now()).then(r=>r.json()).then(rows=>{
+    reportExistsOnSheet().then(found=>{
       if(!alive)return;
-      const found=(rows||[]).some(function(r){
-        const sameWeek=String(r.SemanID||'').trim()===String(wk.id||'').trim();
-        const rowId=String(r.AsesoradoID||'').trim();
-        const rowName=String(r.Asesorado||'').trim().toLowerCase();
-        const userName=String(user||'').trim().toLowerCase();
-        const samePerson=expectedId?(rowId===expectedId||(!rowId&&rowName===userName)):rowName===userName;
-        return sameWeek&&samePerson;
-      });
       if(found)localStorage.setItem(sentKey,'1'); else localStorage.removeItem(sentKey);
       setSaved(found?true:false);
     }).catch(()=>{});
     return()=>{alive=false;};
-  },[user,wk.id]);
+  },[user,wk.id,sessionReady]);
 
   async function save(){
     if(isViewingPast&&!window.confirm('Estás por modificar y enviar un reporte de una semana que ya pasó. ¿Continuar?'))return;
