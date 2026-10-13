@@ -1968,11 +1968,21 @@ function App(){
             if(Array.isArray(structured)&&structured.length){
               assign[s]=structured.map(function(item){
                 if(item&&item.kind==='group'){
-                  const ids=(item.items||[]).sort((a,b)=>(a.orden||0)-(b.orden||0)).map(x=>parseInt(x.ejercicioId)).filter(x=>!isNaN(x));
+                  const ordered=(item.items||[]).slice().sort((a,b)=>(a.orden||0)-(b.orden||0));
+                  const ids=ordered.map(x=>parseInt(x.ejercicioId)).filter(x=>!isNaN(x));
+                  // Prescripción explícita del Coach: sólo una técnica no vacía reemplaza la pauta vigente.
+                  // Vacío NO borra la última técnica usada por el asesorado.
+                  ordered.forEach(function(x){
+                    const id=parseInt(x.ejercicioId),tec=String(x.tecnicaIntensidad||'').trim();
+                    if(!isNaN(id)&&tec)try{localStorage.setItem(`ase_${user}_intensityPrescription_${s}_${id}`,tec);}catch(_e){}
+                  });
                   if(ids.length)groupMeta[s+'|'+ids.join('-')]={grupoId:item.grupoId||'',tipo:item.tipoGrupo||'Agrupación',vueltas:item.vueltas||'',descanso:item.descansoGrupo||''};
                   return ids;
                 }
-                const id=parseInt(item&&item.ejercicioId);return isNaN(id)?null:id;
+                const id=parseInt(item&&item.ejercicioId);
+                const tec=String(item&&item.tecnicaIntensidad||'').trim();
+                if(!isNaN(id)&&tec)try{localStorage.setItem(`ase_${user}_intensityPrescription_${s}_${id}`,tec);}catch(_e){}
+                return isNaN(id)?null:id;
               }).filter(v=>v!==null&&(!Array.isArray(v)||v.length));
             }else{
               const nombres=String(fila['Sesion'+s]||'').split(',').map(n=>n.trim()).filter(Boolean);
