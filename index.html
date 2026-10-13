@@ -503,10 +503,10 @@ function AjustarSemana({onClose}){
 
 // ── MI BLOQUE ─────────────────────────────────────────────────────────
 const BLOQUE_INFO={
-  'base':{titulo:'Bloque Base',sub:'calibrar carga y ejecución',texto:'Foco: completar 3 series efectivas con las repeticiones pautadas y registrar si cumpliste la carga indicada. Si cumplís, la próxima exposición progresa 5%; si no, mantiene. No buscamos e1RM.'},
-  'volumen':{titulo:'Bloque Volumen',sub:'acumular trabajo efectivo',texto:'Foco: sostener técnica y registrar kg + repeticiones reales. Las series efectivas progresan 2-2-3-3-4-4 durante las 6 semanas. Cuando la primera serie efectiva llega al techo del rango, la próxima exposición sube 5%.'},
-  'fuerza':{titulo:'Bloque Fuerza',sub:'protocolo por e1RM',texto:'Foco: el Ejercicio 1 de cada sesión usa su propio test y protocolo de fuerza. Los accesorios mantienen su lógica de repeticiones y progresan 5% cuando la primera serie efectiva llega al techo. Evitá el fallo en el principal y respetá el protocolo.'},
-  'intensidad':{titulo:'Bloque Intensidad',sub:'una serie efectiva + técnica',texto:'Foco: una serie efectiva de calidad y la técnica de intensificación pautada. Registrá la ejecución real; la técnica es información de ejecución y no modifica el e1RM.'},
+  'base':{titulo:'Bloque Base',sub:'ejecutar la pauta',texto:'Semana a semana usá la carga sugerida, completá las repeticiones indicadas y al terminar marcá si pudiste cumplir el protocolo.'},
+  'volumen':{titulo:'Bloque Volumen',sub:'ejecutar las series pautadas',texto:'Seguí las aproximaciones y completá las series efectivas que aparecen pautadas en cada ejercicio. Esas series son al fallo técnico (máximas repeticiones posibles hasta perder técnica, recorrido o control). Registrá las repeticiones que salieron. No agregues kg ni series por tu cuenta.'},
+  'fuerza':{titulo:'Bloque Fuerza',sub:'seguir el protocolo',texto:'Seguí el protocolo que aparece en el ejercicio principal. Usá la carga indicada tanto para las aproximaciones como para las series efectivas y, al terminar, confirmá si pudiste cumplirlo. Los demás ejercicios se realizan normalmente según las series que muestra en cada uno.'},
+  'intensidad':{titulo:'Bloque Intensidad',sub:'serie efectiva + técnica',texto:'Realizá la serie efectiva indicada y marcá la técnica de intensidad que pautaron con el coach. Registrá las repeticiones que realmente hiciste antes de la técnica de intensidad.'},
   'rehab':{titulo:'Bloque Rehabilitación',sub:'ejecutar y registrar sin progresión automática',texto:'Foco: completar 3 series efectivas con las repeticiones y carga pautadas, registrar si pudiste cumplir y describir cualquier dolor o modificación. La carga no progresa automáticamente.'}
 };
 
@@ -546,10 +546,10 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     }
   }
   const BLOQUES={
-    volumen:{label:'Volumen',color:'#1D9E75',emoji:'📈',hint:'2-2-3-3-4-4 series efectivas. Registrá kg + reps; al llegar al techo en la primera serie, la próxima exposición sube 5%.'},
-    intensidad:{label:'Intensidad',color:'#378ADD',emoji:'🏋️',hint:'1 serie efectiva + técnica de intensificación. Registrá lo que realmente ejecutaste.'},
-    fuerza:{label:'Fuerza',color:'#DC2626',emoji:'💪',hint:'Ejercicio 1 por protocolo e1RM; accesorios con progresión por primera serie efectiva.'},
-    base:{label:'Base',color:'#F59E0B',emoji:'🌱',hint:'3 series efectivas con reps pautadas. Cumplí → +5% próxima exposición; No cumplí → mantiene.'},
+    volumen:{label:'Volumen',color:'#1D9E75',emoji:'📈',hint:'Completá únicamente las series que aparecen pautadas en cada ejercicio y registrá las repeticiones reales.'},
+    intensidad:{label:'Intensidad',color:'#378ADD',emoji:'🏋️',hint:'1 serie efectiva por ejercicio. Registrá las reps previas a la técnica y marcá la técnica ejecutada.'},
+    fuerza:{label:'Fuerza',color:'#DC2626',emoji:'💪',hint:'El ejercicio principal tiene un protocolo propio. Seguí sus cargas y confirmá si lo cumpliste.'},
+    base:{label:'Base',color:'#F59E0B',emoji:'🌱',hint:'Usá la carga pautada, completá las reps indicadas y confirmá si cumpliste el protocolo.'},
     rehab:{label:'Rehabilitación',color:'#8B5CF6',emoji:'🩺',hint:'3 series efectivas con reps pautadas y registro de cumplimiento. Sin progresión automática.'}
   };
   const bloque=(cfg?.bloque||'volumen').toLowerCase();
@@ -682,13 +682,17 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     {sems:[7],series:5,reps:1,pct:95}
   ];
   const semEnBloque=weeksInBlock+1;
-  const rolFuerza=(ex)=>{
+  const posicionSesion=(ex)=>{
     const lista=(cfg.assign[activeSess]||[]);
     let pos=-1,count=0;
     for(const item of lista){
       const ids=Array.isArray(item)?item:[item];
       for(const id of ids){if(String(id)===String(ex.id))pos=count;count++;}
     }
+    return pos;
+  };
+  const rolFuerza=(ex)=>{
+    const pos=posicionSesion(ex);
     if(pos===0)return 'principal';
     if(pos===1||pos===2)return 'accesorio';
     return 'finalizador';
@@ -721,6 +725,11 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     return 0;
   };
   const seriesKeysEx=(ex)=>{
+    if(bloque==='volumen'){
+      const pos=posicionSesion(ex);
+      const n=(pos>=0&&pos<4)?Math.min(4,2+Math.floor((semEnBloque-1)/2)):2;
+      return ['r1','r2','r3','r4'].slice(0,n);
+    }
     if(bloque!=='fuerza')return SERIES_KEYS;
     const rol=rolFuerza(ex);
     const p=protoActual();
@@ -756,6 +765,23 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
       return;
     }
     setBaseProto(function(p){return Object.assign({},p,{[exId]:(p[exId]===val?'':val)});});
+  };
+
+  // FUERZA S2–S7: confirmación del protocolo del principal, por semana + sesión.
+  const forceProtoKey=`ase_${user}_forceProto_${wk.id}_${activeSess}`;
+  const [forceProto,setForceProto]=useState(()=>{try{return JSON.parse(localStorage.getItem(forceProtoKey)||'{}');}catch(e){return{};}});
+  useEffect(()=>{try{setForceProto(JSON.parse(localStorage.getItem(`ase_${user}_forceProto_${wk.id}_${activeSess}`)||'{}'));}catch(e){setForceProto({});}},[activeSess,wk.id,user]);
+  useEffect(()=>{if(!isViewingPast&&!isViewingFuture)try{localStorage.setItem(forceProtoKey,JSON.stringify(forceProto));}catch(e){}},[forceProto,forceProtoKey,isViewingPast,isViewingFuture]);
+  const getForceProto=(exId)=>{
+    if(isViewingPast&&_wSnap?.exec?.forceProto){const fp=_wSnap.exec.forceProto[activeSess]||{};return fp[exId]||fp[String(exId)]||'';}
+    return forceProto[exId]||forceProto[String(exId)]||'';
+  };
+  const toggleForceProto=(exId,val)=>{if(isViewingPast||isViewingFuture)return;setForceProto(p=>Object.assign({},p,{[exId]:(p[exId]===val?'':val)}));setSaved(false);};
+  const getInitialForceTest=(ex)=>{
+    try{
+      const z=JSON.parse(localStorage.getItem(`ase_${user}_rmTest_sem_${bloqueInicio}_${activeSess}`)||'{}')||{};
+      return z[ex.id]||z[String(ex.id)]||null;
+    }catch(e){return null;}
   };
 
   const intensityPrescriptionKey=(ex)=>`ase_${user}_intensityPrescription_${activeSess}_${ex.id}`;
@@ -1096,7 +1122,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   ex.tipo==='complex'&&ex.secuencia&&ex.secuencia.length>0&&h('div',{style:{marginTop:'8px',padding:'8px 10px',background:'#F8FAFC',borderRadius:'8px',fontSize:'11px',lineHeight:'1.6',color:'#334155'}},ex.secuencia.map((p,i)=>h('div',{key:i},(p.nombre||'Movimiento')+' ×'+(p.reps||1)))),
                   prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},prev.kg?'Último rendimiento: '+prev.reps+' × '+prev.kg+' kg':'Último rendimiento: '+prev.reps+' reps')
                 ),
-                h('div',{style:{textAlign:'right'}},
+                (bloque==='fuerza'&&rolFuerza(ex)==='principal')?null:h('div',{style:{textAlign:'right'}},
                   editing
                     ?h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('input',{type:'text',inputMode:'decimal',value:kgVal,onChange:e=>setKgVal(e.target.value),onKeyDown:e=>e.key==='Enter'&&doSaveKg(ex,kgVal),onBlur:()=>doSaveKg(ex,kgVal),autoFocus:true,style:{width:'64px',textAlign:'center',fontSize:'18px',fontWeight:'700',padding:'4px 6px',border:'2px solid '+G,borderRadius:'6px',color:'#111'}}),h('span',{style:{fontSize:'13px',color:'#999'}},'kg'))
                     :getKg(ex)!==undefined
@@ -1157,7 +1183,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   return h('div',null,
                     h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
                       h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'ESTABLECER REFERENCIA'),
-                      h('div',{style:{fontSize:'11px',color:'#9333EA',margin:'4px 0 8px'}},'Serie pesada/submáxima de 3–5 reps · e1RM = kg × (1 + reps/30).'),
+                      h('div',{style:{fontSize:'11px',color:'#9333EA',margin:'4px 0 8px',lineHeight:'1.5'}},'Empezá con una carga cómoda y aumentá progresivamente el peso en cada serie mientras reducís las repeticiones. Buscá una carga exigente que puedas ejecutar con buena técnica y con la que falles por debajo de 5 repeticiones. Cuando la encuentres (ej. 80 kg × 4 reps), registrá kg + reps.'),
                       h('div',{style:{display:'flex',gap:'8px'}},
                         h('input',{type:'text',inputMode:'decimal',placeholder:'kg',value:t.kg||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:e.target.value}})),style:{...inp,textAlign:'center'}}),
                         h('input',{type:'text',inputMode:'numeric',placeholder:'reps',value:t.reps||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
@@ -1174,7 +1200,9 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                 if(esRetestFuerza){
                   return h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
                     h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'RETESTEAR REFERENCIA · Cierre de Fuerza'),
-                    h('div',{style:{fontSize:'11px',color:'#9333EA',margin:'4px 0 8px'}},'Cargá kg + reps. El bloque no se reinicia automáticamente.'),
+                    (function(){const it=getInitialForceTest(ex);const ik=parseFloat(it?.kg)||0;return h('div',{style:{fontSize:'11px',color:'#9333EA',margin:'4px 0 8px',lineHeight:'1.55'}},
+                      ik>0?('Referencia inicial real: '+ik+' kg × '+(parseInt(it?.reps)||'—')+' reps. Aproximaciones sugeridas: 12 reps con '+aproxUtil(ik,0.5)+' kg (50%) y 6 reps con '+aproxUtil(ik,0.75)+' kg (75%). Empezá el retest con '+ik+' kg y ajustá si la ejecución lo permite. Registrá el mejor intento.'):'Recuperá la carga real utilizada en el test inicial y usala como punto de partida del retest. Registrá kg + reps reales.'
+                    );})(),
                     h('div',{style:{display:'flex',gap:'8px'}},
                       h('input',{type:'text',inputMode:'decimal',placeholder:'kg',value:t.kg||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:e.target.value}})),style:{...inp,textAlign:'center'}}),
                       h('input',{type:'text',inputMode:'numeric',placeholder:'reps',value:t.reps||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
@@ -1185,19 +1213,34 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                 }
                 if(fuerzaCerrada)return h('div',{style:{marginBottom:'10px',background:'#F5F5F5',border:'1px solid #DDD',borderRadius:'8px',padding:'10px',fontSize:'12px',fontWeight:'700',color:'#555'}},'Bloque Fuerza finalizado · esperando próxima planificación del coach.');
                 const p=protoActual();
+                const kp=kgPrincipal(ex);
                 return h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
                   h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'Principal · Semana '+semEnBloque+' del bloque'),
-                  h('div',{style:{fontSize:'14px',color:'#6B21A8',marginTop:'4px',fontWeight:'800'}},p.series+' × '+p.reps+' · '+p.pct+'% · '+(kgPrincipal(ex)||'—')+' kg'),
-                  !ref&&h('div',{style:{fontSize:'11px',color:'#9A3412',marginTop:'6px',fontWeight:'700'}},'Falta realizar o registrar el test de Semana 1. Sin ese e1RM no se muestra el protocolo.')
+                  kp>0&&h('div',{style:{fontSize:'11px',color:'#6B7280',marginTop:'7px',lineHeight:'1.55'}},'Aproximación 1 · 12 reps · 50% · '+aproxUtil(kp,0.5)+' kg · Aproximación 2 · 6 reps · 75% · '+aproxUtil(kp,0.75)+' kg'),
+                  h('div',{style:{fontSize:'14px',color:'#6B21A8',marginTop:'6px',fontWeight:'800'}},p.series+' × '+p.reps+' · '+p.pct+'% · '+(kp||'—')+' kg'),
+                  !ref&&h('div',{style:{fontSize:'11px',color:'#9A3412',marginTop:'6px',fontWeight:'700'}},'Falta realizar o registrar el test de Semana 1. Sin ese e1RM no se muestra el protocolo.'),
+                  ref>0&&semEnBloque>=2&&semEnBloque<=7&&h('div',{style:{marginTop:'10px',paddingTop:'9px',borderTop:'1px solid #D8B4FE'}},
+                    h('div',{style:{fontSize:'11px',fontWeight:'800',color:'#6B21A8',marginBottom:'7px'}},'¿Cumpliste el protocolo indicado?'),
+                    h('div',{style:{display:'flex',gap:'8px'}},
+                      h('button',{onClick:()=>toggleForceProto(ex.id,'si'),style:{flex:1,padding:'8px',borderRadius:'8px',border:'1px solid '+(getForceProto(ex.id)==='si'?G:'#D8B4FE'),background:getForceProto(ex.id)==='si'?G:'#fff',color:getForceProto(ex.id)==='si'?'#fff':'#6B21A8',fontWeight:'800',cursor:'pointer'}},'Cumplí'),
+                      h('button',{onClick:()=>toggleForceProto(ex.id,'no'),style:{flex:1,padding:'8px',borderRadius:'8px',border:'1px solid '+(getForceProto(ex.id)==='no'?R:'#D8B4FE'),background:getForceProto(ex.id)==='no'?'#FEF2F2':'#fff',color:getForceProto(ex.id)==='no'?R:'#6B21A8',fontWeight:'800',cursor:'pointer'}},'No cumplí')
+                    )
+                  )
                 );
               })()),
-              // BASE sin carga: primero calibrar una carga; no mostrar todavía el protocolo fijo.
-              bloque==='base'&&!getKg(ex)&&h('div',{style:{marginBottom:'10px',background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:'8px',padding:'10px 12px'}},
-                h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#334155'}},'Primero encontrá tu carga de trabajo'),
-                h('div',{style:{fontSize:'11px',color:'#64748B',lineHeight:'1.5',marginTop:'4px'}},'Probá cargas de forma progresiva hasta encontrar una que te permita hacer aproximadamente '+Math.round((ex.low+ex.hi)/2)+' repeticiones con buena técnica y esfuerzo moderado: desafiante, pero sin llegar al límite. Después guardá esos kg.')
+              // Sin carga conocida: ayuda operativa según el bloque. En Fuerza el principal usa su test propio.
+              !getKg(ex)&&!(bloque==='fuerza'&&rolFuerza(ex)==='principal')&&h('div',{style:{marginBottom:'10px',background:'#F8FAFC',border:'1px solid #E2E8F0',borderRadius:'8px',padding:'10px 12px'}},
+                h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#334155'}},'Primero encontrá tus cargas de trabajo'),
+                h('div',{style:{fontSize:'11px',color:'#64748B',lineHeight:'1.5',marginTop:'4px'}},
+                  bloque==='volumen'
+                    ?('Empezá con un peso que creas que te permita entrar en el rango indicado y hacé '+Math.round((ex.low+ex.hi)/2)+' reps (mitad del rango '+ex.low+'–'+ex.hi+'). Subí la carga haciendo esas series hasta encontrar el peso con el que ya no llegás a cumplirlas. Anotá ese peso, terminá las series restantes y registrá las reps que salieron en cada una.')
+                    :bloque==='intensidad'
+                      ?('Buscá una carga que te permita llegar aproximadamente a '+Math.round((ex.low+ex.hi)/2)+' reps, la mitad del rango indicado, llegando al fallo técnico y sin que sobren repeticiones. Registrá ese peso y las reps que salieron. La técnica de intensidad se aplica después: no se registran los kg ni las reps adicionales de la técnica.')
+                      :('Empezá con un peso cómodo y aumentalo progresivamente hasta encontrar una carga con la que completar la pauta (ej. 3×'+Math.round((ex.low+ex.hi)/2)+' reps) cueste, pero se logre con buena técnica, control y recorrido. Anotá esa carga: va a ser la referencia para las próximas semanas.')
+                )
               ),
               // Aproximaciones: no cuentan como series efectivas. Se muestran para cualquier carga de trabajo > 0.
-              !((bloque==='fuerza'&&rolFuerza(ex)==='principal')||(bloque==='base'&&!getKg(ex)))&&aproxUtil(getKg(ex),0.5)&&
+              !(bloque==='fuerza'&&rolFuerza(ex)==='principal')&&aproxUtil(getKg(ex),0.5)&&
                 h('div',{style:{marginBottom:'8px',fontSize:'11px',color:'#64748B',background:'#F8FAFC',borderRadius:'7px',padding:'7px 9px'}},
                   bloque==='base'||bloque==='rehab'
                     ?('Aproximación · 12 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
@@ -1205,7 +1248,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                 ),
               // Fuerza principal no usa celdas redundantes. Base/Rehab muestran una pauta textual:
               // las reps son prescripción, no un dato que el asesorado deba completar.
-              ((bloque==='fuerza'&&rolFuerza(ex)==='principal')||(bloque==='base'&&!getKg(ex)))?null:
+              (bloque==='fuerza'&&rolFuerza(ex)==='principal')?null:
               (bloque==='base'||bloque==='rehab')
                 ?h('div',{style:{marginBottom:'10px',background:'#F5F5F5',border:'1px solid #E5E7EB',borderRadius:'8px',padding:'10px 12px',textAlign:'center'}},
                     h('div',{style:{fontSize:'15px',fontWeight:'900',color:'#333'}},'3 series de '+Math.round((ex.low+ex.hi)/2)+' reps'),
@@ -1288,7 +1331,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
   return h('div',null,
     h('div',{style:{background:'#111',borderRadius:'12px',padding:'16px',marginBottom:'12px'}},
       h('div',{style:{fontSize:'10px',fontWeight:'700',color:'rgba(255,255,255,.5)',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:'4px'}},'DIETA · '+Math.round(tmpl)+' KCAL'),
-      h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#fff',lineHeight:'1.45'}},'Elegí uno de los 2 menús de cada comida. Las porciones prácticas son aproximadas; entre paréntesis tenés el gramaje exacto.')),
+      h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#fff',lineHeight:'1.45'}},'Elegí uno de los 2 menús de cada comida. Si querés cambiar un alimento, reemplazalo por otro de la misma categoría usando la cantidad indicada en Equivalencias. Las porciones prácticas son aproximadas; el gramaje entre paréntesis es la referencia exacta.')),
 
     comidas.length===0?h('div',{style:{...card,textAlign:'center',padding:'28px 18px',fontSize:'12px',color:'#888'}},'El Template está cargado, pero todavía faltan los menús A/B en la hoja Dietas.'):
     comidas.map(c=>h('div',{key:c.id,style:{...card,marginBottom:'10px'}},
@@ -1303,7 +1346,7 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
 
     h('div',{style:{...card,marginTop:'12px'}},
       h('div',{style:{fontSize:'15px',fontWeight:'900',marginBottom:'4px'}},'Equivalencias'),
-      h('div',{style:{fontSize:'11px',color:'#777',marginBottom:'10px',lineHeight:'1.45'}},'Podés intercambiar alimentos dentro de la misma familia usando estas cantidades como referencia.'),
+      h('div',{style:{fontSize:'11px',color:'#777',marginBottom:'10px',lineHeight:'1.45'}},'Usá estas equivalencias para reemplazar alimentos de la misma familia, no para agregar alimentos extra al menú.'),
       cats.map((c,ci)=>h('div',{key:c.id,style:{marginTop:ci?'13px':'0'}},
         h('div',{style:{fontSize:'10px',fontWeight:'900',letterSpacing:'.08em',color:'#777',marginBottom:'5px'}},c.title),
         byCat(c.id).map(f=>h('div',{key:f.key,style:{display:'flex',justifyContent:'space-between',gap:'10px',padding:'5px 0',borderBottom:'1px solid rgba(0,0,0,.045)'}},
@@ -2190,6 +2233,15 @@ function App(){
       return 'Faltan respuestas de entrenamiento en '+(faltan.length===1?'la sesión ':'las sesiones ')+faltan.join(', ')+'.\n\nEn bloque Base NO tenés que cargar repeticiones: el registro es “Cumplí / No cumplí”.\n\nSi no entrenaste '+(faltan.length===1?'esa sesión':'esas sesiones')+', está bien dejarlo vacío. Si entrenaste y te olvidaste de registrarlo, elegí Cancelar y completalo antes de enviar.\n\n¿Confirmás que está bien enviar el reporte con esos datos de entrenamiento vacíos?';
     }
 
+    // FUERZA S2–S7: el principal se valida con Cumplí / No cumplí; no con celdas genéricas de reps/kg.
+    if(bloqueActual==='fuerza'){
+      const sb=Math.max(1,(parseInt(wk?.num)||1)-(parseInt(cfg?.bloqueInicio)||1)+1);
+      if(sb>=2&&sb<=7){
+        sesionesReq.forEach(s=>{let fp={};try{fp=JSON.parse(localStorage.getItem(`ase_${user}_forceProto_${wk.id}_${s}`)||'{}');}catch(e){}const ids=(cfg.assign?.[s]||[]).flat(Infinity).map(String);const id=ids[0];if(id&&!(fp[id]==='si'||fp[id]==='no'))faltan.push(s);});
+        if(faltan.length)return 'Falta confirmar si cumpliste el protocolo principal de Fuerza en '+(faltan.length===1?'la sesión ':'las sesiones ')+faltan.join(', ')+'.\n\nSi entrenaste, volvé a Entreno y marcá “Cumplí” o “No cumplí”. Si no entrenaste esa sesión, podés confirmar el envío con el dato vacío.';
+      }
+    }
+
     // OTROS BLOQUES: revisar la semana mostrada, no solamente el estado de la sesión actual.
     let snap={};
     try{snap=JSON.parse(localStorage.getItem(SK(wk.id,user))||'{}')||{};}catch(e){}
@@ -2272,14 +2324,20 @@ function App(){
         semanaBloque:semanaBloqueSave,
         fuerzaProtocolo:bloqueSave==='fuerza'?(fuerzaProtocolosSave[semanaBloqueSave]||null):null
       };
-      const execMeta={baseProto:{},intensity:{},forceTests:{},forceRefs:{},forceFinalRefs:{}};
+      const execMeta={baseProto:{},forceProto:{},intensity:{},forceTests:{},forceRefs:{},forceFinalRefs:{}};
       ['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).forEach(function(sess){
         try{execMeta.baseProto[sess]=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${sess}`)||'{}')||{};}catch(e){}
+        try{execMeta.forceProto[sess]=JSON.parse(localStorage.getItem(`ase_${user}_forceProto_${wk.id}_${sess}`)||'{}')||{};}catch(e){}
         const ids=(cfg?.assign?.[sess]||[]).flat(Infinity).map(String);
         ids.forEach(function(id){const iv=localStorage.getItem(`ase_${user}_intensity_${wk.id}_${sess}_${id}`);if(iv){if(!execMeta.intensity[sess])execMeta.intensity[sess]={};execMeta.intensity[sess][id]=iv;}const rv=localStorage.getItem(`ase_${user}_rmRef_b${bloqueInicioSave}_${sess}_${id}`)||localStorage.getItem(`ase_${user}_rmRef_${sess}_${id}`);if(rv){if(!execMeta.forceRefs[sess])execMeta.forceRefs[sess]={};execMeta.forceRefs[sess][id]=rv;}const rfv=localStorage.getItem(`ase_${user}_rmRefFinal_b${bloqueInicioSave}_${sess}_${id}`)||localStorage.getItem(`ase_${user}_rmRefFinal_${sess}_${id}`);if(rfv){if(!execMeta.forceFinalRefs[sess])execMeta.forceFinalRefs[sess]={};execMeta.forceFinalRefs[sess][id]=rfv;}});
         try{execMeta.forceTests[sess]=JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${wk.id}_${sess}`)||'{}')||{};}catch(e){}
       });
       if(bloqueSave==='base'||bloqueSave==='rehab')Object.entries(execMeta.baseProto).forEach(function(entry){const sess=entry[0],bp=entry[1]||{};Object.keys(bp).forEach(function(id){if(bp[id]!=='si'&&bp[id]!=='no')return;const kg=sessionKg?.[sess]?.[id]??sessionKg?.[sess]?.[parseInt(id)];if(parseFloat(kg)>0){if(!skUsed[sess])skUsed[sess]={};skUsed[sess][id]=parseFloat(kg);if(!usedSK[sess])usedSK[sess]={};usedSK[sess][id]=parseFloat(kg);}});});
+      // Fuerza S2–S7: la confirmación del protocolo es la evidencia del principal. La carga proviene del protocolo, no de sessKg.
+      if(bloqueSave==='fuerza'&&semanaBloqueSave>=2&&semanaBloqueSave<=7){
+        const pp=fuerzaProtocolosSave[semanaBloqueSave];
+        Object.entries(execMeta.forceProto||{}).forEach(function(entry){const sess=entry[0],fp=entry[1]||{};const ids=(cfg?.assign?.[sess]||[]).flat(Infinity).map(String);const id=ids[0];if(!id||!(fp[id]==='si'||fp[id]==='no'))return;const rv=localStorage.getItem(`ase_${user}_rmRef_b${bloqueInicioSave}_${sess}_${id}`)||localStorage.getItem(`ase_${user}_rmRef_${sess}_${id}`);const rm=parseFloat(rv)||0;if(rm>0&&pp?.pct){const kgp=Math.round((rm*pp.pct)/2.5)*2.5;if(!skUsed[sess])skUsed[sess]={};skUsed[sess][id]=kgp;if(!usedSK[sess])usedSK[sess]={};usedSK[sess][id]=kgp;}});
+      }
       // T4/T6 BLINDADO: Guardar progreso nunca puede achicar el patrimonio de una semana.
       // El estado vivo manda cuando tiene dato; Snapshot/Draft previos completan cualquier hueco.
       // Un campo vacío NO borra ejecución previamente guardada.
@@ -2843,12 +2901,12 @@ function App(){
         h('div',{style:{fontSize:'10px',fontWeight:'800',color:'rgba(255,255,255,.45)',letterSpacing:'.1em',textTransform:'uppercase'}},'Foco actual'),
         h('div',{style:{fontSize:'18px',fontWeight:'900',marginTop:'4px'}},info.titulo+' · Semana '+semBloque+'/'+dur),
         h('div',{style:{fontSize:'12px',lineHeight:'1.55',color:'rgba(255,255,255,.78)',marginTop:'7px'}},semBloque>dur?'Bloque finalizado, esperando planificación.':info.texto),
-        h('div',{style:{marginTop:'10px',paddingTop:'9px',borderTop:'1px solid rgba(255,255,255,.12)',fontSize:'11px',color:'rgba(255,255,255,.55)'}},
-          bloque==='fuerza'?'No es foco: llevar el ejercicio principal al fallo ni improvisar cargas fuera del protocolo.':
-          bloque==='base'?'No es foco: perseguir e1RM, fallo o sumar volumen por tu cuenta.':
-          bloque==='rehab'?'No es foco: progresar carga automáticamente.':
-          bloque==='volumen'?'No es foco: sumar series fuera de la progresión 2-2-3-3-4-4.':
-          'No es foco: convertir la técnica de intensidad en una medición de e1RM.'
+        semBloque===1&&h('div',{style:{marginTop:'10px',paddingTop:'9px',borderTop:'1px solid rgba(255,255,255,.12)',fontSize:'11px',color:'rgba(255,255,255,.62)',lineHeight:'1.5'}},
+          bloque==='fuerza'?'Semana 1: en el ejercicio principal vas a establecer una referencia de fuerza. En los demás ejercicios, si falta una carga, la app te va a indicar cómo buscarla.':
+          bloque==='volumen'?'Semana 1: si un ejercicio todavía no tiene carga de referencia, la app te va a indicar cómo encontrarla antes de completar sus series.':
+          bloque==='intensidad'?'Semana 1: si falta una carga de referencia, primero vas a encontrar el peso de la serie principal y después aplicar la técnica pautada.':
+          bloque==='base'?'Semana 1: si todavía no hay una carga de referencia, la app te va a indicar cómo encontrarla antes de completar la pauta.':
+          'Semana 1: seguí la pauta de cada ejercicio y registrá cualquier cambio o molestia.'
         )
       ),
       h('div',{style:card},
