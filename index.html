@@ -1306,13 +1306,12 @@ function WheelPicker({items,value,onChange}){
   );
 }
 function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
-  // DIETA V1 — Peso + Template -> objetivos -> 1/4 por comida -> preset P+C+G+FV -> solver.
+  // DIETA V1 compacta — 4 comidas plegables, una sola abierta, wheel picker por familia.
   const tKey=`ase_${user}_tmpl`;
   const [tmpl,setTmplState]=useState(()=>parseFloat(localStorage.getItem(tKey))||0);
-  const [preset,setPreset]=useState({desayuno:'A',almuerzo:'A',merienda:'A',cena:'A'});
   const [custom,setCustom]=useState({});
-  const [libOpen,setLibOpen]=useState({});
-  useEffect(()=>{const t=parseFloat(localStorage.getItem(tKey));setTmplState(!isNaN(t)&&t>0?t:0);},[menusVer,user]);
+  const [openMeal,setOpenMeal]=useState(null); // al montar/volver a Dieta: todas cerradas
+  useEffect(()=>{const t=parseFloat(localStorage.getItem(tKey));setTmplState(!isNaN(t)&&t>0?t:0);setOpenMeal(null);},[menusVer,user]);
 
   const peso=useMemo(()=>parseFloat(String(localStorage.getItem(`ase_${user}_pesoinicial`)||'').replace(',','.'))||0,[user,menusVer]);
   const foodDB=useMemo(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_foodDB`)||'{}')||{};}catch(e){return{};}},[user,menusVer]);
@@ -1351,12 +1350,10 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
       {v:items.map(f=>f.c/100),t:target.C,w:1}
     ];
     let best=null;
-    // Active-set pequeño: prueba todas las combinaciones de alimentos activos y conserva soluciones no negativas.
     for(let mask=1;mask<16;mask++){
       const idx=[0,1,2,3].filter(i=>mask&(1<<i)),n=idx.length;
       const ATA=Array.from({length:n},()=>Array(n).fill(0)),ATb=Array(n).fill(0);
       rows.forEach(r=>{for(let a=0;a<n;a++){const va=r.v[idx[a]];ATb[a]+=r.w*r.w*va*r.t;for(let b=0;b<n;b++)ATA[a][b]+=r.w*r.w*va*r.v[idx[b]];}});
-      // PorcionBase actúa como prior práctico, no como prescripción.
       idx.forEach((orig,a)=>{const prior=Math.max(0,Number(items[orig].base)||0);const lam=0.00035;ATA[a][a]+=lam;ATb[a]+=lam*prior;});
       const x=solveLinear(ATA,ATb);if(!x||x.some(v=>!isFinite(v)||v<0))continue;
       const grams=[0,0,0,0];idx.forEach((orig,a)=>grams[orig]=Math.max(0,Math.round(x[a]/5)*5));
@@ -1371,16 +1368,26 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
     if(base>0&&uv&&cv>0){const units=g/base*cv;return '≈ '+toFrac(units)+' '+uv;}
     return g+' g';
   }
-  function presetItems(c,pid){
-    const op=(c.ops||[]).find(o=>o.id===pid);if(!op)return null;
+  function menuItems(op){
+    if(!op)return null;
     const out=[];
     cats.forEach(cat=>{const f=(op.items||[]).find(x=>(String(x.cat||'').toUpperCase()==='H'?'C':String(x.cat||'').toUpperCase())===cat.id);if(f)out.push(f);});
     return out.length===4?out:null;
   }
+  function baseItems(c){
+    // Ya no hay 12 opciones operativas: toma el primer menú válido sólo como posición inicial de las 4 ruletas.
+    for(const op of (c.ops||[])){const items=menuItems(op);if(items)return items;}
+    return null;
+  }
   function chosenItems(c){
-    const base=presetItems(c,preset[c.id]||'A');if(!base)return null;
+    const base=baseItems(c);if(!base)return null;
     return cats.map((cat,i)=>{const key=custom[c.id]&&custom[c.id][cat.id];return key?(foodDB[key]?{...foodDB[key],key}:base[i]):base[i];});
   }
+  function menuSummary(op){
+    const items=menuItems(op)||(op&&op.items)||[];
+    return items.map(x=>x.n).filter(Boolean).join(' · ');
+  }
+
   const hydration=h('div',{style:{...card,marginTop:'10px',display:'flex',justifyContent:'space-around',alignItems:'center'}},
     h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'24px'}},'💧'),h('div',{style:{fontSize:'18px',fontWeight:'800',color:B}},metaAgua+' L'),h('div',{style:{fontSize:'11px',color:'#999'}},'agua / día')),
     h('div',{style:{width:'1px',height:'40px',background:'rgba(0,0,0,.08)'}}),
@@ -1398,28 +1405,38 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
     h('div',{style:{background:'#111',borderRadius:'12px',padding:'16px',marginBottom:'12px'}},
       h('div',{style:{fontSize:'10px',fontWeight:'700',color:'rgba(255,255,255,.5)',letterSpacing:'.1em',textTransform:'uppercase',marginBottom:'5px'}},'DIETA · '+Math.round(tmpl)+' KCAL'),
       h('div',{style:{fontSize:'15px',fontWeight:'900',color:'#fff',lineHeight:'1.4'}},'Tu objetivo es cumplir el estímulo, no comer “perfecto”.'),
-      h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,.78)',lineHeight:'1.5',marginTop:'6px'}},'Cada comida está armada con 4 alimentos: 1 proteína + 1 hidrato + 1 grasa + 1 fruta o verdura. Elegí una opción A, B o C y respetá aproximadamente las porciones indicadas. ¿Querés cambiar algo? Reemplazá cualquier alimento por otro de la misma familia: la app recalcula la comida completa.')),
+      h('div',{style:{fontSize:'12px',color:'rgba(255,255,255,.78)',lineHeight:'1.5',marginTop:'6px'}},'Cada comida mantiene la misma estructura: 1 proteína + 1 hidrato + 1 grasa + 1 fruta o verdura. Abrí una comida y deslizá cada ruleta para elegir. La app recalcula las porciones de la comida completa.')),
 
-    comidas.length===0?h('div',{style:{...card,textAlign:'center',padding:'28px 18px',fontSize:'12px',color:'#888'}},'El Template está cargado, pero faltan los presets de Dieta.'):
+    comidas.length===0?h('div',{style:{...card,textAlign:'center',padding:'28px 18px',fontSize:'12px',color:'#888'}},'El Template está cargado, pero faltan estructuras de Dieta.'):
     comidas.map(c=>{
-      const pid=preset[c.id]||'A',items=chosenItems(c),sol=items&&targets?solveMeal(items,targets.meal):null;
-      return h('div',{key:c.id,style:{...card,marginBottom:'12px'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}},h('div',{style:{fontSize:'16px',fontWeight:'900'}},c.ic+' '+c.nom),h('div',{style:{fontSize:'10px',color:'#999'}},Math.round(targets.meal.kcal)+' kcal objetivo')),
-        h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},['A','B','C'].map(x=>h('button',{key:x,onClick:()=>{setPreset(s=>({...s,[c.id]:x}));setCustom(s=>({...s,[c.id]:{}}));},style:{flex:1,padding:'8px',borderRadius:'9px',border:'1px solid '+(pid===x?AC:'rgba(0,0,0,.12)'),background:pid===x?AC:'#fff',color:pid===x?'#fff':'#555',fontWeight:'900',cursor:'pointer'}},x))),
-        !items?h('div',{style:{background:'#FFF7ED',color:'#9A3412',padding:'10px',borderRadius:'9px',fontSize:'11px',lineHeight:'1.45'}},'Este preset todavía no contiene exactamente 1 P + 1 C + 1 G + 1 FV válido en la base. Corregilo en Dietas antes de usarlo.'):
-        cats.map((cat,i)=>{const f=items[i],g=sol?sol.grams[i]:0,opts=byCat(cat.id);return h('div',{key:cat.id,style:{padding:'9px 0',borderBottom:i<3?'1px solid rgba(0,0,0,.06)':'none'}},
-          h('div',{style:{fontSize:'9px',fontWeight:'900',color:'#999',letterSpacing:'.08em',marginBottom:'5px'}},cat.title),
-          h(WheelPicker,{items:opts,value:f.key,onChange:key=>setCustom(s=>({...s,[c.id]:{...(s[c.id]||{}),[cat.id]:key}}))}),
-          estado==='deficitario'?h('div',{style:{fontSize:'11px',color:'#777',marginTop:'4px'}},'1 '+cat.title.toLowerCase()):h('div',{style:{fontSize:'11px',color:'#666',marginTop:'4px'}},(showApprox?practical(f,g):'')+(showExact?(showApprox?' · ':'')+g+' g':''))
-        );}),
-        sol&&estado==='deportivo'&&h('div',{style:{marginTop:'10px',padding:'8px',background:'#F8F8F8',borderRadius:'8px',fontSize:'10px',color:'#777'}},'Resultado aprox. · '+Math.round(sol.sum.kcal)+' kcal · P '+Math.round(sol.sum.P)+' g · C '+Math.round(sol.sum.C)+' g · G '+Math.round(sol.sum.G)+' g')
+      const isOpen=openMeal===c.id,items=chosenItems(c),sol=items&&targets?solveMeal(items,targets.meal):null;
+      return h('div',{key:c.id,style:{...card,marginBottom:'9px',padding:isOpen?'14px':'0',overflow:'hidden'}},
+        h('button',{onClick:()=>setOpenMeal(v=>v===c.id?null:c.id),style:{width:'100%',border:'none',background:'transparent',padding:isOpen?'0 0 12px':'14px',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer',textAlign:'left'}},
+          h('div',null,h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#222'}},c.ic+' '+c.nom),h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},'Proteína · Hidrato · Grasa · Fruta/Verdura')),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},h('span',{style:{fontSize:'10px',color:'#999'}},Math.round(targets.meal.kcal)+' kcal'),h('span',{style:{fontSize:'18px',color:'#777',transform:isOpen?'rotate(180deg)':'rotate(0deg)',transition:'transform .18s ease'}},'⌄'))
+        ),
+        isOpen&&(!items?h('div',{style:{background:'#FFF7ED',color:'#9A3412',padding:'10px',borderRadius:'9px',fontSize:'11px',lineHeight:'1.45'}},'Esta comida todavía no tiene una estructura válida de 1 P + 1 C + 1 G + 1 FV en Dietas.'):
+        h('div',null,
+          cats.map((cat,i)=>{const f=items[i],g=sol?sol.grams[i]:0,opts=byCat(cat.id);return h('div',{key:cat.id,style:{padding:'9px 0',borderBottom:i<3?'1px solid rgba(0,0,0,.06)':'none'}},
+            h('div',{style:{fontSize:'9px',fontWeight:'900',color:'#999',letterSpacing:'.08em',marginBottom:'5px'}},cat.title),
+            h(WheelPicker,{items:opts,value:f.key,onChange:key=>setCustom(s=>({...s,[c.id]:{...(s[c.id]||{}),[cat.id]:key}}))}),
+            estado==='deficitario'?h('div',{style:{fontSize:'11px',color:'#777',marginTop:'4px'}},'1 '+cat.title.toLowerCase()):h('div',{style:{fontSize:'11px',color:'#666',marginTop:'4px'}},(showApprox?practical(f,g):'')+(showExact?(showApprox?' · ':'')+g+' g':''))
+          );}),
+          sol&&estado==='deportivo'&&h('div',{style:{marginTop:'10px',padding:'8px',background:'#F8F8F8',borderRadius:'8px',fontSize:'10px',color:'#777'}},'Resultado aprox. · '+Math.round(sol.sum.kcal)+' kcal · P '+Math.round(sol.sum.P)+' g · C '+Math.round(sol.sum.C)+' g · G '+Math.round(sol.sum.G)+' g')
+        ))
       );
     }),
 
     h('div',{style:{...card,marginTop:'12px'}},
-      h('div',{style:{fontSize:'15px',fontWeight:'900',marginBottom:'3px'}},'Biblioteca de alimentos'),
-      h('div',{style:{fontSize:'11px',color:'#777',marginBottom:'10px'}},'Consultá alternativas de la misma familia. La cantidad final siempre la recalcula la comida.'),
-      cats.map(cat=>{const all=byCat(cat.id),open=!!libOpen[cat.id],vis=open?all:all.slice(0,5);return h('div',{key:cat.id,style:{marginTop:'12px'}},h('div',{style:{fontSize:'10px',fontWeight:'900',letterSpacing:'.08em',color:'#777',marginBottom:'5px'}},cat.plural),h('div',{style:{fontSize:'11px',color:'#444',lineHeight:'1.7'}},vis.map(x=>x.n).join(' · ')+(all.length>5&&!open?'…':'')),all.length>5&&h('button',{onClick:()=>setLibOpen(s=>({...s,[cat.id]:!open})),style:{border:'none',background:'none',padding:'4px 0',color:AC,fontSize:'11px',fontWeight:'800',cursor:'pointer'}},open?'Mostrar menos':'Mostrar todas'));})
+      h('div',{style:{fontSize:'15px',fontWeight:'900',marginBottom:'3px'}},'12 menús de referencia'),
+      h('div',{style:{fontSize:'11px',color:'#777',marginBottom:'10px',lineHeight:'1.45'}},'Ideas armadas para elegir combinaciones. No son opciones fijas: arriba podés rotar cualquier alimento dentro de su familia.'),
+      comidas.map(c=>h('div',{key:'ref-'+c.id,style:{marginTop:'12px'}},
+        h('div',{style:{fontSize:'11px',fontWeight:'900',color:'#444',marginBottom:'6px'}},c.ic+' '+c.nom),
+        (c.ops||[]).map(op=>h('div',{key:op.id,style:{padding:'8px 9px',background:'#F8F8F8',borderRadius:'8px',marginBottom:'6px'}},
+          h('div',{style:{fontSize:'10px',fontWeight:'900',color:AC,marginBottom:'2px'}},op.nom||('Menú '+op.id)),
+          h('div',{style:{fontSize:'11px',color:'#555',lineHeight:'1.45'}},menuSummary(op)||'Menú pendiente de completar')
+        ))
+      ))
     ),hydration
   );
 }
