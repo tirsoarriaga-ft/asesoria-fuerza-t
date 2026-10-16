@@ -547,8 +547,8 @@ function calcDiagnostico(rutina, weeks){
   var cinturObj=altura*0.47;
 
   // Macros objetivo
-  var protDia=Math.round(peso*1.9);
-  var grasaDiaMin=Math.max(Math.round(peso*0.5),Math.round(template*0.25/9));
+  var protDia=Math.round(peso*1.6);
+  var grasaDiaMin=Math.max(Math.round(peso*0.6),Math.round(template*0.25/9));
   var hidrDia=Math.round((template-(protDia*4)-(grasaDiaMin*9))/4);
 
   var resultado={
@@ -585,64 +585,34 @@ function calcDiagnostico(rutina, weeks){
   return resultado;
 }
 
-// ── PORCIONES: requerimiento → gramos → porción por comida (portable) ──
-// Factores por defecto acordados. P y G salen del peso; CHO es la energía restante.
-function calcularRequerimientos(pesoKg, templateKcal, factorP, factorG){
-  var P=pesoKg*factorP, G=pesoKg*factorG;
-  var kcalPyG=P*4+G*9;
-  var CHO=(templateKcal-kcalPyG)/4;
-  return {P:P,G:G,CHO:Math.max(0,CHO),insuficiente:CHO<0,faltanKcal:kcalPyG-templateKcal};
+// ── NUTRICIÓN V1: Peso + Template; 4 comidas iguales ───────────────
+function calcularRequerimientos(pesoKg,templateKcal){
+  var P=pesoKg*1.6;
+  var G=Math.max((templateKcal*0.25)/9,pesoKg*0.6);
+  var CHO=(templateKcal-P*4-G*9)/4;
+  var fibra=templateKcal*0.014;
+  return {P:P,G:G,CHO:CHO,fibra:fibra,insuficiente:CHO<0,faltanKcal:Math.max(0,P*4+G*9-templateKcal)};
 }
-// 4 comidas => 25/40/15/20 (calibrado). Otro nº => uniforme.
-function repartoComidas(n){
-  if(n===4)return [0.25,0.40,0.15,0.20];
-  var w=[];for(var i=0;i<n;i++)w.push(1/n);return w;
-}
-// Cada comida tiene su propio "1P" calibrado, por eso el asesorado nunca ve decimales.
-function porcionesPorComida(req,n){
-  return repartoComidas(n).map(function(w){
-    return {p:Math.round(req.P*w),h:Math.round(req.CHO*w),g:Math.round(req.G*w),fv:1};
-  });
-}
-
+function repartoComidas(n){var w=[];for(var i=0;i<n;i++)w.push(1/n);return w;}
+function porcionesPorComida(req,n){return repartoComidas(n).map(function(w){return {p:req.P*w,h:req.CHO*w,g:req.G*w,kcal:null};});}
 function PorcionesBloque(rutina){
-  var FACTOR_P=2.0, FACTOR_G=0.8, N_COMIDAS=4; // ajustables; sin columna de comidas aún → 4 por defecto
-  var nombres=['Desayuno','Almuerzo','Merienda','Cena'];
-  var peso=parseFloat(rutina&&rutina.PesoRef||0);
-  var template=parseFloat(rutina&&rutina.Template||0);
+  var N_COMIDAS=4,nombres=['Desayuno','Almuerzo','Merienda','Cena'];
+  var peso=parseFloat(rutina&&rutina.PesoRef||0),template=parseFloat(rutina&&rutina.Template||0);
   if(!peso||!template)return null;
-  var req=calcularRequerimientos(peso,template,FACTOR_P,FACTOR_G);
-  var porc=porcionesPorComida(req,N_COMIDAS);
+  var req=calcularRequerimientos(peso,template),porc=porcionesPorComida(req,N_COMIDAS);
   return h('div',{style:card},
-    h('div',{style:{...lbl,marginBottom:'10px'}},'Pauta de porciones · '+FACTOR_P+' g/kg prote · '+FACTOR_G+' g/kg grasa'),
-    req.insuficiente
-      ? h('div',{style:{background:'#FCEBEB',border:'1px solid #F09595',borderRadius:'8px',padding:'10px',fontSize:'11px',color:'#791F1F',lineHeight:'1.5'}},
-          'Template demasiado bajo: no cubre proteína + grasa mínimas (faltan ~'+Math.round(req.faltanKcal)+' kcal). Subí el Template antes de pautar.')
-      : h('div',null,
-          h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px',marginBottom:'10px'}},
-            [{l:'Proteína',v:Math.round(req.P)+' g'},{l:'Grasa',v:Math.round(req.G)+' g'},{l:'Hidratos',v:Math.round(req.CHO)+' g'}].map(function(m,i){
-              return h('div',{key:i,style:{background:'#F8F8F8',borderRadius:'8px',padding:'8px',textAlign:'center'}},
-                h('div',{style:{fontSize:'15px',fontWeight:'800',color:'#111'}},m.v),
-                h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},m.l)
-              );
-            })
-          ),
-          h('div',{style:{background:'#F8F8F8',borderRadius:'8px',padding:'8px'}},
-            h('div',{style:{display:'grid',gridTemplateColumns:'1.4fr 1fr 1fr 1fr',gap:'4px',fontSize:'9px',color:'#999',fontWeight:'700',textTransform:'uppercase',letterSpacing:'0.04em',marginBottom:'6px',paddingBottom:'4px',borderBottom:'1px solid rgba(0,0,0,0.08)'}},
-              h('div',null,'Comida'),h('div',{style:{textAlign:'center'}},'1P'),h('div',{style:{textAlign:'center'}},'1H'),h('div',{style:{textAlign:'center'}},'1G')
-            ),
-            porc.map(function(pc,i){
-              return h('div',{key:i,style:{display:'grid',gridTemplateColumns:'1.4fr 1fr 1fr 1fr',gap:'4px',padding:'5px 0',fontSize:'12px',borderBottom:i<porc.length-1?'1px solid rgba(0,0,0,0.05)':'none',alignItems:'center'}},
-                h('div',{style:{fontWeight:'600',color:'#111'}},nombres[i]),
-                h('div',{style:{textAlign:'center',color:'#111'}},pc.p+'g'),
-                h('div',{style:{textAlign:'center',color:'#111'}},pc.h+'g'),
-                h('div',{style:{textAlign:'center',color:'#111'}},pc.g+'g')
-              );
-            })
-          ),
-          h('div',{style:{fontSize:'10px',color:'#999',marginTop:'8px',lineHeight:'1.5'}},
-            'Reparto 25/40/15/20 · el asesorado ve 1P/1H/1G/1FV por comida, vos ves el gramaje. Sumá 1FV por comida.')
-        )
+    h('div',{style:{...lbl,marginBottom:'10px'}},'Nutrición V1 · Peso + Template'),
+    req.insuficiente?h('div',{style:{background:'#FCEBEB',border:'1px solid #F09595',borderRadius:'8px',padding:'10px',fontSize:'11px',color:'#791F1F'}},'Template demasiado bajo para cubrir proteína + grasa mínimas. Revisá el Template antes de pautar.'):
+    h('div',null,
+      h('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'6px',marginBottom:'10px'}},[
+        {l:'Proteína',v:Math.round(req.P)+' g'},{l:'Grasa',v:Math.round(req.G)+' g'},{l:'Hidratos',v:Math.round(req.CHO)+' g'},{l:'Fibra/día',v:Math.round(req.fibra)+' g'}
+      ].map(function(m,i){return h('div',{key:i,style:{background:'#F8F8F8',borderRadius:'8px',padding:'8px',textAlign:'center'}},h('div',{style:{fontSize:'14px',fontWeight:'800'}},m.v),h('div',{style:{fontSize:'9px',color:'#999'}},m.l));})),
+      h('div',{style:{background:'#F8F8F8',borderRadius:'8px',padding:'8px'}},
+        h('div',{style:{display:'grid',gridTemplateColumns:'1.4fr 1fr 1fr 1fr',gap:'4px',fontSize:'9px',color:'#999',fontWeight:'700',marginBottom:'6px'}},h('div',null,'Comida'),h('div',{style:{textAlign:'center'}},'P'),h('div',{style:{textAlign:'center'}},'C'),h('div',{style:{textAlign:'center'}},'G')),
+        porc.map(function(pc,i){return h('div',{key:i,style:{display:'grid',gridTemplateColumns:'1.4fr 1fr 1fr 1fr',gap:'4px',padding:'5px 0',fontSize:'12px',borderBottom:i<3?'1px solid rgba(0,0,0,.05)':'none'}},h('div',{style:{fontWeight:'600'}},nombres[i]),h('div',{style:{textAlign:'center'}},Math.round(pc.p)+'g'),h('div',{style:{textAlign:'center'}},Math.round(pc.h)+'g'),h('div',{style:{textAlign:'center'}},Math.round(pc.g)+'g'));})
+      ),
+      h('div',{style:{fontSize:'10px',color:'#999',marginTop:'8px',lineHeight:'1.5'}},'4 comidas · 25% de kcal/P/C/G por comida. Cada preset debe contener 1P + 1C + 1G + 1FV. Las cantidades finales las resuelve la App según los alimentos elegidos.')
+    )
   );
 }
 
