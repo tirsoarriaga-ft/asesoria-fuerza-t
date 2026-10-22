@@ -2800,12 +2800,8 @@ function App(){
       Object.values(grouped).forEach(w=>w.sort((a,b)=>semNumReport(a.SemanID)-semNumReport(b.SemanID)));
       // Enriquecer cada rutina con la identidad de la ficha maestra (Asesorados), con fallback a lo de Rutinas.
       const norm=x=>String(x||'').trim().toLowerCase();
-      const fichas={},fichasId={};
-      (asesorados||[]).forEach(a=>{
-        const nm=norm(a.Asesorado),id=norm(a.AsesoradoID);
-        if(nm)fichas[nm]=a;
-        if(id)fichasId[id]=a;
-      });
+      const fichas={};
+      (asesorados||[]).forEach(a=>{fichas[norm(a.Asesorado)]=a;});
       // Índice de Dietas por AsesoradoID y por nombre (para traer el Template, que vive en Dietas)
       const dietaPorId={}, dietaPorNombre={};
       (dietasData||[]).forEach(d=>{
@@ -2820,9 +2816,7 @@ function App(){
         return d&&String(d.Template||'').trim()!=='' ? d.Template : (r.Template||'');
       };
       const rutsEnriquecidas=(ruts||[]).map(r=>{
-        // Identidad canónica por AsesoradoID; nombre queda sólo como fallback legacy.
-        const rid=norm(r.AsesoradoID);
-        const f=(rid&&fichasId[rid])||fichas[norm(r.Asesorado)];
+        const f=fichas[norm(r.Asesorado)];
         if(!f)return Object.assign({},r,{Template:templateDe(r,null)}); // fallback + template de dieta
         const pref=(campoFicha,campoRut)=>{
           if(f[campoFicha]!==undefined&&String(f[campoFicha]).trim()!=='')return f[campoFicha];
