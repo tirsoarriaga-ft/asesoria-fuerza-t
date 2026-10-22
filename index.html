@@ -1885,7 +1885,7 @@ function App(){
     const savedUser=localStorage.getItem(USER_KEY);
     if(!savedUser){setSessionReady(true);return;}
     // La sesión ya fue hidratada sincrónicamente. Esta consulta solo refresca identidad/fecha.
-    fetch(SCRIPT_URL+'?action=asesorados')
+    fetch(SCRIPT_URL+'?action=asesorados&_ts='+Date.now(),{cache:'no-store'})
       .then(r=>r.json())
       .then(rows=>{
         const a=(rows||[]).find(r=>String(r.Asesorado||'').trim().toLowerCase()===savedUser.trim().toLowerCase());
@@ -1909,25 +1909,14 @@ function App(){
   useEffect(()=>{
     if(!user||!sessionReady)return;
     cambiandoSemana.current=true;dataLoaded.current=false;draftReady.current=false;
-    // Calcular sem real del calendario
+    // RELOJ CANÓNICO: cada apertura de la app comienza SIEMPRE en la semana calendario actual.
+    // La navegación a semanas pasadas sigue disponible durante la sesión, pero wknum local no puede
+    // convertir una visita histórica anterior en la pantalla inicial de una apertura nueva.
     const realNum=getRealWkNum(user);
-    // Actualizar el máximo alcanzado (la sem real siempre es el techo)
     const storedNum=parseInt(localStorage.getItem(`ase_${user}_wknum`))||1;
-    // Si storedNum > realNum → corregir al real (no puede estar en el futuro)
-    // Si storedNum < realNum → respetar (puede estar viendo una sem pasada)
-    // Además guardar realNum como máximo para que "Nueva →" no supere el calendario
     localStorage.setItem(`ase_${user}_maxWkNum`,String(realNum));
-    const correctedNum=Math.min(storedNum,realNum);
-    if(correctedNum!==storedNum){
-      localStorage.setItem(`ase_${user}_wknum`,String(correctedNum));
-    }
-    // Si nunca avanzó (storedNum=1 pero realNum>1) → ir a realNum automáticamente
-    const isFirstTime=storedNum<=1&&realNum>1&&!localStorage.getItem(`ase_${user}_hadAdvanced`);
-    const wkNum=isFirstTime?realNum:correctedNum;
-    if(isFirstTime){
-      localStorage.setItem(`ase_${user}_wknum`,String(realNum));
-      localStorage.setItem(`ase_${user}_hadAdvanced`,'1');
-    }
+    localStorage.setItem(`ase_${user}_wknum`,String(realNum));
+    const wkNum=realNum;
     setWk(getWkForNum(user,wkNum));
     // Si el calendario avanzó a una semana nueva, limpiar ambos formatos históricos de draft
     // antes de restaurar. Esto evita que el auto-save reviva datos de la semana anterior.
@@ -2040,7 +2029,7 @@ function App(){
   useEffect(()=>{
     if(!user||!exesReady)return;
     // Rutinas → sesiones y ejercicios
-    fetch(SCRIPT_URL+'?action=rutinas')
+    fetch(SCRIPT_URL+'?action=rutinas&_ts='+Date.now(),{cache:'no-store'})
       .then(r=>r.json())
       .then(rutinas=>{
         const currentId=String(localStorage.getItem(`ase_${user}_asesoradoId`)||'').trim();
@@ -2094,7 +2083,7 @@ function App(){
     // Asesorados + Diagnosticos → identidad/FechaInicio + NutriConfirmado canónico
     // NutriConfirmado vive en Diagnosticos y es configuración global, NO dato semanal.
     Promise.all([
-      fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=asesorados&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=diagnosticos').then(r=>r.json()).catch(()=>[])
     ]).then(([asesorados,diagnosticos])=>{
       const asesorado=(asesorados||[]).find(r=>
@@ -2146,7 +2135,7 @@ function App(){
     setSessionReady(false);
     setUser(name);
     // Usuario nuevo: no usar una FechaInicio ficticia mientras se hidrata identidad.
-    fetch(SCRIPT_URL+'?action=asesorados')
+    fetch(SCRIPT_URL+'?action=asesorados&_ts='+Date.now(),{cache:'no-store'})
       .then(r=>r.json())
       .then(rows=>{
         const a=(rows||[]).find(r=>String(r.Asesorado||'').trim().toLowerCase()===name.trim().toLowerCase());
