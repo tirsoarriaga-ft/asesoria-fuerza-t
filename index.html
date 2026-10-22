@@ -705,11 +705,26 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   function uploadState(sessId,exId){return uploading[getVideoKey(sessId,exId)]||null;}
   function setUploadState(sessId,exId,state,msg,queueId){const key=getVideoKey(sessId,exId);setUploading(p=>({...p,[key]:{state,msg:msg||'',queueId:queueId||p[key]?.queueId||''}}));}
   function saveVideoUrlLocal(sessId,exId,url){const nv={...videos,[getVideoKey(sessId,exId)]:url};setVideos(nv);localStorage.setItem(`ase_${user}_videos`,JSON.stringify(nv));}
+  function removeVideoUrlLocal(sessId,exId){const nv={...videos};delete nv[getVideoKey(sessId,exId)];setVideos(nv);localStorage.setItem(`ase_${user}_videos`,JSON.stringify(nv));}
   async function confirmVideoInSheet(url,asesoradoId,tries=8){for(let i=0;i<tries;i++){try{const rows=await fetchTimeout(SCRIPT_URL+'?action=videos',{cache:'no-store'},12000).then(r=>r.json());const ok=(rows||[]).some(v=>String(v.URL||'')===String(url)&&(asesoradoId?String(v.AsesoradoID||'')===String(asesoradoId):true));if(ok)return true;}catch(e){}await new Promise(r=>setTimeout(r,900));}return false;}
-  async function registerVideoSheet(sessId,exId,url){const exName=exes.find(e=>e.id===parseInt(exId))?.n||exId;const asesoradoId=localStorage.getItem(`ase_${user}_asesoradoId`)||'';fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'video',user,asesoradoId,sessId,exId,exName,url,fecha:new Date().toISOString()})}).catch(()=>{});return confirmVideoInSheet(url,asesoradoId);}
+  async function confirmVideoDeleted(url,asesoradoId,tries=8){for(let i=0;i<tries;i++){try{const rows=await fetchTimeout(SCRIPT_URL+'?action=videos',{cache:'no-store'},12000).then(r=>r.json());const exists=(rows||[]).some(v=>String(v.URL||'')===String(url)&&(asesoradoId?String(v.AsesoradoID||'')===String(asesoradoId):true));if(!exists)return true;}catch(e){}await new Promise(r=>setTimeout(r,900));}return false;}
+  async function registerVideoSheet(sessId,exId,url,oldUrl){const exName=exes.find(e=>e.id===parseInt(exId))?.n||exId;const asesoradoId=localStorage.getItem(`ase_${user}_asesoradoId`)||'';fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'video',user,asesoradoId,sessId,exId,exName,url,oldUrl:oldUrl||'',fecha:new Date().toISOString()})}).catch(()=>{});return confirmVideoInSheet(url,asesoradoId);}
+  async function deleteVideo(sessId,exId){
+    const url=getVideo(sessId,exId);if(!url)return;
+    if(!window.confirm('¿Eliminar este video de Fuerza T?'))return;
+    const asesoradoId=localStorage.getItem(`ase_${user}_asesoradoId`)||'';
+    setUploadState(sessId,exId,'deleting','Eliminando…');
+    try{
+      fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'videoDelete',user,asesoradoId,url})}).catch(()=>{});
+      const ok=await confirmVideoDeleted(url,asesoradoId);
+      if(!ok)throw new Error('No se pudo confirmar la eliminación.');
+      removeVideoUrlLocal(sessId,exId);
+      setUploading(p=>{const n={...p};delete n[getVideoKey(sessId,exId)];return n;});
+    }catch(e){setUploadState(sessId,exId,'error',String(e&&e.message||'No se pudo eliminar.'));}
+  }
 
   async function uploadQueued(rec){
-    const {blob,sessId,exId,id}=rec; const key=getVideoKey(sessId,exId);
+    const {blob,sessId,exId,id,oldUrl}=rec; const key=getVideoKey(sessId,exId);
     retryRef.current[key]=rec;
     try{
       setUploadState(sessId,exId,'processing','Procesando video…',id);
@@ -723,7 +738,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
       let data={};try{data=await res.json();}catch(e){}
       if(!res.ok||!data.secure_url)throw new Error(data.error?.message||'Cloudinary no confirmó la subida.');
       setUploadState(sessId,exId,'confirming','Confirmando recepción…',id);
-      const confirmed=await registerVideoSheet(sessId,exId,data.secure_url);
+      const confirmed=await registerVideoSheet(sessId,exId,data.secure_url,oldUrl);
       if(!confirmed)throw new Error('El video subió, pero todavía no fue confirmado por Fuerza T. Reintentá la confirmación.');
       saveVideoUrlLocal(sessId,exId,data.secure_url);
       await videoQueueDel(id);delete retryRef.current[key];
@@ -734,7 +749,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   }
   async function queueAndUpload(blob,sessId,exId,source){
     const id=`${user}_${sessId}_${exId}_${Date.now()}`;
-    const rec={id,user,sessId,exId,source:source||'video',createdAt:Date.now(),blob};
+    const rec={id,user,sessId,exId,source:source||'video',createdAt:Date.now(),oldUrl:getVideo(sessId,exId)||'',blob};
     try{await videoQueuePut(rec);}catch(e){
       // Si no hay IndexedDB, se puede intentar dentro de esta sesión, pero se informa la limitación.
       setUploadState(sessId,exId,'processing','Procesando video…');
@@ -1280,10 +1295,13 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
               ),
               h('div',{style:{marginBottom:'8px'}},
                 getVideo(activeSess,ex.id)
-                  ?h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
-                      h('a',{href:getVideo(activeSess,ex.id),target:'_blank',rel:'noreferrer',style:{flex:1,background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'7px 12px',fontSize:'12px',fontWeight:'700',color:G,textDecoration:'none',display:'flex',alignItems:'center',gap:'6px'}},h('span',null,'🎬'),'Ver mi video'),
-                      h('button',{onClick:()=>setShowCamera({sessId:activeSess,exId:ex.id}),style:{background:'#F5F5F5',border:'none',borderRadius:'8px',padding:'7px 8px',fontSize:'11px',cursor:'pointer',color:'#666'}},'📹'),
-                      h('button',{onClick:()=>triggerGallery(activeSess,ex.id),style:{background:'#F5F5F5',border:'none',borderRadius:'8px',padding:'7px 8px',fontSize:'11px',cursor:'pointer',color:'#666'}},'🖼️')
+                  ?h('div',{style:{background:'#F8FAFC',border:'1px solid #E5E7EB',borderRadius:'9px',padding:'8px'}},
+                      h('a',{href:getVideo(activeSess,ex.id),target:'_blank',rel:'noreferrer',style:{background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'8px 10px',fontSize:'12px',fontWeight:'800',color:G,textDecoration:'none',display:'flex',alignItems:'center',justifyContent:'center',gap:'6px',marginBottom:'7px'}},h('span',null,'🎬'),'Ver video enviado'),
+                      h('div',{style:{display:'flex',gap:'6px'}},
+                        h('button',{onClick:()=>setShowCamera({sessId:activeSess,exId:ex.id}),style:{flex:1,background:'#fff',border:'1px solid #D1D5DB',borderRadius:'8px',padding:'7px 8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',color:'#444'}},'📹 Reemplazar'),
+                        h('button',{onClick:()=>triggerGallery(activeSess,ex.id),style:{flex:1,background:'#fff',border:'1px solid #D1D5DB',borderRadius:'8px',padding:'7px 8px',fontSize:'11px',fontWeight:'700',cursor:'pointer',color:'#444'}},'🖼️ Galería'),
+                        h('button',{onClick:()=>deleteVideo(activeSess,ex.id),style:{background:'#FFF1F2',border:'1px solid #FECDD3',borderRadius:'8px',padding:'7px 9px',fontSize:'11px',fontWeight:'800',cursor:'pointer',color:'#BE123C'}},'Eliminar')
+                      )
                     )
                   :(function(){const st=uploadState(activeSess,ex.id);if(!st)return h('div',{style:{display:'flex',gap:'6px'}},
                         h('button',{onClick:()=>setShowCamera({sessId:activeSess,exId:ex.id}),style:{flex:1,background:'#F5F5F5',border:'1px dashed rgba(0,0,0,0.15)',borderRadius:'8px',padding:'7px 10px',fontSize:'12px',cursor:'pointer',color:'#666',display:'flex',alignItems:'center',justifyContent:'center',gap:'4px'}},h('span',null,'📹'),'Grabar'),
@@ -1306,7 +1324,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   return h('div',null,
                     h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
                       h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'TEST INICIAL · 3–5 reps'),
-                      h('div',{style:{fontSize:'11px',color:'#9333EA',margin:'4px 0 8px'}},'Registrá la serie test. Esta referencia queda fija para todo el bloque.'),
+                      h('div',{style:{fontSize:'11px',color:'#9333EA',margin:'4px 0 8px'}},'Elegí una carga para fallar en 3–5 reps y anotá acá.'),
                       h('div',{style:{display:'flex',gap:'8px'}},
                         h('input',{type:'text',inputMode:'decimal',placeholder:'kg',value:t.kg||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:e.target.value}})),style:{...inp,textAlign:'center'}}),
                         h('input',{type:'text',inputMode:'numeric',placeholder:'3–5 reps',value:t.reps||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
@@ -1319,24 +1337,34 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                       h('div',{style:{fontSize:'12px',fontWeight:'900',color:'#9A3412'}},'BACK-OFF · 1 serie · 70%'),
                       h('div',{style:{fontSize:'14px',fontWeight:'900',color:'#7C2D12',marginTop:'4px'}},backKg+' kg · Al fallo técnico'),
                       h('div',{style:{display:'flex',alignItems:'center',gap:'7px',marginTop:'8px'}},
-                        h('input',{type:'text',inputMode:'numeric',placeholder:'reps realizadas',value:bo.reps||'',onChange:e=>setBackoffReps(ex,e.target.value),style:{...inp,textAlign:'center',maxWidth:'150px'}}),
-                        h('span',{style:{fontSize:'11px',color:'#9A3412'}},'reps abiertas')
+                        h('input',{type:'text',inputMode:'numeric',placeholder:'Anotá las reps',value:bo.reps||'',onChange:e=>setBackoffReps(ex,e.target.value),style:{...inp,textAlign:'center',maxWidth:'150px'}})
                       )
                     )
                   );
                 }
                 if(esRetestFuerza){
                   const ini=initial||null;
-                  return h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
-                    h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'RETEST · Cierre de Fuerza'),
-                    ini&&h('div',{style:{fontSize:'11px',color:'#6B21A8',lineHeight:'1.55',margin:'5px 0 8px'}},'Referencia S1: '+ini.kg+' kg × '+ini.reps+' · e1RM '+ini.e1rm+' kg. Peso sugerido para comenzar: '+ini.kg+' kg.'),
-                    !ini&&h('div',{style:{fontSize:'11px',color:'#B42318',margin:'5px 0 8px',fontWeight:'700'}},'No encuentro kg/reps del test inicial. No inventar referencia: revisá S1.'),
-                    h('div',{style:{display:'flex',gap:'8px'}},
-                      h('input',{type:'text',inputMode:'decimal',placeholder:ini?String(ini.kg)+' kg':'kg',value:t.kg||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:e.target.value}})),style:{...inp,textAlign:'center'}}),
-                      h('input',{type:'text',inputMode:'numeric',placeholder:'reps',value:t.reps||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
+                  const retestKg=ini&&parseFloat(ini.kg)>0?parseFloat(ini.kg):0;
+                  const ap1=retestKg>0?Math.round(retestKg*0.5*10)/10:0;
+                  const ap2=retestKg>0?Math.round(retestKg*0.75*10)/10:0;
+                  const retestReps=parseInt(t.reps)||0;
+                  const retestE1rm=retestKg>0&&retestReps>0?epley(retestKg,retestReps):0;
+                  return h('div',null,
+                    ini&&h('div',{style:{marginBottom:'8px',fontSize:'11px',color:'#64748B',background:'#F8FAFC',borderRadius:'7px',padding:'7px 9px'}},
+                      h('div',{style:{padding:'3px 0',borderBottom:'1px solid #E2E8F0'}},'Aproximación 1 · 12 reps · 50% · '+ap1+' kg'),
+                      h('div',{style:{padding:'3px 0'}},'Aproximación 2 · 6 reps · 75% · '+ap2+' kg')
                     ),
-                    parseFloat(t.kg)>0&&parseInt(t.reps)>0&&h('button',{onClick:()=>{setRmRefFinal(ex,epley(parseFloat(t.kg),parseInt(t.reps)));setSaved(false);},style:{marginTop:'8px',width:'100%',background:'#7E22CE',color:'#fff',border:'none',borderRadius:'8px',padding:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},(finalRef?'Actualizar':'Guardar')+' retest · e1RM '+epley(parseFloat(t.kg),parseInt(t.reps))+' kg'),
-                    ref>0&&h('div',{style:{marginTop:'8px',fontSize:'11px',color:'#6B21A8',fontWeight:'700'}},'e1RM inicial: '+ref+' kg'+(finalRef>0?' · e1RM final: '+finalRef+' kg · Cambio: '+(finalRef-ref>=0?'+':'')+(finalRef-ref)+' kg':''))
+                    h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
+                      h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'RETEST · Cierre de Fuerza'),
+                      ini&&h('div',{style:{fontSize:'11px',color:'#6B21A8',lineHeight:'1.55',margin:'5px 0 8px'}},'Usá el mismo peso del test inicial: '+retestKg+' kg. Referencia S1: '+ini.reps+' reps · e1RM '+ini.e1rm+' kg.'),
+                      !ini&&h('div',{style:{fontSize:'11px',color:'#B42318',margin:'5px 0 8px',fontWeight:'700'}},'No encuentro kg/reps del test inicial. No inventar referencia: revisá S1.'),
+                      ini&&h('div',{style:{display:'flex',gap:'8px',alignItems:'stretch'}},
+                        h('div',{style:{...inp,textAlign:'center',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'900',background:'#F8FAFC'}},retestKg+' kg'),
+                        h('input',{type:'text',inputMode:'numeric',placeholder:'Anotá las reps',value:t.reps||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:String(retestKg),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
+                      ),
+                      ini&&retestReps>0&&h('button',{onClick:()=>{setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:String(retestKg),reps:String(retestReps)}}));setRmRefFinal(ex,retestE1rm);setSaved(false);},style:{marginTop:'8px',width:'100%',background:'#7E22CE',color:'#fff',border:'none',borderRadius:'8px',padding:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},(finalRef?'Actualizar':'Guardar')+' retest · e1RM '+retestE1rm+' kg'),
+                      ref>0&&h('div',{style:{marginTop:'8px',fontSize:'11px',color:'#6B21A8',fontWeight:'700'}},'e1RM inicial: '+ref+' kg'+(finalRef>0?' · e1RM final: '+finalRef+' kg · Cambio: '+(finalRef-ref>=0?'+':'')+(finalRef-ref)+' kg':''))
+                    )
                   );
                 }
                 if(fuerzaCerrada)return h('div',{style:{marginBottom:'10px',background:'#F5F5F5',border:'1px solid #DDD',borderRadius:'8px',padding:'10px',fontSize:'12px',fontWeight:'700',color:'#555'}},'Bloque Fuerza finalizado · esperando próxima planificación del coach.');
@@ -1344,18 +1372,21 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                 if(!p)return null;
                 const mainKg=kgPrincipal(ex);
                 return h('div',null,
-                  ref>0&&h('div',{style:{marginBottom:'8px',fontSize:'11px',color:'#64748B',background:'#F8FAFC',borderRadius:'7px',padding:'7px 9px'}},'Aproximación 1 · 12 reps · 50% de carga principal · '+aproxUtil(mainKg,0.5)+' kg · Aproximación 2 · 6 reps · 75% · '+aproxUtil(mainKg,0.75)+' kg'),
+                  ref>0&&h('div',{style:{marginBottom:'8px',fontSize:'11px',color:'#64748B',background:'#F8FAFC',borderRadius:'7px',padding:'7px 9px'}},
+                    h('div',{style:{padding:'3px 0',borderBottom:'1px solid #E2E8F0'}},'Aproximación 1 · 12 reps · 50% · '+aproxUtil(mainKg,0.5)+' kg'),
+                    h('div',{style:{padding:'3px 0'}},'Aproximación 2 · 6 reps · 75% · '+aproxUtil(mainKg,0.75)+' kg')
+                  ),
                   h('div',{style:{marginBottom:'8px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
                     h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'TRABAJO PRINCIPAL · Semana '+semEnBloque),
                     h('div',{style:{fontSize:'14px',color:'#6B21A8',marginTop:'4px',fontWeight:'900'}},p.series+' × '+p.reps+' · '+p.pct+'% · '+(mainKg||'—')+' kg'),
+                    h('div',{style:{fontSize:'11px',color:'#7E22CE',marginTop:'5px',fontWeight:'700'}},'No modificar series, reps ni kg.'),
                     !ref&&h('div',{style:{fontSize:'11px',color:'#9A3412',marginTop:'6px',fontWeight:'700'}},'Falta realizar o registrar el test de Semana 1. Sin ese e1RM no se calcula el protocolo.')
                   ),
                   ref>0&&h('div',{style:{marginBottom:'10px',background:'#FFF7ED',border:'1px solid #FED7AA',borderRadius:'8px',padding:'10px'}},
                     h('div',{style:{fontSize:'12px',fontWeight:'900',color:'#9A3412'}},'BACK-OFF · 1 serie · 70%'),
                     h('div',{style:{fontSize:'14px',fontWeight:'900',color:'#7C2D12',marginTop:'4px'}},backKg+' kg · Al fallo técnico'),
                     h('div',{style:{display:'flex',alignItems:'center',gap:'7px',marginTop:'8px'}},
-                      h('input',{type:'text',inputMode:'numeric',placeholder:'reps realizadas',value:bo.reps||'',onChange:e=>setBackoffReps(ex,e.target.value),style:{...inp,textAlign:'center',maxWidth:'150px'}}),
-                      h('span',{style:{fontSize:'11px',color:'#9A3412'}},'reps abiertas')
+                      h('input',{type:'text',inputMode:'numeric',placeholder:'Anotá las reps',value:bo.reps||'',onChange:e=>setBackoffReps(ex,e.target.value),style:{...inp,textAlign:'center',maxWidth:'150px'}})
                     )
                   )
                 );
@@ -1369,8 +1400,11 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
               !((bloque==='fuerza'&&rolFuerza(ex)==='principal')||(bloque==='base'&&!getKg(ex)))&&aproxUtil(getKg(ex),0.5)&&
                 h('div',{style:{marginBottom:'8px',fontSize:'11px',color:'#64748B',background:'#F8FAFC',borderRadius:'7px',padding:'7px 9px'}},
                   bloque==='base'||bloque==='rehab'
-                    ?('Aproximación · 12 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
-                    :('Aproximación 1 · 12 reps · 50% · '+aproxUtil(getKg(ex),0.5)+' kg · Aproximación 2 · 6 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
+                    ?h('div',{style:{padding:'3px 0'}},'Aproximación · 12 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
+                    :h('div',null,
+                        h('div',{style:{padding:'3px 0',borderBottom:'1px solid #E2E8F0'}},'Aproximación 1 · 12 reps · 50% · '+aproxUtil(getKg(ex),0.5)+' kg'),
+                        h('div',{style:{padding:'3px 0'}},'Aproximación 2 · 6 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
+                      )
                 ),
               // Fuerza principal no usa celdas redundantes. Base/Rehab muestran una pauta textual:
               // las reps son prescripción, no un dato que el asesorado deba completar.
@@ -1452,11 +1486,15 @@ function practicalAmount(food,grams){
   return toFrac(Math.max(0,q))+' '+food.vU;
 }
 function FoodWheel({items,index,onChange}){
-  const ref=useRef(null),timer=useRef(null),H=38;
-  useEffect(()=>{if(ref.current)ref.current.scrollTop=Math.max(0,(index||0)*H);},[index,items.length]);
-  const onScroll=()=>{clearTimeout(timer.current);timer.current=setTimeout(()=>{if(!ref.current||!items.length)return;const n=Math.max(0,Math.min(items.length-1,Math.round(ref.current.scrollTop/H)));if(n!==index)onChange(n);},90);};
-  return h('div',{ref,onScroll,style:{height:(H*3)+'px',overflowY:'auto',scrollSnapType:'y mandatory',WebkitOverflowScrolling:'touch',borderRadius:'9px',background:'#F8FAFC',border:'1px solid #E5E7EB',paddingTop:H+'px',paddingBottom:H+'px',scrollbarWidth:'none'}},
-    items.map((f,i)=>h('div',{key:f.key,style:{height:H+'px',scrollSnapAlign:'center',display:'flex',alignItems:'center',justifyContent:'center',textAlign:'center',padding:'0 4px',fontSize:i===index?'12px':'10px',fontWeight:i===index?'900':'600',color:i===index?'#111':'#9CA3AF',transform:i===index?'scale(1.02)':'scale(.94)',transition:'all .12s'}},f.n))
+  const ref=useRef(null),timer=useRef(null),H=44;
+  useEffect(()=>{if(ref.current)ref.current.scrollTo({top:Math.max(0,(index||0)*H),behavior:'auto'});},[index,items.length]);
+  const settle=()=>{if(!ref.current||!items.length)return;const n=Math.max(0,Math.min(items.length-1,Math.round(ref.current.scrollTop/H)));ref.current.scrollTo({top:n*H,behavior:'smooth'});if(n!==index)onChange(n);};
+  const onScroll=()=>{clearTimeout(timer.current);timer.current=setTimeout(settle,110);};
+  return h('div',{style:{position:'relative',height:(H*3)+'px',borderRadius:'10px',background:'#F3F4F6',border:'1px solid #D1D5DB',overflow:'hidden'}},
+    h('div',{ref,onScroll,style:{height:'100%',overflowY:'auto',scrollSnapType:'y mandatory',WebkitOverflowScrolling:'touch',paddingTop:H+'px',paddingBottom:H+'px',scrollbarWidth:'none'}},
+      items.map((f,i)=>h('div',{key:f.key,style:{height:H+'px',boxSizing:'border-box',scrollSnapAlign:'center',scrollSnapStop:'always',display:'flex',alignItems:'center',justifyContent:'center',textAlign:'center',padding:'0 5px',margin:0,borderTop:'1px solid #E5E7EB',borderBottom:'1px solid #E5E7EB',background:i===index?'#fff':'#F9FAFB',fontSize:i===index?'12px':'10px',fontWeight:i===index?'900':'700',color:i===index?'#111827':'#9CA3AF',transform:i===index?'scale(1)':'scale(.96)',opacity:i===index?1:.72,transition:'all .1s'}},f.n))
+    ),
+    h('div',{style:{pointerEvents:'none',position:'absolute',left:'3px',right:'3px',top:H+'px',height:H+'px',boxSizing:'border-box',border:'2px solid rgba(17,24,39,.18)',borderRadius:'8px',boxShadow:'0 1px 4px rgba(0,0,0,.08)',zIndex:2}})
   );
 }
 function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
@@ -1748,13 +1786,26 @@ function CameraModal({onCapture,onClose}){
   const [recording,setRecording]=useState(false);
   const [countdown,setCountdown]=useState(120);
   const [err,setErr]=useState('');
+  const [preview,setPreview]=useState(null); // {blob,url}
   const videoRef=useRef(null),streamRef=useRef(null),mrRef=useRef(null),chunksRef=useRef([]),timerRef=useRef(null);
-  useEffect(()=>{
+
+  function attachStream(stream){
+    streamRef.current=stream;
+    if(videoRef.current){videoRef.current.removeAttribute('src');videoRef.current.srcObject=stream;videoRef.current.muted=true;videoRef.current.controls=false;videoRef.current.play().catch(()=>{});}
+  }
+  function openCamera(){
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setErr('Este navegador no permite grabar directamente. Usá Galería.');return;}
     navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:720},height:{ideal:1280}},audio:true})
-      .then(stream=>{streamRef.current=stream;if(videoRef.current){videoRef.current.srcObject=stream;videoRef.current.play().catch(()=>{});}})
+      .then(stream=>{setErr('');attachStream(stream);})
       .catch(()=>setErr('No se pudo abrir la cámara. Revisá permisos o usá Galería.'));
-    return()=>{if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());if(timerRef.current)clearInterval(timerRef.current);};
+  }
+  useEffect(()=>{
+    openCamera();
+    return()=>{
+      if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());
+      if(timerRef.current)clearInterval(timerRef.current);
+      if(preview&&preview.url)URL.revokeObjectURL(preview.url);
+    };
   },[]);
   function startRec(){
     setErr('');chunksRef.current=[];
@@ -1764,24 +1815,46 @@ function CameraModal({onCapture,onClose}){
       const opts={videoBitsPerSecond:700000,audioBitsPerSecond:64000};if(mime)opts.mimeType=mime;
       const mr=new MediaRecorder(streamRef.current,opts);
       mr.ondataavailable=e=>{if(e.data&&e.data.size>0)chunksRef.current.push(e.data);};
-      mr.onerror=()=>setErr('La grabación se interrumpió. Si el archivo quedó disponible podrás reintentar la subida.');
-      mr.onstop=()=>{const type=(mr.mimeType||mime||'video/webm').split(';')[0];const blob=new Blob(chunksRef.current,{type});if(blob.size>0)onCapture(blob);else setErr('No se generó un archivo válido. Intentá nuevamente.');};
+      mr.onerror=()=>setErr('La grabación se interrumpió. Si el archivo quedó disponible podrás reintentar.');
+      mr.onstop=()=>{
+        const type=(mr.mimeType||mime||'video/webm').split(';')[0];
+        const blob=new Blob(chunksRef.current,{type});
+        if(blob.size<=0){setErr('No se generó un archivo válido. Intentá nuevamente.');return;}
+        const url=URL.createObjectURL(blob);
+        setPreview({blob,url});
+        if(streamRef.current)streamRef.current.getTracks().forEach(t=>t.stop());
+        streamRef.current=null;
+        setTimeout(()=>{if(videoRef.current){videoRef.current.srcObject=null;videoRef.current.src=url;videoRef.current.muted=false;videoRef.current.controls=true;videoRef.current.play().catch(()=>{});}},0);
+      };
       mrRef.current=mr;mr.start(1000);setRecording(true);let secs=0;setCountdown(120);
       timerRef.current=setInterval(()=>{secs++;setCountdown(Math.max(0,120-secs));if(secs>=120)stopRec();},1000);
     }catch(e){setErr('Este dispositivo no pudo iniciar la grabación directa. Usá Galería.');}
   }
   function stopRec(){if(mrRef.current&&mrRef.current.state!=='inactive')mrRef.current.stop();if(timerRef.current)clearInterval(timerRef.current);setRecording(false);}
+  function recordAgain(){
+    if(preview&&preview.url)URL.revokeObjectURL(preview.url);
+    setPreview(null);setErr('');
+    if(videoRef.current){videoRef.current.pause();videoRef.current.removeAttribute('src');videoRef.current.controls=false;}
+    openCamera();
+  }
+  function useVideo(){if(preview&&preview.blob)onCapture(preview.blob);}
   return h('div',{style:{position:'fixed',inset:0,background:'#000',zIndex:500,display:'flex',flexDirection:'column'}},
-    h('video',{ref:videoRef,autoPlay:true,muted:true,playsInline:true,style:{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}),
+    h('video',{ref:videoRef,autoPlay:!preview,muted:!preview,playsInline:true,style:{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover'}}),
     h('div',{style:{position:'absolute',top:'max(14px, env(safe-area-inset-top))',left:'14px',right:'14px',zIndex:2,display:'flex',justifyContent:'space-between',alignItems:'center'}},
       h('button',{onClick:recording?()=>{}:onClose,disabled:recording,style:{background:'rgba(0,0,0,.55)',border:'1px solid rgba(255,255,255,.25)',color:'#fff',borderRadius:'9px',padding:'9px 12px',fontWeight:'700'}},recording?'Grabando…':'✕ Cancelar'),
       recording&&h('div',{style:{background:'rgba(0,0,0,.6)',color:'#fff',borderRadius:'20px',padding:'7px 11px',fontWeight:'900'}},'● '+countdown+'s')
     ),
+    preview&&h('div',{style:{position:'absolute',top:'70px',left:'14px',right:'14px',zIndex:2,textAlign:'center',color:'#fff',fontSize:'13px',fontWeight:'800',textShadow:'0 1px 4px #000'}},'Revisá el video antes de enviarlo'),
     err&&h('div',{style:{position:'absolute',left:'14px',right:'14px',bottom:'130px',zIndex:3,background:'rgba(127,29,29,.92)',color:'#fff',borderRadius:'10px',padding:'10px 12px',fontSize:'12px',fontWeight:'700',textAlign:'center'}},err),
-    h('div',{style:{position:'absolute',left:0,right:0,bottom:0,zIndex:2,padding:'18px 24px calc(18px + env(safe-area-inset-bottom))',background:'linear-gradient(transparent,rgba(0,0,0,.9))',display:'flex',justifyContent:'center',alignItems:'center',minHeight:'110px'}},
-      !recording
-        ?h('button',{onClick:startRec,disabled:!!err&&(!streamRef.current),style:{background:R,color:'#fff',border:'5px solid rgba(255,255,255,.55)',borderRadius:'50%',width:'76px',height:'76px',fontSize:'30px',cursor:'pointer'}},'●')
-        :h('button',{onClick:stopRec,style:{background:'#fff',color:'#111',border:'5px solid rgba(255,255,255,.35)',borderRadius:'50%',width:'76px',height:'76px',fontSize:'25px',cursor:'pointer',fontWeight:'900'}},'■')
+    h('div',{style:{position:'absolute',left:0,right:0,bottom:0,zIndex:2,padding:'18px 24px calc(18px + env(safe-area-inset-bottom))',background:'linear-gradient(transparent,rgba(0,0,0,.9))',display:'flex',justifyContent:'center',alignItems:'center',gap:'10px',minHeight:'110px'}},
+      preview
+        ?h('div',{style:{display:'flex',gap:'10px',width:'100%',maxWidth:'460px'}},
+            h('button',{onClick:recordAgain,style:{flex:1,background:'rgba(255,255,255,.14)',color:'#fff',border:'1px solid rgba(255,255,255,.45)',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'800'}},'Volver a grabar'),
+            h('button',{onClick:useVideo,style:{flex:1,background:G,color:'#fff',border:'none',borderRadius:'10px',padding:'12px',fontSize:'13px',fontWeight:'900'}},'Usar este video')
+          )
+        :(!recording
+          ?h('button',{onClick:startRec,disabled:!!err&&(!streamRef.current),style:{background:R,color:'#fff',border:'5px solid rgba(255,255,255,.55)',borderRadius:'50%',width:'76px',height:'76px',fontSize:'30px',cursor:'pointer'}},'●')
+          :h('button',{onClick:stopRec,style:{background:'#fff',color:'#111',border:'5px solid rgba(255,255,255,.35)',borderRadius:'50%',width:'76px',height:'76px',fontSize:'25px',cursor:'pointer',fontWeight:'900'}},'■'))
     )
   );
 }
