@@ -142,11 +142,20 @@ function parseDietas(row,foodDB){
   }).filter(Boolean);
 }
 
+// FechaInicio canónica: acepta ISO y el formato serializado por Apps Script.
+function parseStartDate(value){
+  if(value===null||value===undefined||value==='')return null;
+  const raw=String(value).trim();
+  let m,d=null;
+  if((m=raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) d=new Date(+m[1],+m[2]-1,+m[3],12);
+  else if((m=raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/))) d=new Date(+m[3],+m[2]-1,+m[1],12);
+  return d&&!isNaN(d.getTime())?d:null;
+}
 // Semana secuencial basada en contador localStorage — Lun a Dom
 function getWkForNum(user,num){
   const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
-  let startMon=new Date(startId+'T12:00:00');
-  if(isNaN(startMon.getTime())){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
+  let startMon=parseStartDate(startId);
+  if(!startMon){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
   const day=startMon.getDay();
   const diffToMon=day===0?-6:1-day;
   startMon.setDate(startMon.getDate()+diffToMon);
@@ -160,8 +169,8 @@ function getWkForNum(user,num){
 // Calcula la semana real según el calendario hoy
 function getRealWkNum(user){
   const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
-  let startMon=new Date(startId+'T12:00:00');
-  if(isNaN(startMon.getTime())){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
+  let startMon=parseStartDate(startId);
+  if(!startMon){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
   const day=startMon.getDay();
   startMon.setDate(startMon.getDate()+(day===0?-6:1-day));
   const today=new Date();today.setHours(12,0,0,0);
@@ -1909,14 +1918,19 @@ function App(){
   useEffect(()=>{
     if(!user||!sessionReady)return;
     cambiandoSemana.current=true;dataLoaded.current=false;draftReady.current=false;
-    // RELOJ CANÓNICO: cada apertura de la app comienza SIEMPRE en la semana calendario actual.
-    // La navegación a semanas pasadas sigue disponible durante la sesión, pero wknum local no puede
-    // convertir una visita histórica anterior en la pantalla inicial de una apertura nueva.
+    // Calcular sem real del calendario
     const realNum=getRealWkNum(user);
+    // Actualizar el máximo alcanzado (la sem real siempre es el techo)
     const storedNum=parseInt(localStorage.getItem(`ase_${user}_wknum`))||1;
+    // Si storedNum > realNum → corregir al real (no puede estar en el futuro)
+    // Si storedNum < realNum → respetar (puede estar viendo una sem pasada)
+    // Además guardar realNum como máximo para que "Nueva →" no supere el calendario
     localStorage.setItem(`ase_${user}_maxWkNum`,String(realNum));
-    localStorage.setItem(`ase_${user}_wknum`,String(realNum));
+    // En una apertura nueva, la fuente de verdad es la semana calendario actual.
+    // La navegación histórica sólo vive durante la sesión actual; no define la próxima apertura.
     const wkNum=realNum;
+    localStorage.setItem(`ase_${user}_wknum`,String(realNum));
+    localStorage.setItem(`ase_${user}_hadAdvanced`,'1');
     setWk(getWkForNum(user,wkNum));
     // Si el calendario avanzó a una semana nueva, limpiar ambos formatos históricos de draft
     // antes de restaurar. Esto evita que el auto-save reviva datos de la semana anterior.
