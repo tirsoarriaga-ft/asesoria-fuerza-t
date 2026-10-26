@@ -137,7 +137,6 @@ function buildFoodDB(rows){
       fibra100:parseFloat(row.Fibra100g||row.fibra100g)||0,
       vU:String(row.UnidadVisual||row.unidadvisual||'').trim(),
       vB:parseFloat(row.CantVisual||row.cantvisual)||1,
-      grupo:String(row.GrupoPorcion||row.grupoporcion||'').trim().toLowerCase(),
     };
   });
   return db;
@@ -1465,7 +1464,6 @@ function foodTotals(foods,grams){
   return{kcal,p,c,g,fib};
 }
 function inferPortionGroup(f){
-  if(f.grupo)return f.grupo;
   const k=String(f.key||'').toLowerCase(),n=String(f.n||'').toLowerCase(),u=String(f.vU||'').toLowerCase();
   const has=(xs)=>xs.some(x=>k.includes(x)||n.includes(x));
   if(has(['clara']))return'claras';
@@ -1532,6 +1530,58 @@ function solveMealPortions(foods,t){
   }
   return best;
 }
+function dayStatus(day,daily){
+  const kLow=daily.kcal*.95,kHigh=daily.kcal*1.05;
+  return{
+    kcalLow:Math.max(0,kLow-day.kcal),
+    kcalHigh:Math.max(0,day.kcal-kHigh),
+    pLow:Math.max(0,daily.p-day.p),
+    gLow:Math.max(0,daily.gMin-day.g),
+    fibLow:Math.max(0,daily.fib*.85-day.fib)
+  };
+}
+function dayProblemScore(day,daily){
+  const x=dayStatus(day,daily);
+  return x.kcalLow/Math.max(80,daily.kcal*.05)+x.kcalHigh/Math.max(80,daily.kcal*.05)+x.pLow/Math.max(8,daily.p*.08)+x.gLow/Math.max(5,daily.gMin*.12);
+}
+function suggestPlanAdjustments(plans,day,daily){
+  if(!plans.length)return[];
+  let cur={...day};
+  const work=plans.map(x=>({meal:x.meal,chosen:x.chosen,grams:x.solved?x.solved.grams.slice():[]}));
+  const out=[];
+  for(let pass=0;pass<2;pass++){
+    const before=dayProblemScore(cur,daily);if(before<=0)return out;
+    const st=dayStatus(cur,daily);let best=null;
+    work.forEach((m,mi)=>m.chosen.forEach((f,fi)=>{
+      const old=m.grams[fi];if(!(old>0))return;
+      portionCandidates(f).forEach(ng=>{
+        if(ng===old)return;
+        const delta=ng-old;
+        // Dirección coherente con el problema diario dominante.
+        if(st.kcalLow>0&&delta<0)return;
+        if(st.kcalHigh>0&&delta>0)return;
+        if(st.pLow>0&&delta<0&&f.p100>0)return;
+        if(st.gLow>0&&delta<0&&f.g100>0)return;
+        const factor=delta/100;
+        const nd={...cur,kcal:cur.kcal+f.kcal100*factor,p:cur.p+f.p100*factor,c:cur.c+f.c100*factor,g:cur.g+f.g100*factor,fib:cur.fib+f.fibra100*factor};
+        const after=dayProblemScore(nd,daily);if(after>=before-.03)return;
+        let pref=0;
+        // Elegir el alimento que mejor responde al déficit/exceso, no sólo la comida más lejana de 25%.
+        if(st.pLow>0)pref+=(f.cat==='P'?-.35:.15);
+        else if(st.gLow>0)pref+=(f.cat==='G'?-.30:.12);
+        else if(st.kcalLow>0)pref+=(f.cat==='H'?-.25:(f.cat==='FV'?-.05:.08));
+        else if(st.kcalHigh>0){if(f.cat==='P'&&cur.p-f.p100*(-factor)<daily.p)pref+=.45;pref+=(f.cat==='G'||f.cat==='H')?-.18:.08;}
+        const changeCost=Math.abs(delta)/Math.max(20,f.porcionBase||100)*.08;
+        const rank=after+pref+changeCost;
+        if(!best||rank<best.rank)best={rank,after,mi,fi,f,old,ng,nd,meal:m.meal};
+      });
+    }));
+    if(!best)break;
+    work[best.mi].grams[best.fi]=best.ng;cur=best.nd;
+    out.push({meal:best.meal,food:best.f,from:best.old,to:best.ng,after:{...cur}});
+  }
+  return out;
+}
 function practicalAmount(food,grams){
   if(!(food&&food.porcionBase>0&&food.vU))return'';
   const q=(grams/food.porcionBase)*(food.vB||1);
@@ -1573,14 +1623,26 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
   const kcalOK=dayReady&&day.kcal>=kcal*.95&&day.kcal<=kcal*1.05,pOK=dayReady&&day.p>=daily.p,gOK=dayReady&&day.g>=daily.gMin,fibOK=dayReady&&day.fib>=daily.fib*.85;
   const planOK=kcalOK&&pOK&&gOK;
   const issues=[];if(dayReady){if(!kcalOK)issues.push(day.kcal<kcal*.95?'energía':'energía alta');if(!pOK)issues.push('proteína');if(!gOK)issues.push('grasas');if(!fibOK)issues.push('fibra');}
+  const adjustments=(dayReady&&!planOK)?suggestPlanAdjustments(plans,day,daily):[];
+  const projected=adjustments.length?adjustments[adjustments.length-1].after:null;
   const header=h('div',{style:{background:'#111',borderRadius:'12px',padding:'15px 16px',marginBottom:'12px'}},
     h('div',{style:{fontSize:'14px',fontWeight:'900',color:'#fff',lineHeight:'1.45'}},'Cada comida mantiene la misma estructura: 1 proteína + 1 hidrato + 1 grasa + 1 fruta/verdura.'),
     h('div',{style:{fontSize:'12px',fontWeight:'600',color:'rgba(255,255,255,.72)',lineHeight:'1.5',marginTop:'5px'}},'Combiná los alimentos a tu gusto. La app prioriza porciones prácticas y controla el plan completo del día.')
   );
   const audit=dayReady&&h('div',{style:{...card,background:planOK?'#ECFDF5':'#FFF7ED',border:'1px solid '+(planOK?'#A7F3D0':'#FED7AA')}},
     h('div',{style:{fontSize:'13px',fontWeight:'900',color:planOK?'#047857':'#9A3412'}},planOK?'Tu día está equilibrado ✓':'Tu plan necesita ajuste'),
-    !planOK&&h('div',{style:{fontSize:'11px',color:'#9A3412',marginTop:'3px'}},'Revisar: '+issues.join(' · ')+'. Si una combinación no cierra con porciones normales, conviene complementar o reemplazar un alimento.'),
-    h('div',{style:{fontSize:'10px',color:'#666',marginTop:'6px'}},Math.round(day.kcal)+'/'+Math.round(kcal)+' kcal · P '+Math.round(day.p)+'/'+Math.round(daily.p)+' g · G '+Math.round(day.g)+'/≥'+Math.round(daily.gMin)+' g · Fibra '+Math.round(day.fib)+'/~'+Math.round(daily.fib)+' g')
+    h('div',{style:{fontSize:'10px',color:'#666',marginTop:'6px'}},Math.round(day.kcal)+'/'+Math.round(kcal)+' kcal · P '+Math.round(day.p)+'/'+Math.round(daily.p)+' g · G '+Math.round(day.g)+'/≥'+Math.round(daily.gMin)+' g · Fibra '+Math.round(day.fib)+'/~'+Math.round(daily.fib)+' g'),
+    !planOK&&h('div',{style:{fontSize:'11px',color:'#9A3412',marginTop:'8px',fontWeight:'700'}},
+      day.kcal<kcal*.95?'Falta energía en el día.':day.kcal>kcal*1.05?'Hay demasiada energía en el día.':!pOK?'Falta proteína en el día.':!gOK?'Faltan grasas en el día.':'El día necesita ajuste.'
+    ),
+    !planOK&&adjustments.length>0&&h('div',{style:{marginTop:'8px'}},
+      h('div',{style:{fontSize:'10px',fontWeight:'900',color:'#7C2D12',marginBottom:'4px'}},'AJUSTE SUGERIDO'),
+      adjustments.map((a,i)=>h('div',{key:i,style:{fontSize:'11px',color:'#7C2D12',padding:'3px 0'}},
+        a.meal.n+' · '+a.food.n+': '+(practicalAmount(a.food,a.from)||Math.round(a.from)+' g')+' → '+(practicalAmount(a.food,a.to)||Math.round(a.to)+' g')+' ('+Math.round(a.from)+' → '+Math.round(a.to)+' g)'
+      )),
+      projected&&h('div',{style:{fontSize:'10px',color:'#7C2D12',marginTop:'5px'}},'Con esos cambios: ~'+Math.round(projected.kcal)+' kcal · P '+Math.round(projected.p)+' g · G '+Math.round(projected.g)+' g')
+    ),
+    !planOK&&!adjustments.length&&h('div',{style:{fontSize:'10px',color:'#9A3412',marginTop:'7px'}},'Con estas elecciones no alcanza un ajuste práctico de porciones. Conviene cambiar uno de los alimentos.')
   );
   const hydration=h('div',{style:{...card,marginTop:'8px',display:'flex',justifyContent:'space-around',alignItems:'center'}},
     h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'22px'}},'💧'),h('div',{style:{fontSize:'17px',fontWeight:'800',color:B}},metaAgua+' L'),h('div',{style:{fontSize:'10px',color:'#999'}},'agua / día')),
@@ -1599,7 +1661,6 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
           f&&h('div',{style:{marginTop:'6px',minHeight:'36px'}},grams?h('div',null,h('div',{style:{fontSize:'10px',fontWeight:'900',color:B}},practicalAmount(f,grams)||'—'),h('div',{style:{fontSize:'9px',color:'#777',marginTop:'2px'}},'o '+grams+' g')):h('div',{style:{fontSize:'9px',color:'#B45309',fontWeight:'700'}},'Cantidad pendiente'))
         );})
       ),
-      solved&&!solved.valid&&h('div',{style:{fontSize:'10px',color:'#B45309',fontWeight:'700',marginTop:'7px',padding:'0 4px'}},'Esta combinación no alcanza el rango de la comida con porciones prácticas. Probá complementar o cambiar un alimento.')
     )),
     h('div',{style:{...card,marginTop:'12px'}},h('div',{style:{fontSize:'15px',fontWeight:'900',marginBottom:'4px'}},'MENÚS DE REFERENCIA'),h('div',{style:{fontSize:'11px',color:'#777',marginBottom:'8px'}},'Ejemplos P + H + G + FV. No limitan las combinaciones de arriba.'),refs.length?refs.slice(0,12).map((r,i)=>h('div',{key:r.meal+r.id,style:{padding:'7px 0',borderBottom:i<Math.min(refs.length,12)-1?'1px solid rgba(0,0,0,.06)':'none'}},h('div',{style:{fontSize:'11px',fontWeight:'800'}},r.meal+' '+r.id),h('div',{style:{fontSize:'11px',color:'#555',marginTop:'2px'}},r.items.map(x=>x.n).join(' · ')))):h('div',{style:{fontSize:'11px',color:'#999'}},'Los menús actuales todavía requieren validación P + H + G + FV en Sheet.')),
     hydration
