@@ -2244,6 +2244,78 @@ function App(){
   const [nutriConfirmado,setNutriConfirmado]=useState('');
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
   const [cfg,setCfg]=useState(defCfg);
+  const [forceHydrateVer,setForceHydrateVer]=useState(0);
+
+  // FUERZA — rehidratar la referencia inicial por identidad de bloque, nunca por el SemanID legacy.
+  // Esto recupera un test S1 real que haya quedado persistido bajo una semana total incorrecta
+  // (por ejemplo durante el bug de FechaInicio), sin mover ni reescribir historia.
+  function rehydrateForceBlockReference(cfgNow,remoteRows){
+    if(!user||String(cfgNow?.bloque||'').toLowerCase()!=='fuerza')return false;
+    const bi=parseInt(cfgNow?.bloqueInicio)||1;
+    const principalBySess={};
+    ['A','B','C','D','E'].slice(0,parseInt(cfgNow?.num)||0).forEach(function(sess){
+      const flat=(cfgNow?.assign?.[sess]||[]).flat(Infinity);
+      if(flat.length)principalBySess[sess]=String(flat[0]);
+    });
+    const normBlock=function(v){return String(v||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');};
+    const candidates=[];
+    function addCandidate(d,sourceId){
+      if(!d||typeof d!=='object')return;
+      const r=d.rutina||{};
+      if(normBlock(r.bloque)!=='fuerza')return;
+      if((parseInt(r.bloqueInicio)||1)!==bi)return;
+      candidates.push({d,sourceId:String(sourceId||d.wi||''),semBloque:parseInt(r.semanaBloque)||0});
+    }
+    // 1) patrimonio local: snapshots y drafts, sin modificar ninguno.
+    try{
+      const p='ase_'+user+'_';
+      for(let i=0;i<localStorage.length;i++){
+        const k=localStorage.key(i)||'';
+        if(k.indexOf(p)!==0)continue;
+        let m=k.match(new RegExp('^'+p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(sem_\\d+)$'));
+        let md=k.match(new RegExp('^'+p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'draft_(sem_\\d+)$'));
+        if(!m&&!md)continue;
+        try{addCandidate(JSON.parse(localStorage.getItem(k)||'null'),(m&&m[1])||(md&&md[1])||'');}catch(_e){}
+      }
+    }catch(_e){}
+    // 2) patrimonio remoto: todos los Drafts del mismo asesorado.
+    const asesoradoId=String(localStorage.getItem(`ase_${user}_asesoradoId`)||'').trim();
+    (remoteRows||[]).forEach(function(row){
+      const same=asesoradoId&&String(row.AsesoradoID||'').trim()?String(row.AsesoradoID||'').trim()===asesoradoId:String(row.Asesorado||'').trim().toLowerCase()===String(user).trim().toLowerCase();
+      if(!same||!row.Draft)return;
+      try{addCandidate(JSON.parse(row.Draft),String(row.SemanID||''));}catch(_e){}
+    });
+    // S1 explícita primero; después cualquier snapshot del mismo bloque que haya heredado la referencia.
+    candidates.sort(function(a,b){return (a.semBloque===1?0:1)-(b.semBloque===1?0:1);});
+    let changed=false;
+    Object.keys(principalBySess).forEach(function(sess){
+      const exId=principalBySess[sess];
+      const refKey=`ase_${user}_rmRef_b${bi}_${sess}_${exId}`;
+      const iniKey=`ase_${user}_forceInitial_b${bi}_${sess}_${exId}`;
+      let hasRef=parseFloat(localStorage.getItem(refKey));
+      let hasIni=null;try{hasIni=JSON.parse(localStorage.getItem(iniKey)||'null');}catch(_e){}
+      if((hasRef>0)&&hasIni)return;
+      for(const c of candidates){
+        const exec=c.d.exec||{};
+        const refs=(exec.forceRefs&&exec.forceRefs[sess])||{};
+        const initials=(exec.forceInitial&&exec.forceInitial[sess])||{};
+        const tests=(exec.forceTests&&exec.forceTests[sess])||{};
+        let ref=parseFloat(refs[exId]??refs[parseInt(exId)]);
+        let ini=initials[exId]??initials[parseInt(exId)]??null;
+        let test=tests[exId]??tests[parseInt(exId)]??null;
+        // Si el snapshot no embebió forceTests, vincular sólo el rmTest de SU propia semana.
+        if(!test&&c.sourceId){try{const raw=JSON.parse(localStorage.getItem(`ase_${user}_rmTest_${c.sourceId}_${sess}`)||'{}');test=raw[exId]??raw[parseInt(exId)]??null;}catch(_e){}}
+        const kg=parseFloat(test&&test.kg),reps=parseInt(test&&test.reps);
+        if(!(ref>0)&&kg>0&&reps>0)ref=Math.round(kg*(1+reps/30)*10)/10;
+        if(!ini&&kg>0&&reps>0)ini={kg:kg,reps:reps,e1rm:ref>0?ref:Math.round(kg*(1+reps/30)*10)/10};
+        if(!(hasRef>0)&&ref>0){try{localStorage.setItem(refKey,String(ref));hasRef=ref;changed=true;}catch(_e){}}
+        if(!hasIni&&ini&&parseFloat(ini.kg)>0&&parseInt(ini.reps)>0){try{localStorage.setItem(iniKey,JSON.stringify(ini));hasIni=ini;changed=true;}catch(_e){}}
+        if((hasRef>0)&&hasIni)break;
+      }
+    });
+    if(changed)setForceHydrateVer(v=>v+1);
+    return changed;
+  }
 
   useEffect(()=>{if(!user)return;try{_ftPruneLocalSafetyBackups(user);}catch(e){}},[user]);
   const [exesReady,setExesReady]=useState(false);
@@ -2457,6 +2529,11 @@ function App(){
             return MAP[n]||n;
           };
           const newCfg={num,assign,series:Math.min(4,Math.max(2,parseInt(fila.Series)||2)),bloque:normBloque(String(fila.Bloque||'volumen')),bloqueInicio:parseInt(fila.BloqueInicio)||1,hiit:hiitSess,pesoRef:parseFloat(fila.PesoRef)||0,nivel:String(fila.Nivel||'').toLowerCase()};setCfg(newCfg);localStorage.setItem(CFG_KEY(user),JSON.stringify(newCfg));
+          // La referencia de Fuerza es patrimonio del bloque. Buscarla en todos los Drafts
+          // del asesorado por bloque/BloqueInicio, incluso si el SemanID viejo quedó corrido.
+          if(newCfg.bloque==='fuerza'){
+            fetch(SCRIPT_URL+'?action=drafts&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(rows=>rehydrateForceBlockReference(newCfg,rows||[])).catch(()=>{rehydrateForceBlockReference(newCfg,[]);});
+          }
         }
       }).catch(()=>{});
     // Asesorados + Diagnosticos → identidad/FechaInicio + NutriConfirmado canónico
