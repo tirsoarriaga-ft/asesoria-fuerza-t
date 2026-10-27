@@ -73,6 +73,39 @@ const HK=u=>`ase_${u}_hist`;
 const KG_KEY=(u,n)=>`ase_${u}_kg_${n}`;
 const CFG_KEY=u=>`ase_${u}_sessConfig`;
 const USER_KEY='ase_user';
+
+// MOBILE STORAGE GUARD — evita white-screen cuando localStorage alcanza la cuota.
+function _ftIsQuotaError(e){
+  const n=String((e&&e.name)||'').toLowerCase(),m=String((e&&e.message)||'').toLowerCase();
+  return n.includes('quota')||n.includes('storage')||m.includes('quota')||m.includes('exceeded');
+}
+function _ftStorageBytes(){
+  let n=0;try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i)||'';const v=localStorage.getItem(k)||'';n+=(k.length+v.length)*2;}}catch(e){}
+  return n;
+}
+function _ftPruneLocalSafetyBackups(user){
+  const p='ase_'+user+'_';
+  const groups={weekbackup:{},premig2:[],prerestore:[],recoverybackup:[],shiftbackup:[]};
+  const keys=[];
+  try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.indexOf(p)===0)keys.push(k);}}catch(e){}
+  keys.forEach(k=>{
+    let m=k.match(new RegExp('^'+p.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')+'weekbackup_(sem_\\d+)_(\\d+)$'));
+    if(m){(groups.weekbackup[m[1]]||(groups.weekbackup[m[1]]=[])).push({k,ts:parseInt(m[2])||0});return;}
+    ['premig2','prerestore','recoverybackup','shiftbackup'].forEach(tag=>{const mm=k.match(new RegExp('^'+p.replace(/[.*+?^${}()|[\\]\\]/g,'\\$&')+tag+'_(\\d+)$'));if(mm)groups[tag].push({k,ts:parseInt(mm[1])||0});});
+  });
+  // weekbackup: conservar sólo las 2 copias más nuevas por semana.
+  Object.values(groups.weekbackup).forEach(arr=>{arr.sort((a,b)=>b.ts-a.ts);arr.slice(2).forEach(x=>{try{localStorage.removeItem(x.k);}catch(e){}});});
+  // Backups auxiliares completos: conservar sólo el más nuevo de cada tipo.
+  ['premig2','prerestore','recoverybackup','shiftbackup'].forEach(tag=>{const arr=groups[tag].sort((a,b)=>b.ts-a.ts);arr.slice(1).forEach(x=>{try{localStorage.removeItem(x.k);}catch(e){}});});
+}
+function _ftSafeSetItem(k,v,user){
+  try{localStorage.setItem(k,v);return true;}
+  catch(e){
+    if(!_ftIsQuotaError(e))throw e;
+    try{_ftPruneLocalSafetyBackups(user);localStorage.setItem(k,v);return true;}catch(e2){return false;}
+  }
+}
+
 const MEALS_CHECK=[{k:'desayuno',l:'Desayuno',ic:'☀️'},{k:'almuerzo',l:'Almuerzo',ic:'🌞'},{k:'merienda',l:'Merienda',ic:'☕'},{k:'cena',l:'Cena',ic:'🌙'}];
 // m values: '' = sin marcar, 'ok' = cumplió, 'par' = parcial, 'no' = no cumplió
 // agua values: '' = sin marcar, 'max' = máximo, 'min' = mínimo, 'ins' = insuficiente
@@ -2198,6 +2231,8 @@ function App(){
   const [nutriConfirmado,setNutriConfirmado]=useState('');
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
   const [cfg,setCfg]=useState(defCfg);
+
+  useEffect(()=>{if(!user)return;try{_ftPruneLocalSafetyBackups(user);}catch(e){}},[user]);
   const [exesReady,setExesReady]=useState(false);
   const exesRef=useRef(DEFAULT_EXES);
 
@@ -2621,6 +2656,13 @@ function App(){
   }
   useEffect(()=>{if(user&&exesReady)syncRemoteHistoricalDrafts();},[user,exesReady]);
   const [saveErrors,setSaveErrors]=useState([]);
+
+  useEffect(()=>{
+    const onErr=function(ev){const msg=String((ev&&ev.error&&ev.error.message)||(ev&&ev.message)||'Error inesperado');if(msg)setSaveErrors(['Error de la app: '+msg]);};
+    const onRej=function(ev){const r=ev&&ev.reason;const msg=String((r&&r.message)||r||'Error inesperado');if(msg)setSaveErrors(['Error de la app: '+msg]);};
+    window.addEventListener('error',onErr);window.addEventListener('unhandledrejection',onRej);
+    return()=>{window.removeEventListener('error',onErr);window.removeEventListener('unhandledrejection',onRej);};
+  },[]);
   function validateSave(){
     const errors=[];
     // VALIDACIONES DURAS: solo datos que realmente deben estar respondidos para reportar.
@@ -2785,11 +2827,11 @@ function App(){
         const savedKey=SK(wk.id,user),draftKey=`ase_${user}_draft_${wk.id}`;
         safety[savedKey]=localStorage.getItem(savedKey);
         safety[draftKey]=localStorage.getItem(draftKey);
-        if(safety[savedKey]||safety[draftKey])localStorage.setItem(`ase_${user}_weekbackup_${wk.id}_${Date.now()}`,JSON.stringify(safety));
+        if(safety[savedKey]||safety[draftKey])_ftSafeSetItem(`ase_${user}_weekbackup_${wk.id}_${Date.now()}`,JSON.stringify(safety),user);
       }catch(_e){}
-      localStorage.setItem(SK(wk.id,user),JSON.stringify(d));
+      if(!_ftSafeSetItem(SK(wk.id,user),JSON.stringify(d),user))throw new Error('Almacenamiento local del teléfono lleno. No se pudo guardar la semana.');
       // T6: después de un guardado explícito, Draft y snapshot quedan en la misma versión.
-      localStorage.setItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(d));
+      if(!_ftSafeSetItem(`ase_${user}_draft_${wk.id}`,JSON.stringify(d),user))throw new Error('Almacenamiento local del teléfono lleno. No se pudo guardar el borrador.');
       const list=JSON.parse(localStorage.getItem(HK(user))||'[]');
       if(!list.includes(wk.id)){list.push(wk.id);localStorage.setItem(HK(user),JSON.stringify(list));}
       setSaved(completeWeek?true:'progreso');loadH();
@@ -3131,7 +3173,7 @@ function App(){
     // NUNCA convierte sessKg (carga vigente) en skUsed (ejecución).
     var mergedSR=mergeMissingTree(mergeMissingTree(sessionReps||{},prevDraft.sr||{}),savedExec.sr||{});
     var draft={wi:wk.id,wl:wk.label,sr:mergedSR,n:nut,h:hab,hiit:hiitData,sk:savedExec.sk||prevDraft.sk||{},skUsed:savedExec.skUsed||prevDraft.skUsed||{},e:(savedExec.e&&savedExec.e.length)?savedExec.e:((prevDraft.e&&prevDraft.e.length)?prevDraft.e:exes),rutina:savedExec.rutina||prevDraft.rutina||{num:cfg.num,assign:cfg.assign,bloque:cfg.bloque,series:cfg.series,bloqueInicio:cfg.bloqueInicio},exec:savedExec.exec||prevDraft.exec||{}};
-    localStorage.setItem('ase_'+user+'_draft_'+wk.id,JSON.stringify(draft));
+    if(!_ftSafeSetItem('ase_'+user+'_draft_'+wk.id,JSON.stringify(draft),user)){setSaveErrors(['El almacenamiento local del teléfono está lleno. Limpié backups redundantes pero todavía no hay espacio suficiente. No se borró tu historial.']);return;}
   },[sessionReps,nut,hab,hiitData,user,wk.id]);
 
   function upN(i,f,d){const n=[...nut];n[i]={...n[i],[f]:Math.max(0,Math.min(4,n[i][f]+d))};setNut(n);setSaved(false);}
