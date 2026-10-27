@@ -707,7 +707,7 @@ function DiagnosticoPanel({rutina,weeks}){
   );
 }
 
-function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRefresh,onBack}){
+function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equivalencias,onRefresh,onBack}){
   const [tab,setTab]=useState('med');
   const [selEx,setSelEx]=useState(0);
   const [showBuilder,setShowBuilder]=useState(false);
@@ -734,6 +734,12 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
   const diagConfirmado=diagnostico&&String(diagnostico.EstadoDiag||'').toLowerCase()==='confirmado';
   const BLOQ_LABEL={base:'Base',rehabilitacion:'Rehabilitación',fuerza:'Fuerza',volumen:'Volumen',intensidad:'Intensidad',deporte:'Deporte'};
   const NUTRI_LABEL={unica:'Pauta única · porciones + gramos'};
+  const eqActivas=(equivalencias||[]).filter(function(x){
+    const sameId=rutina&&rutina.AsesoradoID&&String(x.AsesoradoID||'')===String(rutina.AsesoradoID||'');
+    const sameName=String(x.Asesorado||'').trim().toLowerCase()===String(name||'').trim().toLowerCase();
+    return (sameId||sameName)&&String(x.Estado||'activo').toLowerCase()!=='eliminado'&&String(x.ReemplazoID||'')!==String(x.OriginalID||'');
+  });
+  const exById=function(id){return (ejercicios||[]).find(function(e){return String(e.ID||e.id||'')===String(id||'');});};
   function copiarLink(){
     try{navigator.clipboard.writeText(linkDiag);}catch(e){}
     setLinkCopiado(true);setTimeout(()=>setLinkCopiado(false),2000);
@@ -1177,6 +1183,18 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
       )
     ),
     h('div',{style:{padding:'12px',paddingBottom:'20px'}},
+      eqActivas.length>0&&h('div',{style:{...card,borderLeft:'4px solid '+AC}},
+        h('div',{style:{...lbl,color:'#111',marginBottom:'7px'}},'REEMPLAZOS PERMANENTES DEL ASESORADO'),
+        eqActivas.map(function(eq,i){
+          const o=exById(eq.OriginalID),r=exById(eq.ReemplazoID);
+          return h('div',{key:String(eq.Sesion)+'_'+String(eq.OriginalID),style:{fontSize:'11px',padding:'6px 0',borderBottom:i<eqActivas.length-1?'1px solid #eee':'none',lineHeight:'1.45'}},
+            h('span',{style:{fontWeight:'800'}},'Sesión '+String(eq.Sesion||'')+' · '),
+            (o?String(o.NOMBRE||o.Nombre):('ID '+eq.OriginalID))+' → ',
+            h('span',{style:{fontWeight:'800',color:AC}},r?String(r.NOMBRE||r.Nombre):('ID '+eq.ReemplazoID)),
+            h('div',{style:{fontSize:'10px',color:'#888',marginTop:'2px'}},'La rutina original se conserva; este es el ejercicio que verá en todos sus dispositivos.')
+          );
+        })
+      ),
       // ── Checklist de progreso (Fase 3B) ──
       h('div',{style:{background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.08)',marginBottom:'10px',overflow:'hidden'}},
         h('div',{onClick:()=>setShowChecklist(s=>!s),style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',cursor:'pointer'}},
@@ -2757,6 +2775,7 @@ function App(){
   const [decisiones,setDecisiones]=useState([]);
   const [devoluciones,setDevoluciones]=useState([]);
   const [seguimiento,setSeguimiento]=useState([]);
+  const [equivalencias,setEquivalencias]=useState([]);
   const [selected,setSelected]=useState(null);
   const [error,setError]=useState(null);
   const [appTab,setAppTab]=useState('lista');
@@ -2775,8 +2794,9 @@ function App(){
       fetch(SCRIPT_URL+'?action=dietas').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=auditoriaNutriResumen').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=devoluciones&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[]),
-      fetch(SCRIPT_URL+'?action=seguimiento&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[])
-    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags,pagosData,dietasData,nutriData,devolData,segData])=>{
+      fetch(SCRIPT_URL+'?action=seguimiento&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=equivalencias&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[])
+    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags,pagosData,dietasData,nutriData,devolData,segData,eqData])=>{
       // Compatibilidad con encabezados históricos del Sheet: normalizar sin modificar la hoja.
       reportes=(reportes||[]).map(function(row){return Object.assign({},row,{
         Dolor:row.Dolor!==undefined?row.Dolor:row['Dolor articular'],
@@ -2860,6 +2880,7 @@ function App(){
       setMaestra(asesorados||[]);
       setDevoluciones(Array.isArray(devolData)?devolData:[]);
       setSeguimiento(Array.isArray(segData)?segData:[]);
+      setEquivalencias(Array.isArray(eqData)?eqData:[]);
       setData(grouped);setRutinas(rutsCompletas);setDecisiones(decs||[]);
     }).catch(()=>setError('Error al cargar datos.')).finally(()=>setLoading(false));
   };
@@ -2870,7 +2891,7 @@ function App(){
   if(selected){
     const rutSel=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase());
     const diagSel=(diagnosticos||[]).find(d=>String(d.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()||(rutSel&&String(d.AsesoradoID||'').trim().toLowerCase()===String(rutSel.AsesoradoID||'').trim().toLowerCase()&&String(rutSel.AsesoradoID||'').trim()!==''));
-    return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutSel,ejercicios,diagnostico:diagSel,decisiones:decisiones,onRefresh:loadData,onBack:()=>setSelected(null)});
+    return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutSel,ejercicios,diagnostico:diagSel,decisiones:decisiones,equivalencias:equivalencias,onRefresh:loadData,onBack:()=>setSelected(null)});
   }
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
