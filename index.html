@@ -966,6 +966,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
       return;
     }
     setBaseProto(function(p){return Object.assign({},p,{[exId]:(p[exId]===val?'':val)});});
+    setSaved(false);
   };
 
   // FUERZA S2–S7: cumplimiento del protocolo principal, por semana + sesión.
@@ -1031,16 +1032,17 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
     return null;
   };
   const setRep=(sess,exId,k,v)=>{
-    // Inmutable y acotado: evita mutar el mapa anterior durante cada pulsación
-    // y reduce remounts/comportamientos erráticos de inputs controlados en móvil.
-    const clean=String(v??'').replace(/[^0-9]/g,'').slice(0,3);
+    // Handler estable que ya había pasado las pruebas T6.
+    // No normalizar ni transformar durante la pulsación: móvil debe limitarse a reflejar el input.
     setSessionReps(prev=>{
-      const prevSess=(prev&&prev[sess])||{};
+      const next={...prev};
+      if(!next[sess])next[sess]={};
       let key=exId;
-      if(prevSess[exId]===undefined&&prevSess[String(exId)]!==undefined)key=String(exId);
-      else if(prevSess[exId]===undefined&&prevSess[parseInt(exId)]!==undefined)key=parseInt(exId);
-      const nextSess={...prevSess,[key]:{...(prevSess[key]||{}),[k]:clean}};
-      return {...(prev||{}),[sess]:nextSess};
+      if(next[sess][exId]===undefined&&next[sess][String(exId)]!==undefined)key=String(exId);
+      else if(next[sess][exId]===undefined&&next[sess][parseInt(exId)]!==undefined)key=parseInt(exId);
+      if(!next[sess][key])next[sess][key]={};
+      next[sess][key]={...next[sess][key],[k]:v};
+      return next;
     });
     setSaved(false);
   };
@@ -2965,7 +2967,12 @@ function App(){
     if(weekLocked)return;
     if(isViewingPast&&!window.confirm('Estás por guardar cambios en una semana que ya pasó. ¿Continuar?'))return;
     if(isViewingFuture){setSaveErrors(['Las semanas futuras son solo de visualización. No se puede guardar ejecución antes de que ocurran.']);return;}
-    setSaveErrors([]);await doSave(false);
+    setSaveErrors([]);
+    const ok=await doSave(false);
+    if(!ok){
+      setSaveErrors(['No se pudo guardar el progreso local. No se borró ningún dato previo. Recargá la app y volvé a intentar.']);
+      return;
+    }
     // Backup silencioso al sheet
     try{
       // El backup remoto debe representar EJECUCIÓN, no la carga vigente/prepautada.
