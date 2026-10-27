@@ -200,11 +200,24 @@ function parseDietas(row,foodDB){
   }).filter(Boolean);
 }
 
+// FechaInicio canónica: acepta dd/MM/yyyy HH:mm:ss, yyyy-MM-dd e ISO.
+function parseStartDate(raw){
+  const s=String(raw||'').trim();
+  if(!s)return null;
+  let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/);
+  if(m){const d=new Date(Number(m[3]),Number(m[2])-1,Number(m[1]),12,0,0,0);return isNaN(d.getTime())?null:d;}
+  m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);
+  if(m){const d=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0,0);return isNaN(d.getTime())?null:d;}
+  const d=new Date(s);
+  if(isNaN(d.getTime()))return null;
+  return new Date(d.getFullYear(),d.getMonth(),d.getDate(),12,0,0,0);
+}
+
 // Semana secuencial basada en contador localStorage — Lun a Dom
 function getWkForNum(user,num){
-  const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
-  let startMon=new Date(startId+'T12:00:00');
-  if(isNaN(startMon.getTime())){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
+  const startId=localStorage.getItem(`ase_${user}_startdate`)||'';
+  let startMon=parseStartDate(startId);
+  if(!startMon){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
   const day=startMon.getDay();
   const diffToMon=day===0?-6:1-day;
   startMon.setDate(startMon.getDate()+diffToMon);
@@ -217,9 +230,9 @@ function getWkForNum(user,num){
 }
 // Calcula la semana real según el calendario hoy
 function getRealWkNum(user){
-  const startId=localStorage.getItem(`ase_${user}_startdate`)||new Date().toISOString().split('T')[0];
-  let startMon=new Date(startId+'T12:00:00');
-  if(isNaN(startMon.getTime())){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
+  const startId=localStorage.getItem(`ase_${user}_startdate`)||'';
+  let startMon=parseStartDate(startId);
+  if(!startMon){const t=new Date();t.setHours(12,0,0,0);startMon=t;}
   const day=startMon.getDay();
   startMon.setDate(startMon.getDate()+(day===0?-6:1-day));
   const today=new Date();today.setHours(12,0,0,0);
@@ -2277,7 +2290,7 @@ function App(){
 
   // Efecto 1: cargar ejercicios
   useEffect(()=>{
-    if(!user)return;
+    if(!user||!sessionReady)return;
     cambiandoSemana.current=true;dataLoaded.current=false;draftReady.current=false;
     // Calcular sem real del calendario
     const realNum=getRealWkNum(user);
@@ -2408,7 +2421,7 @@ function App(){
             setTimeout(function(){dataLoaded.current=true;draftReady.current=true;cambiandoSemana.current=false;},250);
           });
       });
-  },[user]);
+  },[user,sessionReady]);
 
   // Efecto 2: cargar rutinas y menús después de ejercicios
   useEffect(()=>{
