@@ -28,6 +28,8 @@ const lbl={fontSize:'10px',color:'#999',fontWeight:'600',textTransform:'uppercas
 const inp={width:'100%',padding:'10px 12px',border:'1.5px solid rgba(0,0,0,0.1)',borderRadius:'8px',fontSize:'13px',color:'#111',background:'#fff',fontFamily:'inherit',outline:'none'};
 
 // ── RELOJ CANÓNICO DE SEMANAS ────────────────────────────────────────
+function rmEquivalentFromE1(e1,reps){const v=parseFloat(e1),r=parseInt(reps);if(!isFinite(v)||v<=0||!isFinite(r)||r<1)return null;return Math.round((v/(1+r/30))*10)/10;}
+function deriveRMMap(e1raw,reps){let o={};try{o=typeof e1raw==='string'?JSON.parse(e1raw||'{}'):(e1raw||{});}catch(_e){}const out={};Object.keys(o).forEach(k=>{const v=rmEquivalentFromE1(o[k],reps);if(v!==null)out[k]=v;});return out;}
 // Fuente: Asesorados.FechaInicio (enriquecida en rutina). SemanID es histórico, no reloj actual.
 function ftParseFechaInicio(value){
   if(value===null||value===undefined||value==='')return null;
@@ -707,7 +709,11 @@ function DiagnosticoPanel({rutina,weeks}){
   );
 }
 
-function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equivalencias,onRefresh,onBack}){
+function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equivalencias,drafts,onRefresh,onBack}){
+  const _nid=String(rutina?.AsesoradoID||'').trim().toLowerCase();
+  const _nn=String(name||'').trim().toLowerCase();
+  const draftsCliente=(drafts||[]).filter(d=>{const id=String(d.AsesoradoID||'').trim().toLowerCase(),nm=String(d.Asesorado||'').trim().toLowerCase();return (_nid&&id===_nid)||(!id&&nm===_nn);});
+  const latestV5=[...(weeks||[])].reverse().find(w=>String(w.DailyV5||'').trim());
   const [tab,setTab]=useState('med');
   const [selEx,setSelEx]=useState(0);
   const [showBuilder,setShowBuilder]=useState(false);
@@ -1194,6 +1200,12 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
             h('div',{style:{fontSize:'10px',color:'#888',marginTop:'2px'}},'La rutina original se conserva; este es el ejercicio que verá en todos sus dispositivos.')
           );
         })
+      ),
+      h('div',{style:{...card,borderLeft:'4px solid '+G}},
+        h('div',{style:{fontSize:'13px',fontWeight:'900'}},'Patrimonio histórico · Sheet'),
+        h('div',{style:{fontSize:'11px',color:'#666',lineHeight:'1.6',marginTop:'5px'}},'Reportes: '+(weeks||[]).length+' · Drafts recuperables: '+draftsCliente.length+' · Semanas con e1RM: '+(weeks||[]).filter(w=>String(w.E1RM||'').trim()).length+'. El formato nuevo continúa el historial; no empieza de cero.'),
+        h('div',{style:{fontSize:'10px',color:'#888',marginTop:'6px'}},'Compatibilidad RM: e1RM queda como referencia canónica. e5RM y otros eXRMs se derivan del e1RM histórico sin reescribir el dato original.'),
+        latestV5&&h('div',{style:{marginTop:'8px',padding:'8px',background:'#F8FAFC',borderRadius:'8px',fontSize:'11px',lineHeight:'1.55'}},h('b',null,'Último formato nuevo: '),String(latestV5.Semana||latestV5.SemanID||''),' · Nutrición ',String(latestV5.NutriCompliance||'—')+'%',' · Agua ',String(latestV5.AguaPromL||'—')+' L',' · Sueño ',String(latestV5.SuenoPromH||'—')+' h',' · Entreno ',String(latestV5.EntrenoRealizadas||0)+' realizado(s), '+String(latestV5.EntrenoOmitidas||0)+' omitido(s)')
       ),
       // ── Checklist de progreso (Fase 3B) ──
       h('div',{style:{background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.08)',marginBottom:'10px',overflow:'hidden'}},
@@ -2776,6 +2788,7 @@ function App(){
   const [devoluciones,setDevoluciones]=useState([]);
   const [seguimiento,setSeguimiento]=useState([]);
   const [equivalencias,setEquivalencias]=useState([]);
+  const [drafts,setDrafts]=useState([]);
   const [selected,setSelected]=useState(null);
   const [error,setError]=useState(null);
   const [appTab,setAppTab]=useState('lista');
@@ -2795,14 +2808,17 @@ function App(){
       fetch(SCRIPT_URL+'?action=auditoriaNutriResumen').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=devoluciones&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=seguimiento&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[]),
-      fetch(SCRIPT_URL+'?action=equivalencias&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[])
-    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags,pagosData,dietasData,nutriData,devolData,segData,eqData])=>{
+      fetch(SCRIPT_URL+'?action=equivalencias&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=drafts&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[])
+    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags,pagosData,dietasData,nutriData,devolData,segData,eqData,draftsData])=>{
       // Compatibilidad con encabezados históricos del Sheet: normalizar sin modificar la hoja.
       reportes=(reportes||[]).map(function(row){return Object.assign({},row,{
         Dolor:row.Dolor!==undefined?row.Dolor:row['Dolor articular'],
         DolorZona:row.DolorZona!==undefined?row.DolorZona:row.Zona,
         DolorIntensidad:row.DolorIntensidad!==undefined?row.DolorIntensidad:row['Tipo de dolor'],
-        ContextoVida:row.ContextoVida!==undefined?row.ContextoVida:row['Contexto semanal']
+        ContextoVida:row.ContextoVida!==undefined?row.ContextoVida:row['Contexto semanal'],
+        E5RM:JSON.stringify(deriveRMMap(row.E1RM,5)),
+        _schemaV5:String(row.DailyV5||'').trim()!==''
       });});
       const grouped={};
       (reportes||[]).forEach(row=>{const name=String(row.Asesorado||'').trim();if(!name)return;if(!grouped[name])grouped[name]=[];grouped[name].push(row);});
@@ -2881,6 +2897,7 @@ function App(){
       setDevoluciones(Array.isArray(devolData)?devolData:[]);
       setSeguimiento(Array.isArray(segData)?segData:[]);
       setEquivalencias(Array.isArray(eqData)?eqData:[]);
+      setDrafts(Array.isArray(draftsData)?draftsData:[]);
       setData(grouped);setRutinas(rutsCompletas);setDecisiones(decs||[]);
     }).catch(()=>setError('Error al cargar datos.')).finally(()=>setLoading(false));
   };
@@ -2891,7 +2908,7 @@ function App(){
   if(selected){
     const rutSel=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase());
     const diagSel=(diagnosticos||[]).find(d=>String(d.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()||(rutSel&&String(d.AsesoradoID||'').trim().toLowerCase()===String(rutSel.AsesoradoID||'').trim().toLowerCase()&&String(rutSel.AsesoradoID||'').trim()!==''));
-    return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutSel,ejercicios,diagnostico:diagSel,decisiones:decisiones,equivalencias:equivalencias,onRefresh:loadData,onBack:()=>setSelected(null)});
+    return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutSel,ejercicios,diagnostico:diagSel,decisiones:decisiones,equivalencias:equivalencias,drafts:drafts,onRefresh:loadData,onBack:()=>setSelected(null)});
   }
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
