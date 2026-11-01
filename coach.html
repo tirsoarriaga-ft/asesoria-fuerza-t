@@ -225,6 +225,29 @@ function normName(s){return s.toLowerCase().trim().replace(/[áàä]/g,'a').repl
 function fmtPct(v){const n=parseFloat(String(v||'0').replace('%',''));if(isNaN(n))return'—';return(n<=1?Math.round(n*100):Math.round(n))+'%';}
 function parsePct(v){const n=parseFloat(String(v||'0').replace('%',''));if(isNaN(n))return 0;return n<=1?Math.round(n*100):Math.round(n);}
 
+// Normaliza auditorías/intervenciones históricas sin importar si vienen de Decisiones o Devoluciones.
+// Nunca modifica la fuente: sólo crea una lectura común para Mensual/Historial.
+function ftAuditRows(rows){
+  return (Array.isArray(rows)?rows:[]).map(function(r,i){
+    return {
+      _row:i,
+      _sem:String(r.SemanID||r.SemanaID||r._sem||''),
+      semanID:String(r.SemanID||r.SemanaID||r._sem||''),
+      asesoradoId:String(r.AsesoradoID||r.asesoradoId||''),
+      asesorado:String(r.Asesorado||r.asesorado||''),
+      traba:String(r.Traba||r.traba||r.Senal||r['Señal']||''),
+      responsable:String(r.Responsable||r.responsable||''),
+      decision:String(r.Decision||r.Decisión||r.decision||''),
+      palanca:String(r.Palanca||r.palanca||''),
+      prueba:String(r.Prueba||r.prueba||''),
+      estado:String(r.Estado||r.estado||''),
+      motivo:String(r.Motivo||r.motivo||''),
+      mensaje:String(r.MensajeAsesorado||r.mensajeAsesorado||''),
+      fecha:r.Fecha||r.fecha||''
+    };
+  });
+}
+
 // ── SENSACIONES COLORES ───────────────────────────────────────────────
 const SENS_CLR={
   'Alta toda la semana':G,'Variable':O,'Baja toda la semana':R,
@@ -728,7 +751,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
   function eliminarAsesorado(){
     const aseId=(rutina&&rutina.AsesoradoID)||(diagnostico&&diagnostico.AsesoradoID)||'';
     setBorrando(true);
-    const payload={action:'eliminarAsesorado',asesoradoId:aseId,asesorado:name};
+    const payload={action:'actualizarAsesorado',asesoradoId:aseId,asesorado:name,campos:{Estado:'Baja'}};
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .finally(function(){setTimeout(function(){setBorrando(false);if(onRefresh)onRefresh();if(onBack)onBack();},1600);});
   }
@@ -1423,7 +1446,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
         h(HistorialV2,{name:name,asesoradoId:(rutina&&rutina.AsesoradoID)||'',decisiones:decisiones||[]}),
         h('div',{style:{marginTop:'24px',paddingTop:'16px',borderTop:'1px solid rgba(0,0,0,0.08)'}},
           !confirmBorrar?h('button',{onClick:function(){setConfirmBorrar(true);},style:{background:'none',border:'1px solid #EF4444',color:'#EF4444',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer',width:'100%'}},'Eliminar asesorado'):
-          h('div',{style:{background:'#FEF2F2',borderRadius:'10px',padding:'14px'}},h('div',{style:{fontSize:'12px',color:'#991B1B',fontWeight:'700',marginBottom:'8px'}},'¿Eliminar a '+name+' definitivamente?'),h('div',{style:{display:'flex',gap:'8px'}},h('button',{onClick:eliminarAsesorado,disabled:borrando,style:{flex:1,background:'#EF4444',color:'#fff',border:'none',borderRadius:'8px',padding:'9px',fontSize:'12px',fontWeight:'700'}},borrando?'Eliminando…':'Sí, eliminar'),h('button',{onClick:function(){setConfirmBorrar(false);},style:{flex:1,background:'#fff',border:'1px solid #ddd',borderRadius:'8px',padding:'9px',fontSize:'12px'}},'Cancelar')))
+          h('div',{style:{background:'#FEF2F2',borderRadius:'10px',padding:'14px'}},h('div',{style:{fontSize:'12px',color:'#991B1B',fontWeight:'700',marginBottom:'8px'}},'¿Dar de baja a '+name+'? El historial se conserva.'),h('div',{style:{display:'flex',gap:'8px'}},h('button',{onClick:eliminarAsesorado,disabled:borrando,style:{flex:1,background:'#EF4444',color:'#fff',border:'none',borderRadius:'8px',padding:'9px',fontSize:'12px',fontWeight:'700'}},borrando?'Eliminando…':'Sí, dar de baja'),h('button',{onClick:function(){setConfirmBorrar(false);},style:{flex:1,background:'#fff',border:'1px solid #ddd',borderRadius:'8px',padding:'9px',fontSize:'12px'}},'Cancelar')))
         )
       ),
       tab==='cp'&&h('div',null,
@@ -1444,7 +1467,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
                 h('div',{style:{fontSize:'12px',color:'#991B1B',fontWeight:'700',marginBottom:'4px'}},'¿Eliminar a '+name+' definitivamente?'),
                 h('div',{style:{fontSize:'11px',color:'#B91C1C',marginBottom:'10px',lineHeight:'1.4'}},'Esto borra su fila de la hoja Asesorados. Sus reportes y otros datos quedan en el sheet pero el asesorado desaparece del panel. Es irreversible.'),
                 h('div',{style:{display:'flex',gap:'8px'}},
-                  h('button',{onClick:eliminarAsesorado,disabled:borrando,style:{flex:1,background:borrando?'#ccc':'#EF4444',color:'#fff',border:'none',borderRadius:'8px',padding:'9px',fontSize:'12px',fontWeight:'700',cursor:borrando?'default':'pointer'}},borrando?'Eliminando…':'Sí, eliminar'),
+                  h('button',{onClick:eliminarAsesorado,disabled:borrando,style:{flex:1,background:borrando?'#ccc':'#EF4444',color:'#fff',border:'none',borderRadius:'8px',padding:'9px',fontSize:'12px',fontWeight:'700',cursor:borrando?'default':'pointer'}},borrando?'Eliminando…':'Sí, dar de baja'),
                   h('button',{onClick:function(){setConfirmBorrar(false);},disabled:borrando,style:{flex:1,background:'#fff',color:'#666',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'9px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Cancelar')
                 )
               )
@@ -2145,7 +2168,7 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   var [eliminados,setEliminados]=useState({}); // asesorados borrados en esta sesión (optimista)
   var [confBorrar,setConfBorrar]=useState(null); // asesoradoId a confirmar borrado
   var [busqueda,setBusqueda]=useState('');
-  var [subTab,setSubTab]=useState('todos'); // todos | moroso | hoy | aldia
+  var [subTab,setSubTab]=useState('todos'); // todos | moroso | porcobrar | pagados
   var [mesOffset,setMesOffset]=useState(0); // 0 = mes actual, -1 = mes pasado, etc.
   // Separar SIEMPRE la fecha real del mes que se está consultando.
   // Navegar el calendario nunca puede adelantar/atrasar 'hoy' para calcular mora.
@@ -2186,6 +2209,11 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   function marcarPagado(a,mes,monto,fechaVenc){
     var aseId=a.AsesoradoID||'';
     if(!aseId){alert('Ese asesorado no tiene AsesoradoID.');return;}
+    var ingresado=window.prompt('Monto pagado este mes',String(monto||''));
+    if(ingresado===null)return;
+    var montoReal=parseFloat(String(ingresado).replace(/[^\d.,]/g,'').replace(',','.'));
+    if(!isFinite(montoReal)||montoReal<0){alert('Monto inválido.');return;}
+    monto=montoReal;
     // Optimista: marcar como pagado AL INSTANTE en el estado local (no espera el fetch ni recarga).
     setPagosLocal(function(p){var n=Object.assign({},p);n[aseId+'_'+mes]=true;return n;});
     var fechaPago=fechaVenc?fechaVenc.toLocaleDateString('es-AR'):new Date().toLocaleDateString('es-AR');
@@ -2202,12 +2230,21 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     var payload={action:'eliminarPago',asesoradoId:aseId,mesNumero:mes};
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
   }
+  function editarDatosCobro(a){
+    var aseId=a.AsesoradoID||'';if(!aseId){alert('Ese asesorado no tiene AsesoradoID.');return;}
+    var precio=window.prompt('Precio vigente desde ahora',String(a.PrecioCuota||''));if(precio===null)return;
+    var fecha=window.prompt('Fecha habitual de cobro (AAAA-MM-DD)',String(a.FechaCobro||a.FechaInicio||''));if(fecha===null)return;
+    var campos={};
+    if(String(precio).trim()!=='')campos.PrecioCuota=parseFloat(String(precio).replace(/[^\d.,]/g,'').replace(',','.'))||0;
+    if(String(fecha).trim()!=='')campos.FechaCobro=String(fecha).trim();
+    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'actualizarAsesorado',asesoradoId:aseId,asesorado:a.Asesorado||'',campos:campos})}).finally(function(){setTimeout(function(){if(onRefresh)onRefresh();},900);});
+  }
   function eliminarCliente(a){
     var aseId=a.AsesoradoID||'';
     if(!aseId){alert('Ese asesorado no tiene AsesoradoID.');return;}
     setEliminados(function(b){var n=Object.assign({},b);n[aseId||a.Asesorado]=true;return n;});
     setConfBorrar(null);
-    var payload={action:'eliminarAsesorado',asesoradoId:aseId,asesorado:a.Asesorado||''};
+    var payload={action:'actualizarAsesorado',asesoradoId:aseId,asesorado:a.Asesorado||'',campos:{Estado:'Baja'}};
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
   }
   // Cobros muestra TODOS los activos (básico, online, presencial). Oculta los borrados optimistas.
@@ -2245,21 +2282,21 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   var pendienteMes=filas.reduce(function(a,f){return a+((!f.pagado&&f.estado!=='sinfecha')?f.precio:0);},0);
   // Contadores por sub-pestaña
   var nMoroso=filas.filter(function(f){return f.estado==='vencido';}).length;
-  var nHoy=filas.filter(function(f){return f.estado==='hoy';}).length;
-  var nAldia=filas.filter(function(f){return f.estado==='aldia'||f.estado==='pendiente';}).length;
+  var nPorCobrar=filas.filter(function(f){return !f.pagado&&f.estado!=='vencido'&&f.estado!=='sinfecha';}).length;
+  var nPagados=filas.filter(function(f){return !!f.pagado;}).length;
   // Aplicar filtros: sub-pestaña + búsqueda
   var vis=filas.filter(function(f){
     if(subTab==='moroso'&&f.estado!=='vencido')return false;
-    if(subTab==='hoy'&&f.estado!=='hoy')return false;
-    if(subTab==='aldia'&&f.estado!=='aldia'&&f.estado!=='pendiente')return false;
+    if(subTab==='porcobrar'&&(f.pagado||f.estado==='vencido'||f.estado==='sinfecha'))return false;
+    if(subTab==='pagados'&&!f.pagado)return false;
     if(busqueda.trim()&&norm(f.a.Asesorado).indexOf(norm(busqueda))<0)return false;
     return true;
   });
   var subTabs=[
     {v:'todos',l:'Todos',n:filas.length},
     {v:'moroso',l:'Morosos',n:nMoroso},
-    {v:'hoy',l:'Vence hoy',n:nHoy},
-    {v:'aldia',l:'Al día',n:nAldia}
+    {v:'porcobrar',l:'Por cobrar',n:nPorCobrar},
+    {v:'pagados',l:'Pagados',n:nPagados}
   ];
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'12px 12px 90px'}},
     h('div',{style:{marginBottom:'12px'}},
@@ -2311,12 +2348,13 @@ function CobrosPanel({maestra,pagos,onRefresh}){
           ),
           h('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
             h('span',{style:{fontSize:'10px',fontWeight:'700',color:e.c,background:e.bg,padding:'3px 8px',borderRadius:'20px'}},e.l),
-            h('button',{onClick:function(){setConfBorrar(confBorrar===(f.a.AsesoradoID||f.a.Asesorado)?null:(f.a.AsesoradoID||f.a.Asesorado));},style:{background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'#ccc',padding:'2px'}},'🗑️')
+            h('button',{onClick:function(){editarDatosCobro(f.a);},style:{background:'#F3F4F6',border:'none',cursor:'pointer',fontSize:'10px',fontWeight:'700',color:'#555',padding:'5px 7px',borderRadius:'6px'}},'Editar'),
+            h('button',{onClick:function(){setConfBorrar(confBorrar===(f.a.AsesoradoID||f.a.Asesorado)?null:(f.a.AsesoradoID||f.a.Asesorado));},style:{background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'#ccc',padding:'2px'}},'⏸')
           )
         ),
         // Confirmación de borrado
         confBorrar===(f.a.AsesoradoID||f.a.Asesorado)&&h('div',{style:{background:'#FEF2F2',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
-          h('div',{style:{fontSize:'11px',color:'#991B1B',fontWeight:'700',marginBottom:'8px'}},'¿Eliminar a '+f.a.Asesorado+'? Se borra su fila. Irreversible.'),
+          h('div',{style:{fontSize:'11px',color:'#991B1B',fontWeight:'700',marginBottom:'8px'}},'¿Dar de baja a '+f.a.Asesorado+'? Conserva todo su historial.'),
           h('div',{style:{display:'flex',gap:'6px'}},
             h('button',{onClick:function(){eliminarCliente(f.a);},style:{flex:1,background:'#EF4444',color:'#fff',border:'none',borderRadius:'8px',padding:'7px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Sí, eliminar'),
             h('button',{onClick:function(){setConfBorrar(null);},style:{flex:1,background:'#fff',color:'#666',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'7px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Cancelar')
@@ -2770,8 +2808,8 @@ function SemanalV2({data,rutinas,devoluciones,nutriResumen,videos,seguimiento,on
     );})
   );
 }
-function MensualV2({maestra,data,rutinas,decisiones,videos}){
-  var [open,setOpen]=useState({});var audits=ftAuditRows(decisiones);var rt={};(rutinas||[]).forEach(function(r){rt[ftNorm(r.Asesorado)]=r;});
+function MensualV2({maestra,data,rutinas,devoluciones,videos}){
+  var [open,setOpen]=useState({});var audits=ftAuditRows(devoluciones);var rt={};(rutinas||[]).forEach(function(r){rt[ftNorm(r.Asesorado)]=r;});
   var activos=(maestra||[]).filter(function(a){var p=ftNorm(a.Plan);return ftNorm(a.Estado)!=='baja'&&(p==='online'||p==='presencial')&&a.Asesorado;});
   function mark(ok,label,detail){return {ok:ok,label:label,detail:detail};}
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'14px 12px 90px'}},h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Mensual'),h('div',{style:{fontSize:'12px',color:'#888',marginBottom:'12px'}},'Checklist de las últimas 4 semanas: qué esperaba el sistema de cada parte y qué ocurrió.'),
@@ -2932,7 +2970,7 @@ function App(){
     h('div',{style:{paddingBottom:'60px'}},
       appTab==='lista'&&h(ClientList,{data,rutinas,decisiones,videosPend,onSelect:setSelected,onRefresh:loadData}),
       appTab==='semv2'&&h(SemanalV2,{data:data,rutinas:rutinas,devoluciones:devoluciones,nutriResumen:nutriResumen,videos:videos,seguimiento:seguimiento,onRefresh:loadData}),
-      appTab==='mensualv2'&&h(MensualV2,{maestra:maestra,data:data,rutinas:rutinas,decisiones:decisiones,videos:videos}),
+      appTab==='mensualv2'&&h(MensualV2,{maestra:maestra,data:data,rutinas:rutinas,devoluciones:devoluciones,videos:videos}),
       appTab==='vids'&&h(VideosGlobal,{onSelect:setSelected}),
       appTab==='cobros'&&h(CobrosPanel,{maestra,pagos,onRefresh:loadData})
     ),
