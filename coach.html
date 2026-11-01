@@ -296,18 +296,18 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
   const [busquedaAse,setBusquedaAse]=useState('');
   // ── Alta de nuevo asesorado (Fase 2) ──
   const [showAlta,setShowAlta]=useState(false);
-  const [altaForm,setAltaForm]=useState({asesorado:'',plan:'online',fechaInicio:'',sexo:'',edad:'',altura:'',pesoRef:'',objetivo:''});
+  const [altaForm,setAltaForm]=useState({asesorado:'',plan:'online',fechaInicio:'',monto:'',fechaCobro:'',sexo:'',edad:'',altura:'',pesoRef:'',objetivo:''});
   const [altaSaving,setAltaSaving]=useState(false);
   const [altaMsg,setAltaMsg]=useState('');
   // Sugerir el lunes de la semana actual como FechaInicio por defecto
   const lunesDeEstaSemana=()=>{const d=new Date();const day=d.getDay();const diff=(day===0?-6:1-day);d.setDate(d.getDate()+diff);return d.toISOString().split('T')[0];};
-  const abrirAlta=()=>{setAltaForm({asesorado:'',plan:'online',fechaInicio:lunesDeEstaSemana(),sexo:'',edad:'',altura:'',pesoRef:'',objetivo:''});setAltaMsg('');setShowAlta(true);};
+  const abrirAlta=()=>{setAltaForm({asesorado:'',plan:'online',fechaInicio:lunesDeEstaSemana(),monto:'',fechaCobro:'',sexo:'',edad:'',altura:'',pesoRef:'',objetivo:''});setAltaMsg('');setShowAlta(true);};
   const guardarAlta=()=>{
     if(!altaForm.asesorado.trim()){setAltaMsg('El nombre es obligatorio.');return;}
     if(!altaForm.plan){setAltaMsg('Elegí un plan.');return;}
     if(!altaForm.fechaInicio){setAltaMsg('Poné la fecha de inicio (lunes).');return;}
     setAltaSaving(true);setAltaMsg('');
-    const payload={action:'nuevoAsesorado',asesorado:altaForm.asesorado.trim(),plan:altaForm.plan,estado:'Activo',fechaInicio:altaForm.fechaInicio,sexo:altaForm.sexo,edad:altaForm.edad,altura:altaForm.altura,pesoRef:altaForm.pesoRef,objetivo:altaForm.objetivo};
+    const payload={action:'nuevoAsesorado',asesorado:altaForm.asesorado.trim(),plan:altaForm.plan,estado:'Activo',fechaInicio:altaForm.fechaInicio,sexo:altaForm.sexo,edad:altaForm.edad,altura:altaForm.altura,pesoRef:altaForm.pesoRef,objetivo:altaForm.objetivo,monto:altaForm.monto,fechaCobro:altaForm.fechaCobro};
     fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
       .finally(()=>{
         // no-cors no devuelve respuesta legible; asumimos OK y refrescamos tras un momento
@@ -494,6 +494,10 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
         h('div',{style:{marginBottom:'12px'}},
           h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Fecha de inicio (lunes) *'),
           h('input',{type:'date',value:altaForm.fechaInicio,onChange:e=>{const v=e.target.value;setAltaForm(f=>({...f,fechaInicio:v}));},style:{width:'100%',boxSizing:'border-box',padding:'10px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px'}})
+        ),
+        h('div',{style:{display:'flex',gap:'8px',marginBottom:'12px'}},
+          h('div',{style:{flex:1}},h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Monto mensual'),h('input',{type:'number',value:altaForm.monto,onChange:e=>{const v=e.target.value;setAltaForm(f=>({...f,monto:v}));},placeholder:'30000',style:{width:'100%',boxSizing:'border-box',padding:'10px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px'}})),
+          h('div',{style:{flex:1}},h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#444',marginBottom:'4px'}},'Día habitual de cobro'),h('input',{type:'number',min:'1',max:'31',value:altaForm.fechaCobro,onChange:e=>{const v=e.target.value;setAltaForm(f=>({...f,fechaCobro:v}));},placeholder:'5',style:{width:'100%',boxSizing:'border-box',padding:'10px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',fontSize:'14px'}}))
         ),
         // Opcionales
         h('div',{style:{fontSize:'11px',color:'#999',fontWeight:'700',margin:'8px 0',textTransform:'uppercase',letterSpacing:'0.05em'}},'Opcional — completá después si no los tenés'),
@@ -1194,7 +1198,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
     );
   }
 
-  const DTABS=[{id:'med',l:'Tendencias'},{id:'ent',l:'Entreno'},{id:'diag',l:'Diagnóstico'},{id:'hist',l:'Historial'}];
+  const DTABS=[{id:'med',l:'Evaluaciones'},{id:'ent',l:'Plan vigente'},{id:'hist',l:'Historial'}];
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
     showBuilder&&h(RutinaBuilder,{name:name,rutina:rutina,ejercicios:ejercicios,currentWkNum:currentWkNum,onClose:function(){setShowBuilder(false);},onSaved:function(){setShowBuilder(false);if(onRefresh)onRefresh();}}),
@@ -1445,7 +1449,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
       tab==='hist'&&h('div',null,
         h(HistorialV2,{name:name,asesoradoId:(rutina&&rutina.AsesoradoID)||'',decisiones:decisiones||[]}),
         h('div',{style:{marginTop:'24px',paddingTop:'16px',borderTop:'1px solid rgba(0,0,0,0.08)'}},
-          !confirmBorrar?h('button',{onClick:function(){setConfirmBorrar(true);},style:{background:'none',border:'1px solid #EF4444',color:'#EF4444',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer',width:'100%'}},'Eliminar asesorado'):
+          !confirmBorrar?h('button',{onClick:function(){setConfirmBorrar(true);},style:{background:'none',border:'1px solid #EF4444',color:'#EF4444',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer',width:'100%'}},'Dar de baja'):
           h('div',{style:{background:'#FEF2F2',borderRadius:'10px',padding:'14px'}},h('div',{style:{fontSize:'12px',color:'#991B1B',fontWeight:'700',marginBottom:'8px'}},'¿Dar de baja a '+name+'? El historial se conserva.'),h('div',{style:{display:'flex',gap:'8px'}},h('button',{onClick:eliminarAsesorado,disabled:borrando,style:{flex:1,background:'#EF4444',color:'#fff',border:'none',borderRadius:'8px',padding:'9px',fontSize:'12px',fontWeight:'700'}},borrando?'Eliminando…':'Sí, dar de baja'),h('button',{onClick:function(){setConfirmBorrar(false);},style:{flex:1,background:'#fff',border:'1px solid #ddd',borderRadius:'8px',padding:'9px',fontSize:'12px'}},'Cancelar')))
         )
       ),
@@ -1462,7 +1466,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
         // Eliminar asesorado (zona de peligro, con doble confirmación)
         h('div',{style:{marginTop:'24px',paddingTop:'16px',borderTop:'1px solid rgba(0,0,0,0.08)'}},
           !confirmBorrar
-            ?h('button',{onClick:function(){setConfirmBorrar(true);},style:{background:'none',border:'1px solid #EF4444',color:'#EF4444',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer',width:'100%'}},'🗑️ Eliminar asesorado')
+            ?h('button',{onClick:function(){setConfirmBorrar(true);},style:{background:'none',border:'1px solid #EF4444',color:'#EF4444',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer',width:'100%'}},'Dar de baja')
             :h('div',{style:{background:'#FEF2F2',borderRadius:'10px',padding:'14px'}},
                 h('div',{style:{fontSize:'12px',color:'#991B1B',fontWeight:'700',marginBottom:'4px'}},'¿Eliminar a '+name+' definitivamente?'),
                 h('div',{style:{fontSize:'11px',color:'#B91C1C',marginBottom:'10px',lineHeight:'1.4'}},'Esto borra su fila de la hoja Asesorados. Sus reportes y otros datos quedan en el sheet pero el asesorado desaparece del panel. Es irreversible.'),
@@ -2754,72 +2758,73 @@ function ftSuggest(r,weeks,nut,prev,sem){
   return {traba:'Contexto',responsable:'—',decision:'Sostener',palanca:'Sensaciones',prueba:'Sensaciones reportadas',motivo:'Reporte suficiente y sin un cuello prioritario evidente. Mantener; si elegís intervenir, usá una sola variable por pilar'};
 }
 function ClosedSelect({value,onChange,options}){return h('select',{value:value,onChange:function(e){onChange(e.target.value);},style:Object.assign({},inp,{fontSize:'12px',padding:'9px 10px'})},options.map(function(o){return h('option',{key:o,value:o},o);}));}
-function SemanalV2({data,rutinas,devoluciones,nutriResumen,videos,seguimiento,onRefresh}){
-  var [open,setOpen]=useState({}),[draft,setDraft]=useState({}),[saving,setSaving]=useState(null),[filtro,setFiltro]=useState('Todos'),[weekOffset,setWeekOffset]=useState(0),[videoOverride,setVideoOverride]=useState({}),[videoSaving,setVideoSaving]=useState({});
-  var [freshDevoluciones,setFreshDevoluciones]=useState(Array.isArray(devoluciones)?devoluciones:[]);
-  useEffect(function(){setFreshDevoluciones(Array.isArray(devoluciones)?devoluciones:[]);},[devoluciones]);
-  function refreshDevoluciones(){var ts=Date.now();return fetch(SCRIPT_URL+'?action=devoluciones&_ts='+ts,{cache:'no-store'}).then(function(r){return r.json();}).then(function(rows){if(Array.isArray(rows))setFreshDevoluciones(rows);return rows;}).catch(function(){return[];});}
-  useEffect(function(){refreshDevoluciones();},[weekOffset]);
-  var nutRows=Array.isArray(nutriResumen)?nutriResumen:[];var nutBy={};nutRows.forEach(function(n){nutBy[String(n.AsesoradoID||'')]=n;nutBy[ftNorm(n.Asesorado)]=n;});
-  var segBy={};(seguimiento||[]).forEach(function(s){segBy[String(s.AsesoradoID||'')]=s;segBy[ftNorm(s.Asesorado)]=s;});
-  var clients=(rutinas||[]).filter(function(r){var n=ftNorm(r.Nivel);return ftNorm(r.Estado)!=='baja'&&n!=='basico'&&n!=='básico'&&r.Asesorado;}).map(function(r){
-    var n=r.Asesorado,id=r.AsesoradoID||'',weeks=data[n]||[],current=ftCurrentWeek(r),target=Math.max(1,current+weekOffset),sem='sem_'+target,lat=ftReportForSem(weeks,sem),enCurso=weekOffset===0&&!lat,saved=ftDevForSem(freshDevoluciones,n,id,sem),prev=ftLatestDev(freshDevoluciones,n,id,sem),nut=nutBy[String(id)]||nutBy[ftNorm(n)]||null;
-    var isOnline=ftNorm(r.Nivel)==='online',seg=segBy[String(id)]||segBy[ftNorm(n)]||null,key=id||n,baseReq=isOnline?(seg?ftNorm(seg.VideoSemanalRequerido)!=='no':true):false,videoRequired=videoOverride[key]!==undefined?videoOverride[key]:baseReq,videoDone=ftVideoForSem(videos,n,id,r,sem);
-    var sug=ftSuggest(r,weeks,nut,prev,sem),check=ftChecklist(r,lat,videoRequired,videoDone,enCurso),ev=ftEvidence(r,lat,nut,videoRequired,videoDone);
-    return {r:r,nombre:n,id:id,weeks:weeks,sem:sem,semNum:target,lat:lat,enCurso:enCurso,saved:saved,prev:prev,nut:nut,sug:sug,check:check,ev:ev,videoRequired:videoRequired,videoDone:videoDone,prevAutoResolved:prev&&ftNorm(prev.Estado)!=='resuelto'&&ftProofSatisfied(prev,lat)};
-  });
-  function cur(x){var k=(x.id||x.nombre)+'_'+x.sem;if(draft[k])return draft[k];if(x.saved)return {traba:x.saved.Traba||x.sug.traba,responsable:x.saved.Responsable||x.sug.responsable,decision:x.saved.Decision||x.sug.decision,palanca:x.saved.Palanca||x.sug.palanca||'',prueba:x.saved.Prueba||x.sug.prueba||'',estado:x.saved.Estado||'Abierto',nota:x.saved.NotaInterna||'',mensaje:x.saved.MensajeAsesorado||''};return {traba:x.sug.traba,responsable:x.sug.responsable,decision:x.sug.decision,palanca:x.sug.palanca||((FT_PALANCAS[x.sug.traba]||[])[0]||''),prueba:x.sug.prueba||((FT_PRUEBAS[x.sug.traba]||[])[0]||''),estado:x.sug.decision==='Sostener'?'Resuelto':'Abierto',nota:'',mensaje:''};}
-  function upd(x,k,v){var key=(x.id||x.nombre)+'_'+x.sem,n=Object.assign({},cur(x),{[k]:v});if(k==='traba'){n.palanca=(FT_PALANCAS[v]||[])[0]||'';n.prueba=(FT_PRUEBAS[v]||[])[0]||'';}setDraft(Object.assign({},draft,{[key]:n}));}
-  function save(x){var c=cur(x),key=x.id||x.nombre;setSaving(key);var payload={action:'intervencionV4',asesorado:x.nombre,asesoradoId:x.id,semanID:x.sem,modalidad:x.r.Nivel||'',traba:c.traba,responsable:c.responsable,decision:c.decision,palanca:c.palanca,prueba:c.prueba,estado:c.estado,evidencia:x.ev,checklist:x.check,motivo:x.sug.motivo,mensajeAsesorado:c.mensaje||'',tutorialKey:FT_TUTORIAL_BY_PALANCA[c.palanca]||'',notaInterna:c.nota||'',videoRequerido:x.videoRequired,videoCumplido:x.videoDone};fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).finally(function(){setSaving(null);setTimeout(function(){refreshDevoluciones();if(onRefresh)onRefresh();},1800);});}
-  function toggleVideoReq(x){var key=x.id||x.nombre,val=!x.videoRequired;setVideoOverride(Object.assign({},videoOverride,{[key]:val}));setVideoSaving(Object.assign({},videoSaving,{[key]:true}));fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'seguimientoV4',asesorado:x.nombre,asesoradoId:x.id,videoSemanalRequerido:val})}).finally(function(){setVideoSaving(function(old){var z=Object.assign({},old);delete z[key];return z;});});}
-  var shown=clients.filter(function(x){if(filtro==='Todos')return true;if(filtro==='Sin reporte')return !x.lat;if(filtro==='Su parte')return cur(x).responsable==='Su parte';if(filtro==='Mi parte')return cur(x).responsable==='Mi parte';if(filtro==='Compartida')return cur(x).responsable==='Compartida';if(filtro==='Contexto')return cur(x).responsable==='Contexto';return true;});
-  var weekLabel=weekOffset===0?'Semana actual':(weekOffset===-1?'Semana anterior':Math.abs(weekOffset)+' semanas atrás');
-  function ftCalendarRange(off){var d=new Date(),dow=(d.getDay()+6)%7;d.setHours(12,0,0,0);d.setDate(d.getDate()-dow+(off*7));var e=new Date(d);e.setDate(d.getDate()+6);var meses=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];return d.getDate()+' '+meses[d.getMonth()]+' – '+e.getDate()+' '+meses[e.getMonth()]+' '+e.getFullYear();}
-  var calendarLabel='Semana calendario · '+ftCalendarRange(weekOffset);
+function ftV5Num(v){var n=parseFloat(String(v==null?'':v).replace(',','.'));return isNaN(n)?0:n;}
+function ftV5Json(v,fallback){try{var x=typeof v==='string'?JSON.parse(v||''):v;return x==null?fallback:x;}catch(e){return fallback;}}
+function ftV5PrescribedExercises(r){var total=0;['SesionA','SesionB','SesionC','SesionD'].forEach(function(k){var v=r&&r[k];if(!v)return;var a=ftV5Json(v,null);if(Array.isArray(a))total+=a.length;else if(typeof v==='string')total+=v.split(/[,;\n]/).filter(function(x){return String(x).trim();}).length;});return total;}
+function ftV5Training(weeks,lat,r){
+  var cur=ftV5Json(lat&&lat.E1RM,{}), keys=Object.keys(cur||{}), prev=null;
+  var idx=(weeks||[]).indexOf(lat);for(var i=idx-1;i>=0;i--){var p=ftV5Json(weeks[i]&&weeks[i].E1RM,{});if(Object.keys(p||{}).length){prev=p;break;}}
+  var plus=0,minus=0,maint=0,comp=0;
+  if(prev)keys.forEach(function(k){var a=ftV5Num(cur[k]),b=ftV5Num(prev[k]);if(a>0&&b>0){comp++;if(a>=b){plus++;if(Math.abs(a-b)<0.05)maint++;}else minus++;}});
+  var score=plus-minus,status=comp?(score>0?'PROGRESIÓN':score<0?'REGRESIÓN':'ESTABLE'):'NO EVALUABLE';
+  var prescribed=ftV5PrescribedExercises(r),registered=keys.length;
+  return {registered:registered,prescribed:prescribed,comparable:comp,plus:plus,minus:minus,maint:maint,score:score,status:status};
+}
+function ftV5WeeklyAnalysis(x){
+  if(!x.lat)return {accion:'NO REPORTÓ',variable:'Reporte semanal',estado:'OBSERVACIÓN',resultado:'NO EVALUABLE',motivo:'Sin reporte no hay información suficiente para evaluar la respuesta ni justificar modificaciones del plan.'};
+  var l=x.lat,nut=l.NutriCompliance!==''&&l.NutriCompliance!=null?ftV5Num(l.NutriCompliance):parsePct(l['%Comidas']),water=ftV5Num(l.AguaPromL),sleep=ftV5Num(l.SuenoPromH),pres=parseInt(x.r.NumSesiones||0)||0,done=parseInt(l.EntrenoRealizadas||l.SesionesEntreno||0)||0;
+  var issues=[];if(nut&&nut<80)issues.push(['Alimentación',nut]);if(sleep&&sleep<7)issues.push(['Sueño',sleep]);var wt=ftV5Num(x.r.PesoRef)*.04;if(water&&wt&&water<wt*.8)issues.push(['Agua',water]);if(pres&&done<Math.max(0,pres-1))issues.push(['Entrenamiento',done]);
+  if(issues.length){return {accion:'DESTRABAR',variable:issues[0][0],estado:'OBSERVACIÓN',resultado:'NO EVALUABLE',motivo:'La prioridad es mejorar '+issues[0][0].toLowerCase()+' antes de atribuir la respuesta al plan.'};}
+  var obj=ftNorm(x.r.Objetivo), ws=x.weeks||[], ps=ws.slice(-3).map(function(w){return ftV5Num(w.Peso);}).filter(Boolean), cs=ws.slice(-3).map(function(w){return ftV5Num(w.Cintura);}).filter(Boolean),poor=false;
+  if(obj==='deficit'&&ps.length>=2){var pct=(ps[ps.length-1]-ps[0])/ps[0]*100/Math.max(1,ps.length-1);poor=pct>-0.5;} if(obj==='deficit'&&cs.length>=2&&cs[cs.length-1]<cs[0])poor=false;
+  if(poor)return {accion:'INTERVENIR',variable:'Plan calórico',estado:'ACTIVO',resultado:'NO PROGRESA',motivo:'La ejecución es suficiente pero la respuesta corporal está por debajo de lo esperado. Revisar la prescripción calórica.'};
+  if(x.training.status==='REGRESIÓN')return {accion:'INTERVENIR',variable:(sleep&&sleep<7?'Recuperación':'Entrenamiento'),estado:'ACTIVO',resultado:'PROGRESA LENTO',motivo:'La ejecución es suficiente pero el rendimiento semanal retrocedió. Revisar '+(sleep&&sleep<7?'recuperación':'entrenamiento')+'.'};
+  return {accion:'MANTENER',variable:'Plan vigente',estado:'ACTIVO',resultado:'PROGRESA CORRECTAMENTE',motivo:'La ejecución es suficiente y no aparece una señal dominante que justifique modificar el plan.'};
+}
+function SemanalV2({data,rutinas,devoluciones,nutriResumen,videos,seguimiento,drafts,onRefresh}){
+  var [open,setOpen]=useState({}),[filtro,setFiltro]=useState('Todos'),[weekOffset,setWeekOffset]=useState(0),[saving,setSaving]=useState(null),[fresh,setFresh]=useState(Array.isArray(devoluciones)?devoluciones:[]),[edits,setEdits]=useState({});
+  useEffect(function(){setFresh(Array.isArray(devoluciones)?devoluciones:[]);},[devoluciones]);
+  function refresh(){return fetch(SCRIPT_URL+'?action=devoluciones&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(function(z){if(Array.isArray(z))setFresh(z);}).catch(function(){});}
+  var clients=(rutinas||[]).filter(function(r){var n=ftNorm(r.Nivel);return ftNorm(r.Estado)!=='baja'&&n!=='basico'&&n!=='básico'&&r.Asesorado;}).map(function(r){var n=r.Asesorado,id=r.AsesoradoID||'',weeks=data[n]||[],target=Math.max(1,ftCurrentWeek(r)+weekOffset),sem='sem_'+target,lat=ftReportForSem(weeks,sem),saved=ftDevForSem(fresh,n,id,sem),training=ftV5Training(weeks,lat,r);var x={r:r,nombre:n,id:id,weeks:weeks,sem:sem,semNum:target,lat:lat,saved:saved,training:training};x.analysis=ftV5WeeklyAnalysis(x);return x;});
+  var shown=clients.filter(function(x){return filtro==='Todos'||(filtro==='Reportó'&&!!x.lat)||(filtro==='No reportó'&&!x.lat);});
+  function val(x,k,def){var key=(x.id||x.nombre)+'_'+x.sem;return edits[key]&&edits[key][k]!==undefined?edits[key][k]:(x.saved&&x.saved[k]!==undefined&&String(x.saved[k]).trim()!==''?x.saved[k]:def);}
+  function upd(x,k,v){var key=(x.id||x.nombre)+'_'+x.sem,o=Object.assign({},edits[key]||{});o[k]=v;setEdits(Object.assign({},edits,{[key]:o}));}
+  function save(x){var key=x.id||x.nombre,a=x.analysis,devol=val(x,'Devolucion',x.lat?'':'No recibí el reporte semanal. Sin esa información no puedo evaluar correctamente tu respuesta ni justificar modificaciones sobre la planificación. Esta semana mantenemos la pauta vigente y necesitamos recuperar el registro/reporte.'),prox=val(x,'ProximaSemana',x.lat?'':'Mantener la pauta vigente y recuperar el registro/reporte semanal.');setSaving(key);var payload={action:'intervencionV4',asesorado:x.nombre,asesoradoId:x.id,semanID:x.sem,modalidad:x.r.Nivel||'',traba:a.variable,responsable:x.lat?'Mi parte':'Su parte',decision:a.accion,palanca:a.variable,prueba:'Próxima semana',estado:a.accion==='MANTENER'?'Resuelto':'Abierto',evidencia:[],checklist:ftChecklist(x.r,x.lat,ftNorm(x.r.Nivel)==='online',false,weekOffset===0&&!x.lat),motivo:a.motivo,mensajeAsesorado:devol,notaInterna:prox,accionSugerida:a.accion,variableSugerida:a.variable,devolucion:devol,proximaSemana:prox,estadoAsesorabilidad:a.estado,resultadoSemanal:a.resultado};fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).finally(function(){setSaving(null);setTimeout(function(){refresh();if(onRefresh)onRefresh();},1200);});}
+  function range(off){var d=new Date(),dow=(d.getDay()+6)%7;d.setHours(12,0,0,0);d.setDate(d.getDate()-dow+off*7);var e=new Date(d);e.setDate(d.getDate()+6);return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})+' – '+e.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});}
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'14px 12px 90px'}},
-    h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Semanal V4'),h('div',{style:{fontSize:'12px',color:'#777',lineHeight:'1.5',marginBottom:'10px'}},'Elegí la semana a auditar. El reporte puede llegar cualquier día; si todavía no llegó, podés cargar igualmente la devolución con Reporte como primer cuello.'),
-    h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',background:'#fff',border:'1px solid #e5e5e5',borderRadius:'10px',padding:'8px',marginBottom:'10px'}},
-      h('button',{onClick:function(){setWeekOffset(weekOffset-1);setOpen({});},style:{border:'none',background:'#eee',borderRadius:'8px',padding:'7px 10px',fontWeight:'800'}},'←'),
-      h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'12px',fontWeight:'900'}},weekLabel),h('div',{style:{fontSize:'10px',fontWeight:'800',color:'#555',marginTop:'2px'}},calendarLabel),h('div',{style:{fontSize:'10px',color:'#888',marginTop:'2px'}},weekOffset===0?'Semana actual · devolución habilitada':'Auditoría histórica')),
-      h('button',{disabled:weekOffset===0,onClick:function(){setWeekOffset(Math.min(0,weekOffset+1));setOpen({});},style:{border:'none',background:weekOffset===0?'#f5f5f5':'#eee',color:weekOffset===0?'#bbb':'#111',borderRadius:'8px',padding:'7px 10px',fontWeight:'800'}},'→')
-    ),
-    h('div',{style:{display:'flex',gap:'5px',overflowX:'auto',paddingBottom:'10px'}},['Todos','Sin reporte','Su parte','Mi parte','Compartida','Contexto'].map(function(f){return h('button',{key:f,onClick:function(){setFiltro(f);},style:{whiteSpace:'nowrap',border:'none',borderRadius:'20px',padding:'7px 10px',fontSize:'10px',fontWeight:'700',background:filtro===f?'#111':'#eee',color:filtro===f?'#fff':'#666'}},f);})),
-    shown.map(function(x){var key=x.id||x.nombre,c=cur(x),ab=open[key],col=c.decision==='Sostener'?G:(c.responsable==='Mi parte'?R:O);return h('div',{key:key,style:{background:'#fff',border:'1px solid rgba(0,0,0,.08)',borderLeft:'4px solid '+col,borderRadius:'12px',padding:'13px',marginBottom:'8px'}},
-      h('div',{onClick:function(){setOpen(Object.assign({},open,{[key]:!ab}));},style:{cursor:'pointer'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between'}},h('div',{style:{fontSize:'14px',fontWeight:'800'}},x.nombre+' · sem '+x.semNum),h('span',{style:{fontSize:'10px',fontWeight:'800',color:col}},(!x.lat?'SIN REPORTE · ':'')+c.traba.toUpperCase())),
-        h('div',{style:{fontSize:'11px',color:'#666',marginTop:'3px'}},x.saved?(x.saved.Motivo||x.sug.motivo):x.sug.motivo),
-        x.prevAutoResolved&&h('div',{style:{fontSize:'10px',color:G,fontWeight:'800',marginTop:'4px'}},'✓ La prueba anterior aparece cumplida con los datos actuales'),
-        x.videoRequired&&!x.videoDone&&h('div',{style:{fontSize:'10px',color:O,marginTop:'4px'}},'⚠ Video semanal pendiente · no bloquea el checkpoint')
-      ),
+    h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Semanal'),h('div',{style:{fontSize:'12px',color:'#777',marginBottom:'10px'}},'Su Parte → señal dominante → Mi Parte → devolución.'),
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',background:'#fff',border:'1px solid #e5e5e5',borderRadius:'10px',padding:'8px',marginBottom:'10px'}},h('button',{onClick:function(){setWeekOffset(weekOffset-1);setOpen({});},style:{border:'none',borderRadius:'8px',padding:'7px 10px'}},'←'),h('div',{style:{textAlign:'center'}},h('b',null,weekOffset===0?'Semana actual':'Semana '+(weekOffset<0?Math.abs(weekOffset)+' atrás':weekOffset)),h('div',{style:{fontSize:'10px',color:'#888'}},range(weekOffset))),h('button',{disabled:weekOffset===0,onClick:function(){setWeekOffset(Math.min(0,weekOffset+1));setOpen({});},style:{border:'none',borderRadius:'8px',padding:'7px 10px'}},'→')),
+    h('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}},['Todos','Reportó','No reportó'].map(function(f){return h('button',{key:f,onClick:function(){setFiltro(f);},style:{flex:1,border:'none',borderRadius:'20px',padding:'8px',fontSize:'11px',fontWeight:'800',background:filtro===f?'#111':'#eee',color:filtro===f?'#fff':'#666'}},f);})),
+    shown.map(function(x){var key=x.id||x.nombre,ab=open[key],a=x.analysis,col=!x.lat?O:(a.accion==='MANTENER'?G:a.accion==='INTERVENIR'?R:O),devolDefault=!x.lat?'No recibí el reporte semanal. Sin esa información no puedo evaluar correctamente tu respuesta ni justificar modificaciones sobre la planificación. Esta semana mantenemos la pauta vigente y necesitamos recuperar el registro/reporte.':'';return h('div',{key:key,style:{background:'#fff',border:'1px solid #e8e8e8',borderLeft:'4px solid '+col,borderRadius:'12px',padding:'13px',marginBottom:'8px'}},
+      h('div',{onClick:function(){setOpen(Object.assign({},open,{[key]:!ab}));},style:{cursor:'pointer'}},h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px'}},h('b',{style:{fontSize:'14px'}},x.nombre+' · sem '+x.semNum),h('span',{style:{fontSize:'10px',fontWeight:'900',color:col}},x.lat?'REPORTÓ':'NO REPORTÓ')),h('div',{style:{fontSize:'11px',color:'#666',marginTop:'4px'}},x.lat?(a.accion+' · '+a.variable):'Sin reporte → no modificar a ciegas')),
       ab&&h('div',{style:{borderTop:'1px solid #eee',marginTop:'10px',paddingTop:'10px'}},
-        h('div',{style:lbl},'SU PARTE · HECHOS'),x.check.map(function(it){var ic=it.estado==='cumplido'?'✓':(it.estado==='no_correspondia'?'—':(it.estado==='incompleto'?'⚠':'✕'));return h('div',{key:it.key,style:{fontSize:'11px',padding:'4px 0',display:'flex',gap:'7px'}},h('b',{style:{width:'14px',color:it.estado==='cumplido'?G:(it.estado==='no_correspondia'?'#999':O)}},ic),h('span',null,it.label+' · '+it.detalle));}),
-        ftNorm(x.r.Nivel)==='online'&&h('button',{onClick:function(){toggleVideoReq(x);},disabled:!!videoSaving[key],style:{margin:'8px 0',border:'1px solid #ddd',borderRadius:'8px',padding:'7px 9px',background:'#fff',fontSize:'10px',fontWeight:'700'}},videoSaving[key]?'Guardando…':'Video semanal: '+(x.videoRequired?'REQUERIDO':'NO REQUERIDO')),
-        !x.lat&&h('div',{style:{marginTop:'9px',padding:'10px',borderRadius:'9px',background:'#FFF7ED',fontSize:'11px',color:'#9A3412'}},'Sin reporte todavía. Podés guardar la devolución igual: Reporte es el primer cuello y destraba Entreno, Nutrición y Contexto.'),
-        h('div',null,
-          h('div',{style:{marginTop:'8px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}},h('div',null,h('div',{style:lbl},'TRABA'),h(ClosedSelect,{value:c.traba,onChange:function(v){upd(x,'traba',v);},options:FT_TRABAS})),h('div',null,h('div',{style:lbl},'QUIÉN'),h(ClosedSelect,{value:c.responsable,onChange:function(v){upd(x,'responsable',v);},options:FT_RESP}))),
-          h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'DECISIÓN'),h(ClosedSelect,{value:c.decision,onChange:function(v){upd(x,'decision',v);},options:FT_DEC})),
-          h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'PALANCA'),h(ClosedSelect,{value:c.palanca,onChange:function(v){upd(x,'palanca',v);},options:FT_PALANCAS[c.traba]||['—']})),
-          h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'PRUEBA'),h(ClosedSelect,{value:c.prueba,onChange:function(v){upd(x,'prueba',v);},options:FT_PRUEBAS[c.traba]||['—']})),
-          h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'MENSAJE AL ASESORADO · OPCIONAL'),h('div',{style:{fontSize:'10px',color:'#888',marginBottom:'5px'}},'Si lo dejás vacío, la app mostrará 1–2 acciones automáticas según la prioridad elegida.'),h('textarea',{defaultValue:c.mensaje||'',id:'mensaje-v4-'+key+'-'+x.sem,onBlur:function(e){upd(x,'mensaje',e.target.value);},placeholder:'Ej.: Esta semana priorizá volver a entrenar y registrar tus sesiones.',style:Object.assign({},inp,{minHeight:'54px',resize:'vertical'})})),
-          h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'NOTA INTERNA · OPCIONAL'),h('textarea',{defaultValue:c.nota||'',id:'nota-v4-'+key+'-'+x.sem,onBlur:function(e){upd(x,'nota',e.target.value);},style:Object.assign({},inp,{minHeight:'54px',resize:'vertical'})})),
-          h('button',{onClick:function(){save(x);},disabled:saving===key,style:{width:'100%',marginTop:'10px',border:'none',borderRadius:'9px',padding:'11px',fontSize:'12px',fontWeight:'800',background:GRAD,color:'#fff'}},saving===key?'Guardando…':(x.saved?'Actualizar intervención + devolución':'Guardar intervención + devolución'))
-        )
+        h('div',{style:lbl},'SU PARTE'),ftChecklist(x.r,x.lat,ftNorm(x.r.Nivel)==='online',false,weekOffset===0&&!x.lat).map(function(it){var ic=it.estado==='cumplido'?'✓':it.estado==='no_correspondia'?'—':it.estado==='incompleto'?'⚠':'✕';return h('div',{key:it.key,style:{fontSize:'11px',padding:'4px 0'}},h('b',{style:{display:'inline-block',width:'18px',color:ic==='✓'?G:O}},ic),it.label+' · '+it.detalle);}),
+        x.lat&&h('div',{style:{background:'#F8F8F8',borderRadius:'9px',padding:'9px',marginTop:'7px',fontSize:'11px'}},h('b',null,'Entrenamiento: '+x.training.status),h('div',{style:{color:'#666',marginTop:'3px'}},x.training.registered+'/'+(x.training.prescribed||'?')+' ejercicios con registro · '+x.training.comparable+' comparables · '+x.training.plus+' mantuvieron/mejoraron · '+x.training.minus+' empeoraron · score '+(x.training.score>0?'+':'')+x.training.score)),
+        x.lat&&h('div',{style:{marginTop:'10px'}},h('div',{style:lbl},'OPCIÓN SUGERIDA'),h('div',{style:{background:col+'12',border:'1px solid '+col+'40',borderRadius:'9px',padding:'10px'}},h('div',{style:{fontSize:'13px',fontWeight:'900',color:col}},a.accion+' · '+a.variable),h('div',{style:{fontSize:'11px',color:'#555',marginTop:'4px'}},a.motivo),h('div',{style:{fontSize:'10px',color:'#777',marginTop:'5px'}},'Estado: '+a.estado+' · Resultado: '+a.resultado))),
+        h('div',{style:{marginTop:'12px'}},h('div',{style:lbl},'MI PARTE · DEVOLUCIÓN'),h('textarea',{defaultValue:val(x,'Devolucion',devolDefault),onBlur:function(e){upd(x,'Devolucion',e.target.value);},style:Object.assign({},inp,{minHeight:'80px',resize:'vertical'}),placeholder:'Interpretación para el asesorado'})),
+        h('div',{style:{marginTop:'9px'}},h('div',{style:lbl},'MI PARTE · PRÓXIMA SEMANA'),h('textarea',{defaultValue:val(x,'ProximaSemana',!x.lat?'Mantener la pauta vigente y recuperar el registro/reporte semanal.':''),onBlur:function(e){upd(x,'ProximaSemana',e.target.value);},style:Object.assign({},inp,{minHeight:'70px',resize:'vertical'}),placeholder:'Qué mantenemos, ajustamos o priorizamos la semana entrante'})),
+        h('button',{onClick:function(){save(x);},disabled:saving===key,style:{width:'100%',marginTop:'10px',border:'none',borderRadius:'9px',padding:'11px',fontSize:'12px',fontWeight:'900',background:GRAD,color:'#fff'}},saving===key?'Guardando…':'Guardar devolución semanal')
       )
     );})
   );
 }
+
 function MensualV2({maestra,data,rutinas,devoluciones,videos}){
-  var [open,setOpen]=useState({});var audits=ftAuditRows(devoluciones);var rt={};(rutinas||[]).forEach(function(r){rt[ftNorm(r.Asesorado)]=r;});
+  var [open,setOpen]=useState({}),[saving,setSaving]=useState(false),[savedMsg,setSavedMsg]=useState('');var audits=ftAuditRows(devoluciones);var rt={};(rutinas||[]).forEach(function(r){rt[ftNorm(r.Asesorado)]=r;});
   var activos=(maestra||[]).filter(function(a){var p=ftNorm(a.Plan);return ftNorm(a.Estado)!=='baja'&&(p==='online'||p==='presencial')&&a.Asesorado;});
+  var snapshots=[];
   function mark(ok,label,detail){return {ok:ok,label:label,detail:detail};}
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'14px 12px 90px'}},h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Mensual'),h('div',{style:{fontSize:'12px',color:'#888',marginBottom:'12px'}},'Checklist de las últimas 4 semanas: qué esperaba el sistema de cada parte y qué ocurrió.'),
     activos.map(function(a){var n=a.Asesorado,id=a.AsesoradoID||'',w=(data[n]||[]).slice(-4),r=rt[ftNorm(n)]||a,allWa=audits.filter(function(z){return (id&&String(z.asesoradoId||'')===String(id))||ftNorm(z.asesorado)===ftNorm(n);}),bySem={};allWa.forEach(function(z){bySem[z.semanID||z._sem||('row_'+z._row)]=z;});var wa=Object.keys(bySem).map(function(k){return bySem[k];}).slice(-4),vid=(videos||[]).filter(function(v){return (id&&String(v.AsesoradoID||'')===String(id))||ftNorm(v.Asesorado)===ftNorm(n);});var rev=vid.filter(function(v){return ftNorm(v.Revisado)==='si'||String(v.Feedback||'').trim();}).length,pend=vid.length-rev;
       var reportes=w.length,med=w.filter(function(x){return x.Peso&&x.Cintura;}).length,ent=w.filter(function(x){return parseInt(x.SesionesEntreno||0)>0;}).length,nutOk=w.filter(function(x){return x.NutriDias!==''&&x.NutriDias!=null&&parseInt(x.NutriDias)>=5;}).length;
       var su=[mark(reportes>=3,'Reportar semanalmente',reportes+'/4 reportes'),mark(med>=3,'Peso + cintura',med+'/4 semanas con ambas mediciones'),mark(ent>=3,'Registrar entrenamiento',ent+'/4 semanas con evidencia'),mark(nutOk>=3,'Nutrición: registro interpretable',nutOk+'/4 semanas con pauta registrada ≥5 días')];
       var mi=[mark(wa.length>=3,'Revisar y decidir',wa.length+'/4 auditorías/intervenciones registradas'),mark(pend===0,'Corregir videos recibidos',vid.length?rev+'/'+vid.length+' corregidos':'Sin videos cargados'),mark(!wa.some(function(z){return z.estado!=='Resuelto'&&z.responsable==='Mi parte';}),'Cerrar pendientes de mi parte',wa.filter(function(z){return z.estado!=='Resuelto'&&z.responsable==='Mi parte';}).length+' abiertos')];
+      snapshots.push({asesoradoId:id,asesorado:n,reportes:reportes,devoluciones:wa.length,mediciones:med,entrenamiento:ent,nutricionOk:nutOk,videosRecibidos:vid.length,videosCorregidos:rev,suParteOK:su.filter(function(z){return z.ok;}).length,miParteOK:mi.filter(function(z){return z.ok;}).length});
       var ab=open[id||n];function row(m){return h('div',{key:m.label,style:{display:'flex',gap:'8px',alignItems:'flex-start',padding:'7px 0',borderBottom:'1px solid #f1f1f1'}},h('span',{style:{fontWeight:'900',color:m.ok?G:R}},m.ok?'✓':'○'),h('div',{style:{flex:1}},h('div',{style:{fontSize:'12px',fontWeight:'700'}},m.label),h('div',{style:{fontSize:'10px',color:'#888'}},m.detail)));}
       return h('div',{key:id||n,style:{background:'#fff',border:'1px solid rgba(0,0,0,.08)',borderRadius:'12px',padding:'13px',marginBottom:'8px'}},h('div',{onClick:function(){setOpen(Object.assign({},open,{[id||n]:!ab}));},style:{display:'flex',justifyContent:'space-between',cursor:'pointer'}},h('div',{style:{fontSize:'14px',fontWeight:'800'}},n),h('div',{style:{fontSize:'11px',color:'#777'}},su.filter(x=>x.ok).length+'/'+su.length+' · '+mi.filter(x=>x.ok).length+'/'+mi.length)),ab&&h('div',{style:{marginTop:'10px'}},h('div',{style:Object.assign({},lbl,{color:'#111'})},'SU PARTE'),su.map(row),h('div',{style:Object.assign({},lbl,{color:'#111',marginTop:'12px'})},'MI PARTE'),mi.map(row),h('div',{style:{fontSize:'10px',color:'#999',marginTop:'10px',lineHeight:'1.5'}},'Este resumen muestra hechos registrados. No atribuye causas ni reemplaza la conversación con el asesorado.')));
-    })
+    }),
+    h('button',{onClick:function(){setSaving(true);setSavedMsg('');var now=new Date(),mes=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');var resumen={asesorados:snapshots.length,reportes:snapshots.reduce(function(a,z){return a+z.reportes;},0),devoluciones:snapshots.reduce(function(a,z){return a+z.devoluciones;},0),videosRecibidos:snapshots.reduce(function(a,z){return a+z.videosRecibidos;},0),videosCorregidos:snapshots.reduce(function(a,z){return a+z.videosCorregidos;},0)};fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'auditoriaMensualV5',mes:mes,asesorados:snapshots,resumen:resumen})}).finally(function(){setSaving(false);setSavedMsg('Auditoría mensual guardada en Sheets');setTimeout(function(){setSavedMsg('');},3000);});},disabled:saving,style:{width:'100%',marginTop:'8px',border:'none',borderRadius:'10px',padding:'12px',fontSize:'12px',fontWeight:'900',background:saving?'#ccc':'#111',color:'#fff'}},saving?'Guardando auditoría…':'Guardar auditoría del mes'),
+    savedMsg&&h('div',{style:{fontSize:'11px',fontWeight:'800',color:G,textAlign:'center',marginTop:'7px'}},savedMsg)
   );
 }
 function HistorialV2({name,asesoradoId,decisiones}){
@@ -2969,7 +2974,7 @@ function App(){
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
       appTab==='lista'&&h(ClientList,{data,rutinas,decisiones,videosPend,onSelect:setSelected,onRefresh:loadData}),
-      appTab==='semv2'&&h(SemanalV2,{data:data,rutinas:rutinas,devoluciones:devoluciones,nutriResumen:nutriResumen,videos:videos,seguimiento:seguimiento,onRefresh:loadData}),
+      appTab==='semv2'&&h(SemanalV2,{data:data,rutinas:rutinas,devoluciones:devoluciones,nutriResumen:nutriResumen,videos:videos,seguimiento:seguimiento,drafts:drafts,onRefresh:loadData}),
       appTab==='mensualv2'&&h(MensualV2,{maestra:maestra,data:data,rutinas:rutinas,devoluciones:devoluciones,videos:videos}),
       appTab==='vids'&&h(VideosGlobal,{onSelect:setSelected}),
       appTab==='cobros'&&h(CobrosPanel,{maestra,pagos,onRefresh:loadData})
