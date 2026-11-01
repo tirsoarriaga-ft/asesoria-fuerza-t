@@ -1,3 +1,4 @@
+<!-- FuerzaT-Nuevo-2026-11-01-0315 -->
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -2643,13 +2644,30 @@ function ftVideoForSem(videos,n,id,r,sem){
   return (videos||[]).some(function(v){if(!ftPersonMatch(v,n,id))return false;var vd=parseAR(v.Fecha);return vd&&vd>=mon&&vd<=sun;});
 }
 function ftChecklist(r,lat,videoRequired,videoDone,enCurso){
-  var isOnline=ftNorm(r.Nivel)==='online',ses=lat?parseInt(lat.SesionesEntreno||0)||0:0,agua=lat?parseInt(lat.DiasAgua||0)||0:0;
-  var nutDias=lat&&lat.NutriDias!==''&&lat.NutriDias!=null?parseInt(lat.NutriDias):null;
-  var nutEstado=lat?ftNorm(lat.EstadoNutricional):'';
-  var nutCant=lat?String(lat.NutriCantidad||'').trim():'';
+  var isOnline=ftNorm(r.Nivel)==='online';
+  function n(v){var z=parseFloat(String(v==null?'':v).replace(',','.'));return isNaN(z)?0:z;}
+  function arr(v){if(Array.isArray(v))return v;try{var z=JSON.parse(v||'[]');return Array.isArray(z)?z:[];}catch(e){return[];}}
   function st(ok,partial){return ok?'cumplido':(partial?'incompleto':'no_realizado');}
-  var nutDetalle=!lat?'Sin reporte':(nutDias===null?'Sin dato':((nutEstado||'sin estado')+' · '+nutDias+'/7'+((nutEstado==='adecuado'||nutEstado==='deportivo')&&nutCant?' · cantidad '+nutCant:'')));
-  return [{key:'entreno',label:'Entrenamiento',estado:lat?(ses>0?'cumplido':'no_realizado'):'no_realizado',detalle:ses?ses+' sesión(es) con ejecución registrada':'Sin sesiones con ejecución registrada'},{key:'comidas',label:'Alimentación / registro',estado:lat?(nutDias===null?'incompleto':st(nutDias>=5,nutDias>0)):'no_realizado',detalle:nutDetalle},{key:'agua',label:'Agua / hábitos',estado:lat?(lat.DiasAgua===''||lat.DiasAgua==null?'incompleto':st(agua>=4,agua>0)):'no_realizado',detalle:lat&&lat.DiasAgua!==undefined?agua+'/7 días':'Sin dato histórico'},{key:'peso',label:'Peso',estado:lat?(ftNorm(lat.MedidoPeso)==='no'?'no_realizado':(lat.Peso?'cumplido':'incompleto')):'no_realizado',detalle:lat?(lat.Peso?lat.Peso+' kg':(ftNorm(lat.MedidoPeso)==='no'?'Informó: no me medí':'Sin dato')):'Sin reporte'},{key:'cintura',label:'Cintura',estado:lat?(ftNorm(lat.MedidoCintura)==='no'?'no_realizado':(lat.Cintura?'cumplido':'incompleto')):'no_realizado',detalle:lat?(lat.Cintura?lat.Cintura+' cm':(ftNorm(lat.MedidoCintura)==='no'?'Informó: no me medí':'Sin dato')):'Sin reporte'},{key:'reporte',label:'Reporte semanal',estado:lat?'cumplido':'no_realizado',detalle:lat?'Recibido':'No recibido'},{key:'video',label:'Video semanal',estado:!isOnline||!videoRequired?'no_correspondia':(videoDone?'cumplido':'incompleto'),detalle:!isOnline?'Presencial':(!videoRequired?'No requerido por coach':(videoDone?'Recibido':'Pendiente flexible'))}];
+  var prescribed=parseInt(r.NumSesiones||0)||0;
+  var done=lat?(parseInt(lat.EntrenoRealizadas||lat.SesionesEntreno||0)||0):0;
+  var omitted=lat&&lat.EntrenoOmitidas!==''&&lat.EntrenoOmitidas!=null?(parseInt(lat.EntrenoOmitidas)||0):Math.max(0,prescribed-done);
+  var nutPct=lat&&lat.NutriCompliance!==''&&lat.NutriCompliance!=null?n(lat.NutriCompliance):null;
+  var oldNutDays=lat&&lat.NutriDias!==''&&lat.NutriDias!=null?parseInt(lat.NutriDias):null;
+  var water=n(lat&&lat.AguaPromL),waterTarget=n(r.PesoRef)*.04;
+  var sleep=n(lat&&lat.SuenoPromH);
+  var ps=arr(lat&&lat.MedPesoJSON).map(n).filter(function(x){return x>0;}),cs=arr(lat&&lat.MedCinturaJSON).map(n).filter(function(x){return x>0;});
+  if(!ps.length&&n(lat&&lat.Peso)>0)ps=[n(lat.Peso)];if(!cs.length&&n(lat&&lat.Cintura)>0)cs=[n(lat.Cintura)];
+  var medOk=ps.length>0||cs.length>0;
+  var items=[];
+  items.push({key:'comidas',label:'Alimentación',estado:!lat?'no_realizado':(nutPct!==null?st(nutPct>=80,nutPct>0):(oldNutDays!==null?st(oldNutDays>=5,oldNutDays>0):'incompleto')),detalle:!lat?'Sin reporte':(nutPct!==null?Math.round(nutPct)+'% de comidas según pauta':(oldNutDays!==null?oldNutDays+'/7 días registrados':'Sin dato interpretable'))});
+  items.push({key:'entreno',label:'Entrenamiento',estado:!lat?'no_realizado':st(prescribed?omitted<=1:done>0,done>0),detalle:!lat?'Sin reporte':done+'/'+(prescribed||'?')+' sesiones realizadas'+(omitted?' · '+omitted+' faltante(s)':'')});
+  items.push({key:'agua',label:'Agua',estado:!lat?'no_realizado':(water>0?st(!waterTarget||water>=waterTarget*.8,true):'incompleto'),detalle:!lat?'Sin reporte':(water>0?water.toFixed(2)+' L/día'+(waterTarget?' · pauta ~'+waterTarget.toFixed(1)+' L':''):'Sin promedio')});
+  items.push({key:'sueno',label:'Sueño',estado:!lat?'no_realizado':(sleep>0?st(sleep>=7,sleep>=6):'incompleto'),detalle:!lat?'Sin reporte':(sleep>0?sleep.toFixed(1)+' h/día · pauta 7–9 h':'Sin promedio')});
+  items.push({key:'mediciones',label:'Mediciones',estado:!lat?'no_realizado':(medOk?'cumplido':'incompleto'),detalle:!lat?'Sin reporte':((ps.length?'Peso '+(ps.reduce(function(a,b){return a+b;},0)/ps.length).toFixed(1)+' kg':'Peso —')+' · '+(cs.length?'Cintura '+(cs.reduce(function(a,b){return a+b;},0)/cs.length).toFixed(1)+' cm':'Cintura —'))});
+  if(lat&&n(lat.PasosProm)>0)items.push({key:'actividad',label:'Actividad',estado:'cumplido',detalle:Math.round(n(lat.PasosProm))+' pasos/día registrados · referencia 7.000'});
+  items.push({key:'video',label:'Video técnico',estado:!isOnline||!videoRequired?'no_correspondia':(videoDone?'cumplido':'incompleto'),detalle:!isOnline?'Presencial':(!videoRequired?'No requerido':(videoDone?'Recibido':'Pendiente'))});
+  items.push({key:'reporte',label:'Cierre semanal',estado:lat?'cumplido':'no_realizado',detalle:lat?'Reporte recibido':'No recibido'});
+  return items;
 }
 function ftEvidence(r,lat,nut,videoRequired,videoDone){
   var ev=[];if(!lat)ev.push('Sin reporte disponible');
