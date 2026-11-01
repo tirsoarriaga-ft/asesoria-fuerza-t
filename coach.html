@@ -780,11 +780,10 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
   }
   // Mensaje completo listo para WhatsApp (con nombre y link ya insertados). Tirso lo edita antes de mandar.
   const primerNombre=String(name||'').trim().split(' ')[0]||'';
-  const mensajeDiag='¡Buenísimo '+primerNombre+', bienvenido/a a Fuerza T! 🙌 Ya te di el alta.\n\n'+
-    'Ahora que arrancamos, el primer paso es que te conozca un poco: cómo venís entrenando y cómo estás comiendo hoy. Con eso te armo la rutina y la alimentación por donde de verdad te conviene, y no a lo genérico.\n\n'+
-    'Te dejo tu link personal 👇\n'+linkDiag+'\n\n'+
-    'Son dos cuestionarios cortos (entrenamiento y alimentación), 5 minutitos. Respondé tranqui y con sinceridad — no hay respuestas buenas ni malas, es para entender tu punto de partida.\n\n'+
-    'Cuando lo completes me llega solo, y con eso preparo tu plan y te doy el acceso a la app. Cualquier duda me escribís por acá 💪';
+  const mensajeDiag='Definamos tu punto de partida.\n\n'+
+    'Necesito estos datos para hacer tu valoración inicial y preparar tu primera planificación. Después iremos ajustándola con la información que generemos semana a semana.\n\n'+
+    'Completalo desde tu link personal 👇\n'+linkDiag+'\n\n'+
+    'Si hoy no tenés peso o cintura, podés dejarlo pendiente: lo completamos durante la primera semana.';
   function copiarMensaje(){
     try{navigator.clipboard.writeText(mensajeDiag);}catch(e){}
     setMsgCopiado(true);setTimeout(()=>setMsgCopiado(false),2000);
@@ -812,8 +811,8 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
       {k:'Diagnóstico inicial',ok:!!(diagnostico&&String(diagnostico.EstadoDiag||'').toLowerCase()==='confirmado'),nota:diagnostico?(String(diagnostico.EstadoDiag||'').toLowerCase()==='enviado'?'recibido, sin confirmar':''):'pendiente'},
       {k:'Datos personales',ok:has(rutina&&rutina.Sexo)&&has(rutina&&rutina.Edad)&&has(rutina&&rutina.Altura),nota:'sexo · edad · altura'},
       {k:'Peso de referencia',ok:has(rutina&&rutina.PesoRef)||algunReporteCon('Peso'),nota:''},
-      {k:'Cintura',ok:algunReporteCon('Cintura'),nota:''},
-      {k:'Objetivo definido',ok:has(rutina&&rutina.Objetivo),nota:has(rutina&&rutina.Objetivo)?String(rutina.Objetivo):''},
+      {k:'Cintura',ok:has(diagnostico&&diagnostico.CinturaInicial)||algunReporteCon('Cintura'),nota:has(diagnostico&&diagnostico.CinturaInicial)?String(diagnostico.CinturaInicial)+' cm':''},
+      {k:'Objetivo de la persona',ok:has(diagnostico&&diagnostico.ObjetivoPersona),nota:has(diagnostico&&diagnostico.ObjetivoPersona)?String(diagnostico.ObjetivoPersona):''},
       {k:'Rutina cargada',ok:has(rutina&&(rutina.SesionA||rutina.Bloque)),nota:has(rutina&&rutina.Bloque)?String(rutina.Bloque):''},
       {k:'Template calórico',ok:has(rutina&&rutina.Template),nota:has(rutina&&rutina.Template)?String(rutina.Template)+' kcal':''},
       {k:'Reportó (último dato)',ok:!!ultReporte,nota:ultReporte?String(ultReporte.SemanID||'').replace('sem_','sem '):'sin reportes'}
@@ -1283,21 +1282,19 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
           // Si hay diagnóstico recibido, mostrar respuestas + recomendación + confirmar
           tieneDiag&&h('div',{style:{borderTop:'1px solid rgba(0,0,0,0.05)',paddingTop:'12px'}},
             h('div',{style:{fontSize:'11px',fontWeight:'700',color:'#444',marginBottom:'8px'}},'Respuestas del asesorado'),
-            h('div',{style:{fontSize:'11px',color:'#666',lineHeight:'1.7',marginBottom:'12px'}},
-              'Dolor: '+(diagnostico.P1_Dolor||'—')+(diagnostico.P1_Detalle?(' ('+diagnostico.P1_Detalle+')'):'')+' · ',
-              'Deporte: '+(diagnostico.P2_Deporte||'—')+' · ',
-              'Entrenó regular: '+(diagnostico.P3_Regular||'—')+' · ',
-              'Registra: '+(diagnostico.P4_Registra||'—')+' · ',
-              'Progresó: '+(diagnostico.P5_Progreso||'—')+' · ',
-              'Esfuerzo: '+(diagnostico.P6_Esfuerzo||'—')+' · ',
-              'Recupera: '+(diagnostico.P7_Recupera||'—')+' · ',
-              h('b',null,'Días: '+(diagnostico.Dias||'—'))
+            h('div',{style:{fontSize:'11px',color:'#666',lineHeight:'1.75',marginBottom:'12px'}},
+              h('b',null,'Base: ')+(diagnostico.Edad||'—')+' años · '+(diagnostico.Altura||'—')+' cm · '+(diagnostico.PesoActual||'peso pendiente')+' kg · '+(diagnostico.CinturaInicial||'cintura pendiente')+' cm',h('br'),
+              h('b',null,'Objetivo: ')+(diagnostico.ObjetivoPersona||'—'),h('br'),
+              h('b',null,'Entrenamiento: ')+(diagnostico.DiasDisponibles||'—')+' días · '+(diagnostico.FranjaHoraria||'horario flexible')+' · '+(diagnostico.LugarEntreno||'—')+(diagnostico.Equipamiento?(' · '+diagnostico.Equipamiento):''),h('br'),
+              h('b',null,'Dolor/limitación actual: ')+(diagnostico.DolorActual||'—')+(diagnostico.DolorDetalle?(' · '+diagnostico.DolorDetalle):''),h('br'),
+              h('b',null,'Alimentación: ')+(diagnostico.ComidasHabituales||'—')+' comidas/día · Alergias/intolerancias: '+(diagnostico.AlergiasIntolerancias||'No refiere')+' · Condición médica: '+(diagnostico.CondicionMedica||'No refiere'),
+              diagnostico.FotoURL&&h('div',{style:{marginTop:'8px'}},h('a',{href:diagnostico.FotoURL,target:'_blank',rel:'noopener',style:{color:B,fontWeight:'700'}},'Ver foto inicial'))
             ),
             // Recomendaciones
             h('div',{style:{display:'flex',gap:'8px',marginBottom:'14px'}},
               h('div',{style:{flex:1,background:'#EEF2FF',borderRadius:'8px',padding:'10px'}},
-                h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#4338CA',marginBottom:'2px'}},'BLOQUE RECOMENDADO'),
-                h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#312E81'}},BLOQ_LABEL[String(diagnostico.BloqueRecomendado||'').toLowerCase()]||diagnostico.BloqueRecomendado||'—')
+                h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#4338CA',marginBottom:'2px'}},'BLOQUE / DECISIÓN DEL COACH'),
+                h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#312E81'}},BLOQ_LABEL[String(diagnostico.BloqueRecomendado||'').toLowerCase()]||diagnostico.BloqueRecomendado||'Definir')
               ),
               h('div',{style:{flex:1,background:'#F0FDF4',borderRadius:'8px',padding:'10px'}},
                 h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#166534',marginBottom:'2px'}},'PAUTA NUTRICIONAL'),
@@ -1308,14 +1305,14 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
               ?h('div',{style:{fontSize:'12px',color:G,fontWeight:'700'}},'✓ Confirmaste: '+(BLOQ_LABEL[String(diagnostico.BloqueConfirmado||'').toLowerCase()]||diagnostico.BloqueConfirmado||'—')+' · '+NUTRI_LABEL.unica)
               :h('div',null,
                   h('div',{style:{display:'flex',gap:'8px'}},
-                    h('button',{onClick:()=>confirmarDiag(diagnostico.BloqueRecomendado,'unica'),disabled:confirmando,style:{flex:1,padding:'11px',borderRadius:'8px',border:'none',background:confirmando?'#ccc':G,color:'#fff',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},confirmando?'Confirmando…':'Confirmar recomendación'),
+                    h('button',{onClick:()=>diagnostico.BloqueRecomendado?confirmarDiag(diagnostico.BloqueRecomendado,'unica'):setBloqueEdit('base'),disabled:confirmando,style:{flex:1,padding:'11px',borderRadius:'8px',border:'none',background:confirmando?'#ccc':G,color:'#fff',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},confirmando?'Confirmando…':(diagnostico.BloqueRecomendado?'Confirmar':'Elegir bloque')),
                     h('button',{onClick:()=>{setBloqueEdit(String(diagnostico.BloqueRecomendado||'base').toLowerCase());setNutriEdit('unica');},disabled:confirmando,style:{flex:1,padding:'11px',borderRadius:'8px',border:'1px solid rgba(0,0,0,0.15)',background:'#fff',color:'#666',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},'Modificar')
                   ),
                   // Editor si tocó Modificar
                   bloqueEdit&&h('div',{style:{marginTop:'12px',background:'#FAFAFA',borderRadius:'8px',padding:'10px'}},
                     h('div',{style:{fontSize:'10px',fontWeight:'700',color:'#666',marginBottom:'4px'}},'Bloque'),
                     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'10px'}},
-                      ['base','rehabilitacion','fuerza','volumen','intensidad'].map(b=>h('button',{key:b,onClick:()=>setBloqueEdit(b),style:{padding:'6px 8px',borderRadius:'6px',border:'1px solid '+(bloqueEdit===b?G:'rgba(0,0,0,0.12)'),background:bloqueEdit===b?G:'#fff',color:bloqueEdit===b?'#fff':'#666',fontSize:'10px',fontWeight:'700',cursor:'pointer'}},BLOQ_LABEL[b]))
+                      ['base','rehabilitacion','fuerza','volumen','intensidad','deporte'].map(b=>h('button',{key:b,onClick:()=>setBloqueEdit(b),style:{padding:'6px 8px',borderRadius:'6px',border:'1px solid '+(bloqueEdit===b?G:'rgba(0,0,0,0.12)'),background:bloqueEdit===b?G:'#fff',color:bloqueEdit===b?'#fff':'#666',fontSize:'10px',fontWeight:'700',cursor:'pointer'}},BLOQ_LABEL[b]))
                     ),
                     h('div',{style:{fontSize:'10px',fontWeight:'700',color:'#666',marginBottom:'8px'}},'Nutrición · '+NUTRI_LABEL.unica),
                     h('button',{onClick:()=>confirmarDiag(bloqueEdit,'unica'),disabled:confirmando,style:{width:'100%',padding:'10px',borderRadius:'8px',border:'none',background:confirmando?'#ccc':AC,color:'#fff',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},confirmando?'Guardando…':'Confirmar con estos cambios')
