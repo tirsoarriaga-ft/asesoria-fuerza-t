@@ -3094,6 +3094,12 @@ function App(){
     }
     localStorage.setItem(sentKey,'1');
     setSaved(true);
+
+    // CONFIRMACIÓN WHATSAPP — transición del 01/11.
+    // El reporte ya fue confirmado en Reportes antes de abrir WhatsApp.
+    const coachWhatsApp='542604040936';
+    const whatsappMsg='✅ Reporte semanal enviado. Ya completé y envié mi semana en Fuerza T.';
+    window.location.href='https://wa.me/'+coachWhatsApp+'?text='+encodeURIComponent(whatsappMsg);
   }
   async function saveProgress(){
     if(weekLocked)return;
