@@ -737,7 +737,7 @@ function DiagnosticoPanel({rutina,weeks}){
   );
 }
 
-function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equivalencias,drafts,onRefresh,onBack}){
+function ClientDetail({name,weeks,rutina,allRutinas,ejercicios,diagnostico,decisiones,equivalencias,drafts,onRefresh,onBack}){
   const _nid=String(rutina?.AsesoradoID||'').trim().toLowerCase();
   const _nn=String(name||'').trim().toLowerCase();
   const draftsCliente=(drafts||[]).filter(d=>{const id=String(d.AsesoradoID||'').trim().toLowerCase(),nm=String(d.Asesorado||'').trim().toLowerCase();return (_nid&&id===_nid)||(!id&&nm===_nn);});
@@ -1200,7 +1200,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,equiv
   const DTABS=[{id:'med',l:'Evaluaciones'},{id:'ent',l:'Plan vigente'},{id:'hist',l:'Historial'}];
 
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',background:'#F5F5F5',minHeight:'100vh'}},
-    showBuilder&&h(RutinaBuilder,{name:name,rutina:rutina,ejercicios:ejercicios,currentWkNum:currentWkNum,onClose:function(){setShowBuilder(false);},onSaved:function(){setShowBuilder(false);if(onRefresh)onRefresh();}}),
+    showBuilder&&h(RutinaBuilder,{name:name,rutina:rutina,allRutinas:allRutinas,ejercicios:ejercicios,currentWkNum:currentWkNum,onClose:function(){setShowBuilder(false);},onSaved:function(){setShowBuilder(false);if(onRefresh)onRefresh();}}),
     h('div',{style:{background:'#fff',borderBottom:'1px solid rgba(0,0,0,0.09)',padding:'14px 18px',position:'sticky',top:0,zIndex:10}},
       h('div',{style:{display:'flex',alignItems:'center',gap:'12px',marginBottom:'4px'}},
         h('button',{onClick:onBack,style:{background:'none',border:'none',cursor:'pointer',fontSize:'18px',color:'#111',padding:0}},'←'),
@@ -2057,7 +2057,7 @@ const BLOQUE_INFO={
 };
 const COACH_TECNICAS=[['','Sin prescribir'],['rp','Rest-pause'],['ds','Drop set'],['pa','Parciales'],['as','Asistidas'],['ne','Negativas']];
 const BLOQUES_LISTA=[['base','Base'],['rehabilitacion','Rehabilitación'],['fuerza','Fuerza'],['volumen','Volumen'],['intensidad','Intensidad']];
-function RutinaBuilder({name,rutina,ejercicios,currentWkNum,onClose,onSaved}){
+function RutinaBuilder({name,rutina,allRutinas,ejercicios,currentWkNum,onClose,onSaved}){
   const norm=x=>String(x||'').trim().toLowerCase();
   const normB=b=>{var n=norm(b);if(n.includes('fuerza'))return'fuerza';if(n.includes('intensidad'))return'intensidad';if(n.includes('rehab'))return'rehabilitacion';if(n.includes('volumen'))return'volumen';return'base';};
   const letras=['A','B','C','D','E'];
@@ -2072,6 +2072,18 @@ function RutinaBuilder({name,rutina,ejercicios,currentWkNum,onClose,onSaved}){
   function legacySession(l){return String((rutina&&rutina['Sesion'+l])||'').split(',').map(x=>x.trim()).filter(Boolean).map(n=>{const e=byName(n);return e?{kind:'exercise',ejercicioId:exId(e)}:null;}).filter(Boolean);}
   function readSession(l){try{const raw=String((rutina&&rutina['Sesion'+l+'Data'])||'').trim();if(raw){const v=JSON.parse(raw);if(Array.isArray(v))return v;}}catch(e){}return legacySession(l);}
   const [sesiones,setSesiones]=useState(()=>letras.map(readSession));
+  const [copiarDe,setCopiarDe]=useState('');
+  function readSessionFrom(r,l){
+    try{const raw=String((r&&r['Sesion'+l+'Data'])||'').trim();if(raw){const v=JSON.parse(raw);if(Array.isArray(v))return JSON.parse(JSON.stringify(v));}}catch(e){}
+    return String((r&&r['Sesion'+l])||'').split(',').map(x=>x.trim()).filter(Boolean).map(n=>{const e=byName(n);return e?{kind:'exercise',ejercicioId:exId(e)}:null;}).filter(Boolean);
+  }
+  function copiarRutina(){
+    const origen=(allRutinas||[]).find(r=>String(r.Asesorado||'')===String(copiarDe||''));
+    if(!origen)return setMsg('Elegí un asesorado para copiar.');
+    const n=Math.max(1,Math.min(5,parseInt(origen.NumSesiones)||3));
+    const nuevas=letras.map(l=>readSessionFrom(origen,l));
+    setNumSes(n);setSesiones(nuevas);setSesActiva(0);setMsg('Copiadas '+n+' sesiones y sus ejercicios desde '+copiarDe+'. Revisá y guardá para aplicar.');
+  }
   const [sesActiva,setSesActiva]=useState(0),[buscar,setBuscar]=useState(''),[modo,setModo]=useState('');
   const [saving,setSaving]=useState(false),[msg,setMsg]=useState('');
   const [newEx,setNewEx]=useState({nombre:'',musculo:'',repMin:8,repMax:12,tutorial:''});
@@ -2116,6 +2128,17 @@ function RutinaBuilder({name,rutina,ejercicios,currentWkNum,onClose,onSaved}){
   const small={...inp,fontSize:'12px',padding:'8px 9px'};
   return h('div',{style:{position:'fixed',inset:0,background:'#F7F7F7',zIndex:200,overflowY:'auto'}},h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'16px 16px 40px'}},
     h('div',{style:{display:'flex',gap:'10px',alignItems:'center',marginBottom:'16px'}},h('button',{onClick:onClose,style:{background:'none',border:'none',fontSize:'24px'}},'‹'),h('div',null,h('div',{style:{fontSize:'18px',fontWeight:'800'}},yaExiste?'Editar rutina':'Armar rutina'),h('div',{style:{fontSize:'12px',color:'#999'}},name))),
+    h('div',{style:box},
+      h('div',{style:{fontSize:'12px',fontWeight:'900',marginBottom:'4px'}},'Copiar sesiones y ejercicios'),
+      h('div',{style:{fontSize:'11px',color:'#777',lineHeight:'1.4',marginBottom:'8px'}},'Copia únicamente el número de sesiones y los ejercicios. No cambia bloque, semana de bloque, historial, cargas ni datos del asesorado.'),
+      h('div',{style:{display:'flex',gap:'6px'}},
+        h('select',{value:copiarDe,onChange:e=>setCopiarDe(e.target.value),style:{...small,flex:1}},
+          h('option',{value:''},'Elegir asesorado…'),
+          (allRutinas||[]).filter(r=>r&&r.Asesorado&&String(r.Asesorado)!==String(name)).sort((a,b)=>String(a.Asesorado).localeCompare(String(b.Asesorado))).map(r=>h('option',{key:r.Asesorado,value:r.Asesorado},r.Asesorado+' · '+(parseInt(r.NumSesiones)||3)+' sesiones'))
+        ),
+        h('button',{onClick:copiarRutina,disabled:!copiarDe,style:{border:'none',borderRadius:'8px',padding:'0 12px',background:copiarDe?G:'#ddd',color:'#fff',fontSize:'11px',fontWeight:'800',cursor:copiarDe?'pointer':'default'}},'Copiar')
+      )
+    ),
     h('div',{style:box},h('div',{style:lbl},'Bloque'),h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}},BLOQUES_LISTA.map(b=>h('button',{key:b[0],onClick:()=>setBloque(b[0]),style:{padding:'8px 10px',border:'none',borderRadius:'8px',background:bloque===b[0]?G:'#eee',color:bloque===b[0]?'#fff':'#555',fontWeight:'700'}},b[1]))),h('div',{style:{...lbl,marginTop:'12px'}},'Sesiones'),h('div',{style:{display:'flex',gap:'5px'}},[2,3,4,5].map(n=>h('button',{key:n,onClick:()=>setNumSes(n),style:{flex:1,padding:'8px',border:'none',borderRadius:'7px',background:numSes===n?'#111':'#eee',color:numSes===n?'#fff':'#555'}},n))),h('div',{style:{marginTop:'10px'}},h('div',{style:lbl},'Semana de inicio del bloque'),semActual&&h('div',{style:{fontSize:'11px',lineHeight:'1.45',color:'#555',background:'#F6F6F6',borderRadius:'8px',padding:'8px 10px',marginBottom:'7px'}},'Semana total actual: '+semActual+' · Con inicio '+bloqueInicio+' → Semana '+semBloquePreview+' del bloque.',h('div',{style:{marginTop:'3px',fontWeight:'800',color:G}},'Para empezar un bloque nuevo en Semana 1 ahora, usá '+semActual+'.')),h('div',{style:{display:'flex',gap:'6px'}},h('input',{type:'number',value:bloqueInicio,onChange:e=>setBloqueInicio(parseInt(e.target.value)||1),style:small}),semActual&&h('button',{onClick:()=>setBloqueInicio(semActual),style:{whiteSpace:'nowrap',border:'none',borderRadius:'8px',padding:'0 10px',background:'#EAF7F2',color:G,fontSize:'11px',fontWeight:'800'}},'Usar '+semActual)))),
     h('div',{style:{display:'flex',gap:'4px',marginBottom:'10px'}},letras.slice(0,numSes).map((l,i)=>h('button',{key:l,onClick:()=>setSesActiva(i),style:{flex:1,padding:'9px',border:'none',borderRadius:'8px',background:sesActiva===i?'#111':'#e8e8e8',color:sesActiva===i?'#fff':'#666',fontWeight:'800'}},l+' ('+sesiones[i].length+')'))),
     h('div',{style:box},
@@ -2982,7 +3005,7 @@ function App(){
   if(selected){
     const rutSel=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase());
     const diagSel=(diagnosticos||[]).find(d=>String(d.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()||(rutSel&&String(d.AsesoradoID||'').trim().toLowerCase()===String(rutSel.AsesoradoID||'').trim().toLowerCase()&&String(rutSel.AsesoradoID||'').trim()!==''));
-    return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutSel,ejercicios,diagnostico:diagSel,decisiones:decisiones,equivalencias:equivalencias,drafts:drafts,onRefresh:loadData,onBack:()=>setSelected(null)});
+    return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutSel,allRutinas:rutinas,ejercicios,diagnostico:diagSel,decisiones:decisiones,equivalencias:equivalencias,drafts:drafts,onRefresh:loadData,onBack:()=>setSelected(null)});
   }
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
