@@ -2495,7 +2495,7 @@ function App(){
           const num=parseInt(fila.NumSesiones)||3;
           const assign={};
           const norm2=n=>n.trim().toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n');
-          ['A','B','C','D'].slice(0,num).forEach(s=>{
+          ['A','B','C','D','E'].slice(0,num).forEach(s=>{
             const nombres=String(fila['Sesion'+s]||'').split(',').map(n=>n.trim()).filter(Boolean);
             assign[s]=nombres.map(nombre=>{
               if(nombre.includes('+')){
