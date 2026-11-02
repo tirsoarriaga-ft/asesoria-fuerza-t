@@ -2077,12 +2077,23 @@ function RutinaBuilder({name,rutina,allRutinas,ejercicios,currentWkNum,onClose,o
     try{const raw=String((r&&r['Sesion'+l+'Data'])||'').trim();if(raw){const v=JSON.parse(raw);if(Array.isArray(v))return JSON.parse(JSON.stringify(v));}}catch(e){}
     return String((r&&r['Sesion'+l])||'').split(',').map(x=>x.trim()).filter(Boolean).map(n=>{const e=byName(n);return e?{kind:'exercise',ejercicioId:exId(e)}:null;}).filter(Boolean);
   }
-  function copiarRutina(){
-    const origen=(allRutinas||[]).find(r=>String(r.Asesorado||'')===String(copiarDe||''));
-    if(!origen)return setMsg('Elegí un asesorado para copiar.');
-    const n=Math.max(1,Math.min(5,parseInt(origen.NumSesiones)||3));
-    const nuevas=letras.map(l=>readSessionFrom(origen,l));
-    setNumSes(n);setSesiones(nuevas);setSesActiva(0);setMsg('Copiadas '+n+' sesiones y sus ejercicios desde '+copiarDe+'. Revisá y guardá para aplicar.');
+  async function copiarRutina(){
+    if(!copiarDe)return setMsg('Elegí un asesorado para copiar.');
+    setMsg('Leyendo la última rutina guardada de '+copiarDe+'…');
+    try{
+      // IMPORTANTE: no copiar desde allRutinas porque puede conservar la versión que
+      // estaba cargada al abrir el Coach. Leemos Rutinas nuevamente desde Sheet para
+      // que una edición recién guardada sea inmediatamente la fuente de la copia.
+      const rows=await fetch(SCRIPT_URL+'?action=rutinas&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json());
+      const origen=(rows||[]).find(r=>norm(r.Asesorado)===norm(copiarDe));
+      if(!origen)throw new Error('No encontré la rutina actual de '+copiarDe+'.');
+      const n=Math.max(1,Math.min(5,parseInt(origen.NumSesiones)||3));
+      const nuevas=letras.map(l=>readSessionFrom(origen,l));
+      setNumSes(n);setSesiones(nuevas);setSesActiva(0);
+      setMsg('Copiada la última versión guardada: '+n+' sesiones y sus ejercicios desde '+copiarDe+'. Revisá y guardá para aplicar.');
+    }catch(err){
+      setMsg((err&&err.message)||'No pude leer la rutina actual. Volvé a intentar.');
+    }
   }
   const [sesActiva,setSesActiva]=useState(0),[buscar,setBuscar]=useState(''),[modo,setModo]=useState('');
   const [saving,setSaving]=useState(false),[msg,setMsg]=useState('');
