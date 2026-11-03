@@ -21,7 +21,7 @@ input:focus,textarea:focus,select:focus{border-color:#E8541A!important;box-shado
 <div id="root"></div>
 <script>
 const {useState,useEffect,useRef,useMemo,useCallback,createElement:h}=React;
-const FT_BUILD='FuerzaT-Personalizada-Superset-2026-11-03';
+const FT_BUILD='FuerzaT-Personalizada-FINAL-RECUPERADA-2026-11-03';
 const SCRIPT_URL='https://script.google.com/macros/s/AKfycby0tGGby72hf61Td2ctw8pEn1dW-0bgEjNgMKwTlg-0kP06Om3vLwcTlNVLhyyoX4c/exec';
 const G='#1D9E75',B='#378ADD',O='#D97706',R='#EF4444';
 const AC='#E8541A'; // acento Fuerza T
@@ -137,11 +137,13 @@ function migrateHab(h){
     actExtra:Array.isArray(h.actExtra)?h.actExtra:base.actExtra,
     meds:Array.isArray(h.meds)?h.meds:base.meds,
     sens:Object.assign({},base.sens,h.sens||{}),
-    nutriSem:Object.assign({},base.nutriSem,h.nutriSem||{})
+    nutriSem:Object.assign({},base.nutriSem,h.nutriSem||{}),
+    dailyV5:Array.from({length:7},function(_,i){const d=Object.assign({},base.dailyV5[i],Array.isArray(h.dailyV5)?(h.dailyV5[i]||{}):{});if(d.training==='na'||d.training==='missed')d.training='no';return d;}),
+    weekClose:Object.assign({},base.weekClose,h.weekClose||{})
   });
 }
 const iHiit=()=>({regs:{},hiitKg:{}});// regs: {A:{cumple:'',exig:'',fatiga:'',dolor:'',nota:''}, B:...}, hiitKg: {A:{detalle:'',ritmo:''}}
-const iH=()=>({sleep:Array(7).fill(false),toxics:Array(7).fill(false),actExtra:Array(7).fill(false),meds:[{p:'',c:''},{p:'',c:''},{p:'',c:''}],noMediPeso:false,noMediCintura:false,aguaDias7:null,sleepDias7:null,neatDias7:null,toxicosDias7:null,entrenoEstado:'',entrenoNota:'',nutriSem:{dias:null,causa:'',cantidad:'',causaCantidad:''},sens:{energia:'',hambre:'',digestion:'',estres:'',nota:'',dolor:'',dolorZona:'',dolorIntensidad:'',contextoVida:''}});
+const iH=()=>({sleep:Array(7).fill(false),toxics:Array(7).fill(false),actExtra:Array(7).fill(false),meds:[{p:'',c:''},{p:'',c:''},{p:'',c:''}],noMediPeso:false,noMediCintura:false,aguaDias7:null,sleepDias7:null,neatDias7:null,toxicosDias7:null,entrenoEstado:'',entrenoNota:'',nutriSem:{dias:null,causa:'',cantidad:'',causaCantidad:''},sens:{energia:'',hambre:'',digestion:'',estres:'',nota:'',dolor:'',dolorZona:'',dolorIntensidad:'',contextoVida:''},dailyV5:Array.from({length:7},()=>({meals:['','','',''],mealDetail:['','','',''],training:'',performance:'',trainingReason:'',steps:'',water:'',weight:'',waist:'',hunger:'',energy:'',sleepHours:'',closed:false})),weekClose:{represents:'',note:'',trainingGapReason:''}});
 function getWk(off=0){
   const now=new Date();now.setDate(now.getDate()+off*7);
   const d=now.getDay(),diff=d===0?-6:1-d;
@@ -735,6 +737,28 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
   const [activeSess,setActiveSess]=useState('A');
   const [tut,setTut]=useState(null);
   const [showHistorial,setShowHistorial]=useState(null); // exId
+  const [shareEx,setShareEx]=useState(null);
+  const [shareMode,setShareMode]=useState('');
+  function shareHistory(ex){
+    let ids=[];try{ids=JSON.parse(localStorage.getItem('ase_'+user+'_hist')||'[]')||[];}catch(e){}
+    return ids.map(function(semId){let w=null;try{w=JSON.parse(localStorage.getItem('ase_'+user+'_'+semId)||'null');}catch(e){}if(!w)return null;const sr=w.sr&&w.sr[activeSess]?(w.sr[activeSess][ex.id]||w.sr[activeSess][String(ex.id)]||w.sr[activeSess][ex.origId]||w.sr[activeSess][String(ex.origId)]):null;const km=w.skUsed||w.sk||{};const kg=km[activeSess]?(km[activeSess][ex.id]||km[activeSess][String(ex.id)]||km[activeSess][ex.origId]||km[activeSess][String(ex.origId)]):null;const r=sr?parseFloat(sr.r1)||0:0;if(!(kg>0)&&!(r>0))return null;return{sem:semId,kg:parseFloat(kg)||0,reps:r,e1:(kg&&r)?Math.round(parseFloat(kg)*(1+r/30)*10)/10:0,perf:(kg&&r)?Math.round(parseFloat(kg)*r):0};}).filter(Boolean);
+  }
+  function shareSvg(ex,mode){
+    const rows=shareHistory(ex),last=rows[rows.length-1]||null;
+    const esc=x=>String(x??'').replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+    let title='',subtitle='',main='',detail='',vals=[];
+    if(mode==='evol'){title='EVOLUCIÓN DE RENDIMIENTO';subtitle='Carga × reps · serie 1';vals=rows.map(x=>x.perf);main=last?(last.kg+' kg × '+last.reps+' reps'):'Sin datos';}
+    if(mode==='e1rm'){title='e1RM';subtitle='Tendencia estimada';vals=rows.map(x=>x.e1);main=last?(last.e1+' kg'):'Sin datos';}
+    if(mode==='record'){title='RÉCORD HISTÓRICO';subtitle='Mejor serie registrada';const best=rows.slice().sort((a,b)=>b.perf-a.perf)[0];main=best?(best.reps+' × '+best.kg+' kg'):'Sin datos';detail=best?best.sem:'';}
+    if(mode==='hoy'){title='ENTRENAMIENTO DE HOY';subtitle='Sesión '+activeSess;const reps=sessionReps?.[activeSess]?.[ex.id]||sessionReps?.[activeSess]?.[String(ex.id)]||{};const kg=parseFloat(getKg(ex))||0;const rs=['r1','r2','r3','r4'].map(k=>parseFloat(reps[k])||0).filter(Boolean);main=kg?(kg+' kg'):'—';detail=rs.length?('Series efectivas: '+rs.map(r=>r+' reps').join(' · ')+' · Tonelaje: '+Math.round(rs.reduce((a,b)=>a+b,0)*kg)+' kg'):'Sin series efectivas registradas';}
+    let graph='';if(vals.length>1){const mn=Math.min(...vals),mx=Math.max(...vals),span=Math.max(1,mx-mn);const pts=vals.map((v,i)=>{const x=110+i*(860/Math.max(1,vals.length-1));const y=1180-(v-mn)/span*430;return x+','+y;}).join(' ');graph='<polyline points="'+pts+'" fill="none" stroke="#E8541A" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>'+vals.map((v,i)=>{const x=110+i*(860/Math.max(1,vals.length-1));const y=1180-(v-mn)/span*430;return '<circle cx="'+x+'" cy="'+y+'" r="18" fill="#fff" stroke="#E8541A" stroke-width="10"/>';}).join('');}
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1920" viewBox="0 0 1080 1920"><rect width="1080" height="1920" fill="#0A0A0A"/><rect x="70" y="80" width="940" height="10" rx="5" fill="#E8541A"/><text x="80" y="175" fill="#ffffff" font-family="Arial" font-size="42" font-weight="800">FUERZA T</text><text x="80" y="290" fill="#E8541A" font-family="Arial" font-size="48" font-weight="900">'+esc(title)+'</text><text x="80" y="390" fill="#fff" font-family="Arial" font-size="58" font-weight="900">'+esc(ex.n)+'</text><text x="80" y="450" fill="#aaa" font-family="Arial" font-size="30">'+esc(subtitle)+'</text><text x="80" y="620" fill="#fff" font-family="Arial" font-size="96" font-weight="900">'+esc(main)+'</text><text x="80" y="695" fill="#aaa" font-family="Arial" font-size="30">'+esc(detail)+'</text>'+graph+'<text x="80" y="1770" fill="#666" font-family="Arial" font-size="28">'+esc(user)+' · '+esc(wk.label||wk.id)+'</text><text x="80" y="1830" fill="#E8541A" font-family="Arial" font-size="30" font-weight="800">ENTRENAR · REGISTRAR · PROGRESAR</text></svg>';
+  }
+  async function doShare(ex,mode){
+    const svg=shareSvg(ex,mode),blob=new Blob([svg],{type:'image/svg+xml'}),file=new File([blob],'fuerza-t-'+mode+'.svg',{type:'image/svg+xml'});
+    if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){try{await navigator.share({title:'Fuerza T · '+ex.n,files:[file]});return;}catch(e){if(e&&e.name==='AbortError')return;}}
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }
   const [editKg,setEditKg]=useState(null);
   const [kgVal,setKgVal]=useState('');
   const [exEquiv,setExEquiv]=useState(null); // exercise to show equivalents for
@@ -1369,6 +1393,22 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
               })
         )
       ),
+      shareEx&&h('div',{onClick:()=>{setShareEx(null);setShareMode('');},style:{position:'fixed',inset:0,background:'rgba(0,0,0,.72)',zIndex:120,display:'flex',alignItems:'flex-end'}},
+        h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'20px 20px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'18px 16px 28px',maxHeight:'88vh',overflowY:'auto'}},
+          h('div',{style:{fontSize:'16px',fontWeight:'900',marginBottom:'4px'}},'Compartir · '+shareEx.n),
+          !shareMode&&h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'14px'}},[
+            ['evol','Evolución de rendimiento'],['record','Récord histórico'],['e1rm','e1RM'],['hoy','Entrenamiento de hoy']
+          ].map(x=>h('button',{key:x[0],onClick:()=>setShareMode(x[0]),style:{padding:'13px 8px',border:'1px solid #E5E7EB',borderRadius:'10px',background:'#F9FAFB',fontWeight:'800',fontSize:'11px',cursor:'pointer'}},x[1]))),
+          shareMode&&h('div',null,
+            h('div',{style:{fontSize:'11px',color:'#777',margin:'10px 0 8px'}},'Previsualización 9:16'),
+            h('img',{src:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(shareSvg(shareEx,shareMode)),style:{display:'block',width:'100%',maxHeight:'58vh',objectFit:'contain',background:'#111',borderRadius:'12px'}}),
+            h('div',{style:{display:'flex',gap:'8px',marginTop:'12px'}},
+              h('button',{onClick:()=>setShareMode(''),style:{flex:1,padding:'11px',border:'1px solid #ddd',background:'#fff',borderRadius:'9px',fontWeight:'800'}},'Volver'),
+              h('button',{onClick:()=>doShare(shareEx,shareMode),style:{flex:2,padding:'11px',border:'none',background:GRAD,color:'#fff',borderRadius:'9px',fontWeight:'900'}},'Compartir')
+            )
+          )
+        )
+      ),
     sessGroups.length===0
       ? h('div',{style:{...card,textAlign:'center',padding:'30px 20px'}},h('div',{style:{fontSize:'30px',marginBottom:'10px'}},'📋'),h('div',{style:{fontSize:'14px',color:'#999',fontWeight:'600'}},'Esta sesión no tiene ejercicios asignados'),h('div',{style:{fontSize:'11px',color:'#bbb',marginTop:'6px'}},'La planificación se modifica desde el panel del coach.'))
       : sessGroups.map((group,gi)=>{
@@ -1384,6 +1424,7 @@ function Training({exes,setExes,setSaved,user,cfg,setCfg,sessionReps,setSessionR
                   ex.url&&h('button',{onClick:()=>setTut(to?null:ex.id),style:{display:'block',background:'none',border:'none',padding:0,marginTop:'5px',cursor:'pointer',fontSize:'11px',color:'#777',textDecoration:'underline',textAlign:'left'}},to?'Cerrar tutorial':'Ver tutorial'),
                   exes.filter(e=>e.m===(findEx(ex.origId)||ex).m&&String(e.id)!==String(ex.id)).length>0&&h('button',{onClick:()=>setExEquiv(ex),style:{display:'block',background:'none',border:'none',padding:0,marginTop:'4px',cursor:'pointer',fontSize:'11px',color:AC,fontWeight:'700',textAlign:'left'}},'≡ Equiv.'),
                   h('button',{onClick:()=>setShowHistorial(showHistorial===ex.id?null:ex.id),style:{display:'block',background:'none',border:'none',padding:0,marginTop:'4px',cursor:'pointer',fontSize:'11px',color:B,fontWeight:'600',textAlign:'left'}},'Historial'),
+                  h('button',{onClick:()=>{setShareEx(ex);setShareMode('');},style:{display:'block',background:'none',border:'none',padding:0,marginTop:'4px',cursor:'pointer',fontSize:'11px',color:'#111',fontWeight:'800',textAlign:'left'}},'Compartir'),
                   prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},prev.kg?'Último rendimiento: '+prev.reps+' × '+prev.kg+' kg':'Último rendimiento: '+prev.reps+' reps')
                 ),
                 !(bloque==='fuerza'&&rolFuerza(ex)==='principal')&&h('div',{style:{textAlign:'right'}},
@@ -1714,6 +1755,10 @@ function suggestFoodReplacement(plans,day,daily,adjustments,foods,mealTarget){
 function practicalAmount(food,grams){
   if(!(food&&food.porcionBase>0&&food.vU))return'';const q=(grams/food.porcionBase)*(food.vB||1);return toFrac(Math.max(0,q))+' '+food.vU;
 }
+function inferPortionGroup(food){
+  const x=String((food&&food.key)||'')+' '+String((food&&food.n)||'');
+  return /lentej|garbanz|poroto|legumbre|arveja|chichar/i.test(x)?'legumbre':'';
+}
 function displayFoodWeight(food,grams,mode){
   const st=String(food&&food.estadoRef||'').toUpperCase(),fac=parseFloat(food&&food.factorCoccion)||0;
   if(!(grams>0)||!fac||!['CRUDO','COCIDO'].includes(st))return{grams:Math.round(grams||0),state:'',converted:false};
@@ -1765,14 +1810,8 @@ function Diet({hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
     h('span',{style:{fontSize:'9px',fontWeight:'800',color:'#9CA3AF',letterSpacing:'.04em'}},'PESAR'),
     ['CRUDO','COCIDO'].map(m=>h('button',{key:m,onClick:()=>changePesoMode(m),style:{border:'1px solid '+(pesoMode===m?'#111827':'#D1D5DB'),background:pesoMode===m?'#111827':'#fff',color:pesoMode===m?'#fff':'#6B7280',borderRadius:'14px',padding:'5px 9px',fontSize:'9px',fontWeight:'900',cursor:'pointer'}},m))
   );
-  const audit=dayReady&&h('div',{style:{...card,background:planOK?'#ECFDF5':'#FFF7ED',border:'1px solid '+(planOK?'#A7F3D0':'#FED7AA')}},
-    h('div',{style:{fontSize:'13px',fontWeight:'900',color:planOK?'#047857':'#9A3412'}},planOK?'Tu día está equilibrado ✓':'Tu plan necesita ajuste'),
-    h('div',{style:{fontSize:'10px',color:'#666',marginTop:'6px'}},Math.round(day.kcal)+'/'+Math.round(kcal)+' kcal · P '+Math.round(day.p)+'/'+Math.round(daily.p)+' g · G '+Math.round(day.g)+'/≥'+Math.round(daily.gMin)+' g'),
-    !planOK&&h('div',{style:{fontSize:'11px',color:'#9A3412',marginTop:'8px',fontWeight:'700'}},(()=>{const x=[];if(day.kcal<kcal*.95)x.push('energía');if(!pOK)x.push('proteína');if(!gOK)x.push('grasas');if(day.kcal>kcal*1.05)return'Hay exceso de energía en el día.';return x.length?'Falta '+(x.length===1?x[0]:x.slice(0,-1).join(', ')+' y '+x[x.length-1])+'.':'El día necesita ajuste.';})()),
-    !planOK&&adjustments.length>0&&h('div',{style:{marginTop:'8px'}},h('div',{style:{fontSize:'10px',fontWeight:'900',color:'#7C2D12',marginBottom:'4px'}},adjustments.length>1?'AJUSTES SUGERIDOS':'AJUSTE SUGERIDO'),adjustments.map((a,i)=>h('div',{key:i,style:{fontSize:'11px',color:'#7C2D12',padding:'3px 0'}},a.meal.n+' · '+a.food.n+': '+(practicalAmount(a.food,a.from)||Math.round(a.from)+' g')+' → '+(practicalAmount(a.food,a.to)||Math.round(a.to)+' g'))),projected&&h('div',{style:{fontSize:'10px',color:'#7C2D12',marginTop:'5px'}},'Con estos cambios: ~'+Math.round(projected.kcal)+' kcal · P '+Math.round(projected.p)+' g · G '+Math.round(projected.g)+' g')),
-    !planOK&&replacement&&h('div',{style:{marginTop:'9px',paddingTop:'8px',borderTop:'1px solid #FED7AA'}},h('div',{style:{fontSize:'10px',fontWeight:'900',color:'#7C2D12',marginBottom:'4px'}},'REEMPLAZO SUGERIDO'),h('div',{style:{fontSize:'11px',color:'#7C2D12'}},replacement.meal.n+' · '+replacement.fromFood.n+' → '+replacement.toFood.n+' · '+(practicalAmount(replacement.toFood,replacement.to)||Math.round(replacement.to)+' g')),h('div',{style:{fontSize:'10px',color:'#7C2D12',marginTop:'5px'}},'Con el cambio: ~'+Math.round(replacement.after.kcal)+' kcal · P '+Math.round(replacement.after.p)+' g · G '+Math.round(replacement.after.g)+' g')),
-    !planOK&&!adjustments.length&&!replacement&&h('div',{style:{fontSize:'10px',color:'#9A3412',marginTop:'7px'}},'No encontré un ajuste práctico validado con los alimentos disponibles. Avisale a tu coach.')
-  );
+  // La pauta ya fue definida por Coach. No mostrar auditoría automática al asesorado.
+  const audit=null;
   const hydration=h('div',{style:{...card,marginTop:'8px',display:'flex',justifyContent:'space-around',alignItems:'center'}},h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'22px'}},'💧'),h('div',{style:{fontSize:'17px',fontWeight:'800',color:B}},metaAgua+' L'),h('div',{style:{fontSize:'10px',color:'#999'}},'agua / día')),h('div',{style:{width:'1px',height:'38px',background:'rgba(0,0,0,.08)'}}),h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'22px'}},'🧂'),h('div',{style:{fontSize:'17px',fontWeight:'800',color:'#6B7280'}},metaSal+' g'),h('div',{style:{fontSize:'10px',color:'#999'}},'sal / día')));
   return h('div',null,
     header,
@@ -1843,99 +1882,57 @@ var AGUA_STATES=[
 ];
 var DS6=['L','M','X','J','V','S'];
 function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}){
-  const nutriEstado=String(nutriConfirmado||'').trim().toLowerCase();
-  const ns=hab.nutriSem||{dias:null,causa:'',cantidad:'',causaCantidad:''};
-  const dias7=['L','M','X','J','V','S','D'];
-  const causas=['No lo entendí','No pude organizarme','No tuve los alimentos','Comí fuera de casa','No tuve hambre','Elegí comer distinto','Otro'];
-  const cantidades=[['menor','Menores'],['parecida','Parecidas'],['mayor','Mayores'],['variable','Variaron mucho']];
+  const DAYS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+  const MEALS=['Desayuno','Almuerzo','Merienda','Cena'];
+  const emptyDay=()=>({meals:['','','',''],mealDetail:['','','',''],training:'',performance:'',steps:'',water:'',weight:'',waist:'',hunger:'',energy:'',sleepHours:'',closed:false});
+  const daily=(hab.dailyV5&&hab.dailyV5.length===7)?hab.dailyV5:Array.from({length:7},emptyDay);
+  const close=hab.weekClose||{represents:'',note:'',trainingGapReason:''};
+  const prescribedSessions=Math.max(0,parseInt(cfg?.num)||0);
+  const [open,setOpen]=useState(()=>{const x={};x[Math.min(6,Math.max(0,(new Date().getDay()+6)%7))]=true;return x;});
+  const [dayErrors,setDayErrors]=useState({});
   const setH=(patch)=>{setHab(Object.assign({},hab,patch));setSaved(false);};
-  const setNS=(patch)=>setH({nutriSem:Object.assign({},ns,patch)});
-  const dayPicker=(value,onChange)=>h('div',{style:{display:'grid',gridTemplateColumns:'repeat(8,1fr)',gap:'5px',marginTop:'8px'}},[0,1,2,3,4,5,6,7].map(n=>h('button',{key:n,onClick:()=>onChange(value===n?null:n),style:{padding:'9px 0',borderRadius:'8px',border:'1px solid '+(value===n?AC:'rgba(0,0,0,0.1)'),background:value===n?AC:'#fff',color:value===n?'#fff':'#555',fontWeight:'800',cursor:'pointer'}},String(n))));
-  const chips=(items,value,onChange)=>h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'8px'}},items.map(it=>{const v=Array.isArray(it)?it[0]:it,l=Array.isArray(it)?it[1]:it,sel=value===v;return h('button',{key:v,onClick:()=>onChange(sel?'':v),style:{padding:'7px 10px',borderRadius:'18px',border:'1px solid '+(sel?AC:'rgba(0,0,0,0.12)'),background:sel?AC:'#fff',color:sel?'#fff':'#555',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},l);}));
-  const toggleDay=(field,i)=>{const a=[...(hab[field]||Array(7).fill(false))];a[i]=!a[i];setH({[field]:a});};
-  const groupTitle=(n,t,sub)=>h('div',{style:{margin:'18px 2px 8px'}},h('div',{style:{fontSize:'11px',fontWeight:'900',letterSpacing:'0.08em',color:AC,textTransform:'uppercase'}},n+' · '+t),sub&&h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},sub));
-  const habitRow=(label,field,meta)=>h('div',{style:{marginTop:'14px'}},h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px'}},h('div',{style:{fontSize:'13px',fontWeight:'800'}},label),meta&&h('div',{style:{fontSize:'11px',color:'#888'}},meta)),h('div',{style:{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'5px',marginTop:'7px'}},dias7.map((d,i)=>h('button',{key:d,onClick:()=>toggleDay(field,i),style:{padding:'8px 0',borderRadius:'8px',border:'1px solid '+((hab[field]||[])[i]?G:'rgba(0,0,0,0.1)'),background:(hab[field]||[])[i]?G:'#fff',color:(hab[field]||[])[i]?'#fff':'#777',fontWeight:'800',cursor:'pointer'}},d))));
-  const sens=hab.sens||{};
-  const sensRow=(label,key,opts,esperado)=>h('div',{style:{marginTop:'13px'}},h('div',{style:{fontSize:'13px',fontWeight:'800'}},label),esperado&&h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},'Esperado: '+esperado),chips(opts,sens[key]||'',v=>setH({sens:Object.assign({},sens,{[key]:v})})));
-
+  const setDay=(i,patch)=>{const a=daily.map((d,j)=>j===i?Object.assign({},d,patch):d);setH({dailyV5:a});};
+  const chips=(items,value,onChange)=>h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'7px'}},items.map(it=>{const v=Array.isArray(it)?it[0]:it,l=Array.isArray(it)?it[1]:it,sel=value===v;return h('button',{key:v,type:'button',onClick:()=>onChange(sel?'':v),style:{padding:'7px 10px',borderRadius:'18px',border:'1px solid '+(sel?AC:'rgba(0,0,0,.12)'),background:sel?AC:'#fff',color:sel?'#fff':'#555',fontSize:'11px',fontWeight:'800',cursor:'pointer'}},l);}));
+  const cleanNum=v=>String(v??'').replace(',','.').replace(/[^0-9.]/g,'').replace(/(\..*)\./g,'$1');
+  const numInput=(value,onChange,placeholder)=>h('input',{type:'text',inputMode:'decimal',value:value??'',placeholder,onChange:e=>onChange(cleanNum(e.target.value)),style:{...inp,marginTop:'6px'}});
+  const avg=(key)=>{const v=daily.map(d=>normNum(d[key])).filter(x=>isFinite(x)&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
+  const weights=daily.map(d=>normNum(d.weight)).filter(x=>isFinite(x)&&x>0),waists=daily.map(d=>normNum(d.waist)).filter(x=>isFinite(x)&&x>0);
+  const mealAnswered=daily.reduce((n,d)=>n+(d.meals||[]).filter(Boolean).length,0),mealOk=daily.reduce((n,d)=>n+(d.meals||[]).filter(x=>x==='ok').length,0);
+  const nutPct=mealAnswered?Math.round(mealOk/mealAnswered*100):null;
+  const trainDone=daily.filter(d=>d.training==='done').length;
+  const trainGap=Math.max(0,prescribedSessions-trainDone);
+  const waterAvg=avg('water'),sleepAvg=avg('sleepHours'),stepsAvg=avg('steps');
+  const requiredMissing=d=>{const miss=[];if((d.meals||[]).filter(Boolean).length<4)miss.push('4 comidas');if(!d.training)miss.push('entrenamiento');if(!normNum(d.water))miss.push('agua');if(!normNum(d.sleepHours))miss.push('sueño');if(!d.hunger)miss.push('hambre');if(!d.energy)miss.push('energía');if(d.training==='done'&&!d.performance)miss.push('rendimiento');return miss;};
+  const closeDay=i=>{const d=daily[i]||emptyDay();const miss=requiredMissing(d);if(miss.length){setDayErrors(Object.assign({},dayErrors,{[i]:'Falta registrar: '+miss.join(', ')}));setOpen(Object.assign({},open,{[i]:true}));return;}const ne=Object.assign({},dayErrors);delete ne[i];setDayErrors(ne);setDay(i,{closed:true});setOpen(Object.assign({},open,{[i]:false}));};
+  const reopenDay=i=>{setDay(i,{closed:false});setOpen(Object.assign({},open,{[i]:true}));};
   return h('div',null,
-    groupTitle('1','Lo que hago','Ejecución real de la semana'),
-    h('div',{style:card},
-      h('div',{style:{fontSize:'14px',fontWeight:'900'}},'🍽️ Registro nutricional'),
-      h('div',{style:{fontSize:'11px',color:'#888',marginTop:'3px'}},'Registrá cómo comiste de verdad. No si “cumpliste el menú”.'),
-      h('div',{style:{marginTop:'12px'}},
-        h('div',{style:{fontSize:'13px',fontWeight:'700'}},'¿Cuántos días tus comidas fueron similares a las cantidades pautadas?'),
-        h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},'Podés guiarte por la porción aproximada o por los gramos: ambas representan la misma pauta.'),
-        dayPicker(ns.dias,v=>setNS({dias:v,causa:(v!==null&&v<5)?ns.causa:''})),
-        ns.dias!==null&&ns.dias<5&&h('div',{style:{marginTop:'10px'}},
-          h('div',{style:{fontSize:'12px',fontWeight:'700'}},'¿Qué lo dificultó principalmente?'),
-          chips(causas,ns.causa,v=>setNS({causa:v}))
-        )
+    h('div',{style:{...card,background:'#F8FAFC'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Registro diario'),h('div',{style:{fontSize:'11px',color:'#667085',marginTop:'4px',lineHeight:'1.5'}},'Registrá lo que realmente pasó cada día. El cierre semanal resume esos datos; no los reemplaza.')),
+    DAYS.map((name,i)=>{const d=daily[i]||emptyDay();const answered=(d.meals||[]).filter(Boolean).length+(d.training?1:0)+(d.water?1:0)+(d.sleepHours?1:0)+(d.hunger?1:0)+(d.energy?1:0);return h('div',{key:name,style:{...card,padding:'0',overflow:'hidden'}},
+      h('button',{type:'button',onClick:()=>setOpen(Object.assign({},open,{[i]:!open[i]})),style:{width:'100%',padding:'14px',border:'none',background:'#fff',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}},h('div',{style:{textAlign:'left'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},name),h('div',{style:{fontSize:'10px',color:d.closed?G:(answered?'#D97706':'#999'),marginTop:'2px'}},d.closed?'✓ Día registrado':(answered?'En progreso':'Pendiente'))),h('div',{style:{fontSize:'18px',color:'#999'}},open[i]?'⌃':'⌄')),
+      open[i]&&h('div',{style:{padding:'0 14px 14px',borderTop:'1px solid #eee'}},
+        d.closed&&h('div',{style:{fontSize:'10px',color:G,fontWeight:'800',marginTop:'10px'}},'Día cerrado. Podés corregirlo y volver a cerrarlo.'),
+        h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'12px'}},'🍽️ ¿Cómo fueron tus comidas de hoy?'),
+        MEALS.map((m,mi)=>h('div',{key:m,style:{padding:'9px 0',borderBottom:'1px solid #f2f2f2'}},h('div',{style:{fontSize:'11px',fontWeight:'800'}},m),chips([['ok','Respeté pauta'],['qty','No respeté cantidades'],['other','Comí otra cosa'],['skip','No comí']],(d.meals||[])[mi]||'',v=>{const ms=[...(d.meals||['','','',''])];ms[mi]=v;setDay(i,{meals:ms,closed:false});}),(['qty','other'].includes((d.meals||[])[mi]))&&h('input',{type:'text',defaultValue:(d.mealDetail||[])[mi]||'',placeholder:'Qué y cuánto (opcional)',onBlur:e=>{const md=[...(d.mealDetail||['','','',''])];md[mi]=e.target.value;setDay(i,{mealDetail:md,closed:false});},style:{...inp,marginTop:'7px'}}))),
+        h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'13px'}},'🏋️ ¿Entrenaste hoy?'),
+        chips([['done','Sí'],['no','No']],d.training||'',v=>setDay(i,{training:v,performance:v==='done'?d.performance:'',closed:false})),
+        d.training==='done'&&h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'700',marginTop:'8px'}},'Rendimiento vs. la última vez'),chips([['better','Mejor'],['same','Igual'],['worse','Peor']],d.performance||'',v=>setDay(i,{performance:v,closed:false}))),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'13px'}},
+          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'💧 Agua (L)'),numInput(d.water,v=>setDay(i,{water:v,closed:false}),'ej. 2,5')),
+          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'🚶 Pasos (si los sabés)'),numInput(d.steps,v=>setDay(i,{steps:v,closed:false}),'opcional')),
+          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'⚖️ Peso (kg)'),numInput(d.weight,v=>setDay(i,{weight:v,closed:false}),'opcional')),
+          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'📏 Cintura (cm)'),numInput(d.waist,v=>setDay(i,{waist:v,closed:false}),'opcional')),
+          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'😴 Sueño (h)'),numInput(d.sleepHours,v=>setDay(i,{sleepHours:v,closed:false}),'7–9 h'))
+        ),
+        h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'13px'}},'Sensaciones'),
+        h('div',{style:{fontSize:'11px',fontWeight:'700',marginTop:'7px'}},'Hambre'),chips([['high','Alta'],['normal','Normal'],['low','Baja']],d.hunger||'',v=>setDay(i,{hunger:v,closed:false})),
+        h('div',{style:{fontSize:'11px',fontWeight:'700',marginTop:'8px'}},'Energía'),chips([['high','Alta'],['normal','Normal'],['low','Baja']],d.energy||'',v=>setDay(i,{energy:v,closed:false})),
+        dayErrors[i]&&h('div',{style:{fontSize:'11px',color:R,fontWeight:'800',marginTop:'10px'}},dayErrors[i]),
+        h('button',{type:'button',onClick:()=>d.closed?reopenDay(i):closeDay(i),style:{width:'100%',marginTop:'14px',padding:'11px',border:'1px solid '+(d.closed?G:AC),borderRadius:'10px',background:d.closed?'#ECFDF3':'#fff',color:d.closed?G:AC,fontWeight:'900',cursor:'pointer'}},d.closed?'Reabrir día':'Cerrar día')
       )
-    ),
-    h('div',{style:card},
-      h('div',{style:{fontSize:'14px',fontWeight:'900'}},'💧 Agua'),
-      h('div',{style:{fontSize:'11px',color:'#888',marginTop:'3px'}},'Objetivo: '+((parseFloat(cfg&&cfg.pesoRef)||0)>0?((parseFloat(cfg.pesoRef)*40/1000).toFixed(1)+' L o más'):'cumplir tu objetivo diario')),
-      h('div',{style:{fontSize:'13px',fontWeight:'700',marginTop:'12px'}},'¿Cuántos días llegaste al objetivo?'),dayPicker(Number.isInteger(hab.aguaDias7)?hab.aguaDias7:null,v=>setH({aguaDias7:v}))
-    ),
-    h('div',{style:card},
-      h('div',{style:{fontSize:'14px',fontWeight:'900'}},'🏋️ Entreno'),
-      h('div',{style:{fontSize:'11px',color:'#888',marginTop:'3px'}},'La cantidad de sesiones se toma de tus registros reales. Acá sólo contanos si tuviste que desviarte de la pauta.'),
-      chips([['normal','Normal'],['modificado','Tuve que modificarlo'],['no_pude','No pude entrenar como estaba pautado']],hab.entrenoEstado||'',v=>setH({entrenoEstado:v,entrenoNota:v==='normal'?'':hab.entrenoNota})),
-      hab.entrenoEstado&&hab.entrenoEstado!=='normal'&&h('textarea',{defaultValue:hab.entrenoNota||'',placeholder:'¿Qué pasó?',onBlur:e=>setH({entrenoNota:e.target.value}),style:{...inp,minHeight:'60px',resize:'vertical',marginTop:'10px'}})
-    ),
-    h('div',{style:card},
-      h('div',{style:{fontSize:'13px',fontWeight:'800'}},'😴 ¿Cuántos días dormiste mínimo 7 hs?'),
-      h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},'Referencia: mínimo 7 h por noche'),
-      dayPicker(Number.isInteger(hab.sleepDias7)?hab.sleepDias7:null,v=>setH({sleepDias7:v})),
-      h('div',{style:{fontSize:'13px',fontWeight:'800',marginTop:'14px'}},'🚶 ¿Cuántos días hubo actividad física fuera del gym?'),
-      h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},'Referencia: tu pauta individual de actividad/NEAT'),
-      dayPicker(Number.isInteger(hab.neatDias7)?hab.neatDias7:null,v=>setH({neatDias7:v})),
-      h('div',{style:{fontSize:'13px',fontWeight:'800',marginTop:'14px'}},'☠️ ¿Cuántos días hubo consumo de alcohol/tabaco u otro tóxico?'),
-      h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},'Referencia: 0 días de exposición cuando sea posible'),
-      dayPicker(Number.isInteger(hab.toxicosDias7)?hab.toxicosDias7:null,v=>setH({toxicosDias7:v}))
-    ),
-
-    groupTitle('2','Lo que mido','Resultado en el cuerpo'),
-    h('div',{style:card},
-      h('div',{style:{fontSize:'14px',fontWeight:'900',marginBottom:'10px'}},'📏 Mediciones'),
-      ['p','c'].map(function(k){
-        const isP=k==='p',label=isP?'Peso':'Cintura',unit=isP?'kg':'cm',flag=isP?'noMediPeso':'noMediCintura';
-        const inputs=!hab[flag]?h('div',{style:{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'6px',marginTop:'7px'}},
-          (hab.meds||[]).map((m,i)=>h('input',{key:i,type:'text',inputMode:'decimal',placeholder:(i+1)+' · '+unit,value:m[k]||'',onChange:e=>{const meds=(hab.meds||[]).map((x,j)=>j===i?Object.assign({},x,{[k]:e.target.value}):x);setH({meds});},style:{...inp,textAlign:'center',padding:'9px 5px',fontSize:'13px'}}))
-        ):null;
-        return h('div',{key:k,style:{marginBottom:'12px'}},
-          h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-            h('div',{style:{fontSize:'13px',fontWeight:'700'}},label),
-            h('button',{onClick:()=>setH({[flag]:!hab[flag]}),style:{border:'1px solid '+(hab[flag]?O:'rgba(0,0,0,0.12)'),background:hab[flag]?'#FFF7ED':'#fff',color:hab[flag]?O:'#777',borderRadius:'8px',padding:'6px 9px',fontSize:'11px',fontWeight:'700'}},hab[flag]?'✓ No me medí':'No me medí')
-          ),inputs
-        );
-      })
-    ),
-
-    groupTitle('3','Cómo me siento','Señales del cuerpo; ayudan a explicar los resultados'),
-    h('div',{style:card},
-      sensRow('⚡ Energía','energia',['alta','normal','baja'],'estable durante el día'),
-      sensRow('🍽️ Hambre','hambre',['ausente','normal','alta'],'presente pero manejable'),
-      sensRow('🫃 Digestión','digestion',['buena','regular','mala'],'sin molestias relevantes'),
-      sensRow('🧠 Estrés','estres',['bajo','normal','alto'],'manejable y compatible con recuperación')
-    ),
-
-    groupTitle('4','Contexto','Lo que enmarcó la semana'),
-    h('div',{style:card},
-      h('div',{style:{fontSize:'13px',fontWeight:'800'}},'Contexto de vida'),chips([['normal','Semana normal'],['cambios','Hubo cambios'],['total','Cambió totalmente']],sens.contextoVida||'',v=>setH({sens:Object.assign({},sens,{contextoVida:v,contextoNota:v==='normal'?'':(sens.contextoNota||'')})})),
-      sens.contextoVida&&sens.contextoVida!=='normal'&&h('textarea',{defaultValue:sens.contextoNota||'',placeholder:'¿Qué cambió?',onBlur:e=>setH({sens:Object.assign({},sens,{contextoNota:e.target.value})}),style:{...inp,minHeight:'55px',resize:'vertical',marginTop:'10px'}}),
-      h('div',{style:{fontSize:'13px',fontWeight:'800',marginTop:'14px'}},'Dolor'),chips([['no','No'],['si','Sí']],sens.dolor||'',v=>setH({sens:Object.assign({},sens,{dolor:v,dolorZona:v==='si'?sens.dolorZona:'',dolorIntensidad:v==='si'?sens.dolorIntensidad:'',dolorNota:v==='si'?(sens.dolorNota||''):''})})),
-      sens.dolor==='si'&&h('div',null,
-        h('div',{style:{fontSize:'12px',fontWeight:'700',marginTop:'10px'}},'Zona / región'),
-        chips(ZONAS_DOLOR,sens.dolorZona||'',v=>setH({sens:Object.assign({},sens,{dolorZona:v})})),
-        h('div',{style:{fontSize:'12px',fontWeight:'700',marginTop:'10px'}},'Intensidad 0–10'),
-        h('input',{type:'number',min:0,max:10,value:sens.dolorIntensidad||'',onChange:e=>setH({sens:Object.assign({},sens,{dolorIntensidad:e.target.value})}),style:{...inp,marginTop:'6px'}}),
-        h('textarea',{defaultValue:sens.dolorNota||'',placeholder:'Características / nota breve (opcional)',onBlur:e=>setH({sens:Object.assign({},sens,{dolorNota:e.target.value})}),style:{...inp,minHeight:'55px',resize:'vertical',marginTop:'8px'}})
-      ),
-      h('textarea',{defaultValue:sens.nota||'',placeholder:'Algo más que tu coach debería saber...',onBlur:e=>setH({sens:Object.assign({},sens,{nota:e.target.value})}),style:{...inp,minHeight:'70px',resize:'vertical',marginTop:'14px'}})
-    ),
-    h('button',{onClick:onEnviarReporte,disabled:saving||(!canSaveWeek&&!isViewingPast)||reporteYaEnviado&&false,style:{width:'100%',padding:'15px',border:'none',borderRadius:'12px',background:canSaveWeek||isViewingPast?GRAD:'#D1D5DB',color:'#fff',fontWeight:'900',fontSize:'15px',cursor:canSaveWeek||isViewingPast?'pointer':'default',marginTop:'4px'}},saving?'Enviando...':(reporteYaEnviado?'✓ Reporte enviado · Actualizar':'Enviar reporte')),
+    );}),
+    h('div',{style:card},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Resumen automático'),h('div',{style:{fontSize:'11px',lineHeight:'1.7',color:'#555',marginTop:'7px'}},'Nutrición según pauta: '+(nutPct===null?'—':nutPct+'%')+' · Entrenos: '+trainDone+'/'+prescribedSessions+(trainGap?' · faltan '+trainGap:' ✓')+' · Agua prom.: '+(waterAvg?waterAvg.toFixed(2)+' L':'—')+' · Sueño prom.: '+(sleepAvg?sleepAvg.toFixed(1)+' h':'—')+(stepsAvg?' · Pasos prom.: '+Math.round(stepsAvg):'')+' · Peso prom.: '+(weights.length?(weights.reduce((a,b)=>a+b,0)/weights.length).toFixed(1)+' kg':'—')+' · Cintura prom.: '+(waists.length?(waists.reduce((a,b)=>a+b,0)/waists.length).toFixed(1)+' cm':'—')),trainGap>0&&h('div',{style:{marginTop:'10px'}},h('div',{style:{fontSize:'11px',fontWeight:'800'}},'Tenías '+prescribedSessions+' sesiones pautadas y registraste '+trainDone+'. ¿Por qué faltó'+(trainGap>1?' alguna/s':' una')+'?'),h('textarea',{defaultValue:close.trainingGapReason||'',placeholder:'Motivo breve',onBlur:e=>setH({weekClose:Object.assign({},close,{trainingGapReason:e.target.value})}),style:{...inp,minHeight:'58px',resize:'vertical',marginTop:'6px'}}))),
+    h('div',{style:card},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Cierre semanal'),h('div',{style:{fontSize:'12px',fontWeight:'700',marginTop:'9px'}},'¿Lo que registraste representa correctamente cómo fue tu semana?'),chips([['si','Sí'],['no','No']],close.represents||'',v=>setH({weekClose:Object.assign({},close,{represents:v})})),(close.represents==='no')&&h('textarea',{defaultValue:close.note||'',placeholder:'¿Qué falta, qué corregirías o qué debería saber tu coach?',onBlur:e=>setH({weekClose:Object.assign({},close,{note:e.target.value})}),style:{...inp,minHeight:'70px',resize:'vertical',marginTop:'10px'}})),
+    h('button',{onClick:onEnviarReporte,disabled:saving||(!canSaveWeek&&!isViewingPast),style:{width:'100%',padding:'15px',border:'none',borderRadius:'12px',background:canSaveWeek||isViewingPast?GRAD:'#D1D5DB',color:'#fff',fontWeight:'900',fontSize:'15px',cursor:canSaveWeek||isViewingPast?'pointer':'default',marginTop:'4px'}},saving?'Enviando...':(reporteYaEnviado?'✓ Reporte enviado · Actualizar':'Enviar semana')),
     !canSaveWeek&&!isViewingPast&&h('div',{style:{fontSize:'11px',color:'#999',textAlign:'center',marginTop:'7px'}},'Disponible sáb/dom · '+wkSat.toLocaleDateString('es-AR',{day:'numeric',month:'short'}))
   );
 }
@@ -2785,30 +2782,19 @@ function App(){
   },[]);
   function validateSave(){
     const errors=[];
-    // VALIDACIONES DURAS: solo datos que realmente deben estar respondidos para reportar.
-    // Entrenamiento se controla aparte como advertencia confirmable: no entrenar también es un dato válido.
-    const meds=hab.meds||[];
-    const hasPeso=meds.some(m=>parseFloat(m.p)>0);
-    const hasCintura=meds.some(m=>parseFloat(m.c)>0);
-    const sens=hab.sens||{};
-    const hasSens=['energia','hambre','digestion','estres'].every(k=>sens[k]);
-    if(!hasPeso&&!hab.noMediPeso)errors.push('Peso corporal: cargá una medición o marcá "No me medí"');
-    if(!hasCintura&&!hab.noMediCintura)errors.push('Cintura: cargá una medición o marcá "No me medí"');
-    if(!hasSens)errors.push('Sensaciones: completá Energía, Hambre, Digestión y Estrés');
-    if(!Number.isInteger(hab.aguaDias7))errors.push('Agua: indicá cuántos días alcanzaste tu pauta');
-    if(!Number.isInteger(hab.sleepDias7))errors.push('Sueño: indicá cuántos días dormiste mínimo 7 hs');
-    if(!Number.isInteger(hab.neatDias7))errors.push('NEAT: indicá cuántos días hubo actividad física fuera del gym');
-    if(!Number.isInteger(hab.toxicosDias7))errors.push('Tóxicos: indicá cuántos días hubo exposición');
-    if(!hab.entrenoEstado)errors.push('Entreno: indicá si la semana fue normal o tuvo modificaciones');
-    if(hab.entrenoEstado&&hab.entrenoEstado!=='normal'&&!String(hab.entrenoNota||'').trim())errors.push('Entreno: contanos brevemente qué pasó');
-    if(!sens.contextoVida)errors.push('Contexto: indicá cómo fue la semana');
-    if(sens.contextoVida&&sens.contextoVida!=='normal'&&!String(sens.contextoNota||'').trim())errors.push('Contexto: contanos brevemente qué cambió');
-    if(!sens.dolor)errors.push('Dolor: indicá Sí o No');
-    if(sens.dolor==='si'&&!sens.dolorZona)errors.push('Dolor: indicá la zona');
-    if(sens.dolor==='si'&&(sens.dolorIntensidad===''||parseFloat(sens.dolorIntensidad)<0||parseFloat(sens.dolorIntensidad)>10))errors.push('Dolor: indicá intensidad entre 0 y 10');
-    const nsem=hab.nutriSem||{};
-    if(!Number.isInteger(nsem.dias))errors.push('Nutrición: indicá cuántos días tus comidas fueron similares a la pauta');
-    if(Number.isInteger(nsem.dias)&&nsem.dias<5&&!nsem.causa)errors.push('Nutrición: indicá la causa principal');
+    const close=hab.weekClose||{};
+    const days=(hab.dailyV5&&hab.dailyV5.length===7)?hab.dailyV5:[];
+    const incomplete=[];
+    [0,1,2,3,4,5].forEach(function(i){
+      const d=days[i]||{};
+      const core=(d.meals||[]).filter(Boolean).length===4&&!!d.training&&normNum(d.water)>0&&normNum(d.sleepHours)>0&&!!d.hunger&&!!d.energy&&(d.training!=='done'||!!d.performance);
+      if(!d.closed||!core)incomplete.push(['Lun','Mar','Mié','Jue','Vie','Sáb'][i]);
+    });
+    if(days.length!==7||incomplete.length)errors.push('Registro diario: registrá y cerrá de lunes a sábado antes de enviar'+(incomplete.length?' ('+incomplete.join(', ')+')':''));
+    const prescribed=Math.max(0,parseInt(cfg?.num)||0),done=days.filter(d=>d.training==='done').length;
+    if(done<prescribed&&!String(close.trainingGapReason||'').trim())errors.push('Entrenamiento: registraste '+done+'/'+prescribed+' sesiones. Indicá brevemente por qué faltó alguna.');
+    if(!close.represents)errors.push('Cierre semanal: confirmá si lo registrado representa correctamente tu semana');
+    if(close.represents==='no'&&!String(close.note||'').trim())errors.push('Cierre semanal: contanos brevemente qué falta o qué deberíamos corregir');
     return errors;
   }
 
@@ -3018,7 +3004,17 @@ function App(){
           nutriDias:(hab.nutriSem&&Number.isInteger(hab.nutriSem.dias))?hab.nutriSem.dias:'',
           nutriCausa:(hab.nutriSem&&hab.nutriSem.causa)||'',
           nutriCantidad:(hab.nutriSem&&hab.nutriSem.cantidad)||'',
-          nutriCausaCantidad:(hab.nutriSem&&hab.nutriSem.causaCantidad)||''
+          nutriCausaCantidad:(hab.nutriSem&&hab.nutriSem.causaCantidad)||'',
+          dailyV5:hab.dailyV5||[],
+          weekClose:hab.weekClose||{},
+          aguaPromL:(()=>{const a=(hab.dailyV5||[]).map(d=>parseFloat(d.water)).filter(x=>isFinite(x)&&x>0);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length*100)/100:'';})(),
+          suenoPromH:(()=>{const a=(hab.dailyV5||[]).map(d=>parseFloat(d.sleepHours)).filter(x=>isFinite(x)&&x>0);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length*100)/100:'';})(),
+          pasosProm:(()=>{const a=(hab.dailyV5||[]).map(d=>parseFloat(d.steps)).filter(x=>isFinite(x)&&x>0);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):'';})(),
+          nutriCompliance:(()=>{const a=(hab.dailyV5||[]).flatMap(d=>d.meals||[]).filter(Boolean);return a.length?Math.round(a.filter(x=>x==='ok').length/a.length*100):'';})(),
+          entrenoRealizadas:(hab.dailyV5||[]).filter(d=>d.training==='done').length,
+          entrenoOmitidas:Math.max(0,(parseInt(cfg?.num)||0)-(hab.dailyV5||[]).filter(d=>d.training==='done').length),
+          medPesoJSON:(hab.dailyV5||[]).map(d=>parseFloat(d.weight)).filter(x=>isFinite(x)&&x>0),
+          medCinturaJSON:(hab.dailyV5||[]).map(d=>parseFloat(d.waist)).filter(x=>isFinite(x)&&x>0)
         };
         const reportDraft={wi:wk.id,wl:wk.label,sr:curSR,n:nut,h:hab,hiit:hiitData,sk:usedSK,skUsed:skUsed,e:exes,rutina:rutinaSnap,exec:execMeta};
         // Igual que Guardar progreso: POST simple a `draft`. Si Safari no deja leer la respuesta,
@@ -3468,7 +3464,7 @@ function App(){
 
   const hiitSess=cfg?.hiit||[];
   const hasHiit=hiitSess.length>0;
-  const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'ms',l:'Mi semana',ic:'📋'},{id:'dev',l:'Devolución',ic:'💬'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
+  const TABS=[{id:'d',l:'Inicio',ic:'🏠'},{id:'t',l:'Entreno',ic:'🏋️'},{id:'die',l:'Dieta',ic:'🍽️'},{id:'ms',l:'Registro',ic:'📋'},{id:'dev',l:'Devolución',ic:'💬'},...(hasHiit?[{id:'hiit',l:'HIIT',ic:'🏃'}]:[])].filter(Boolean);
 
 
   function Dashboard(){
