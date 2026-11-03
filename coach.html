@@ -270,10 +270,12 @@ function PinScreen({onUnlock}){
 }
 
 // ── CLIENT LIST ───────────────────────────────────────────────────────
-function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
+function ClientList({data,rutinas,maestra,decisiones,videosPend,onSelect,onRefresh}){
   const statusOrder={red:0,yellow:1,green:2,grey:3};
   const [soloSinRevisar,setSoloSinRevisar]=useState(false);
   const [busquedaAse,setBusquedaAse]=useState('');
+  const [basicosOpen,setBasicosOpen]=useState(false);
+  const [basicSel,setBasicSel]=useState(null);
   // ── Alta + onboarding ─────────────────────────────────────────────
   const [showAlta,setShowAlta]=useState(false);
   const [altaForm,setAltaForm]=useState({asesorado:'',plan:'online',fechaInicio:'',monto:''});
@@ -336,6 +338,8 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
     finally{setAltaSaving(false);}
   };
   const getObj=name=>{const r=rutinas.find(rt=>String(rt.Asesorado||'').trim().toLowerCase()===name.toLowerCase());return String(r?.Objetivo||'mantenimiento').toLowerCase().trim()||'mantenimiento';};
+  const basicos=(maestra||[]).filter(a=>planNorm(a.Plan)==='basico'&&String(a.Estado||'').toLowerCase()!=='baja').sort((a,b)=>String(a.Asesorado||'').localeCompare(String(b.Asesorado||''),'es',{sensitivity:'base'}));
+  const basicOnboarding=basicSel?buildOnboarding(String(basicSel.AsesoradoID||''),{plan:'basico'}):null;
 
   // Calcular los 2 SemanIDs más recientes de todos los reportes
   var semsRecientes=useMemo(function(){
@@ -419,6 +423,25 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
       )
     ),
     h('div',{style:{padding:'12px'}},
+      h('div',{style:{...card,padding:'0',overflow:'hidden',marginBottom:'12px',border:'1px solid rgba(0,0,0,.08)'}},
+        h('button',{onClick:()=>setBasicosOpen(v=>!v),style:{width:'100%',border:'none',background:'#fff',padding:'13px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}},
+          h('div',{style:{textAlign:'left'}},
+            h('div',{style:{fontSize:'13px',fontWeight:'900',color:'#111'}},'Básicos'),
+            h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},basicos.length+' cliente'+(basicos.length===1?'':'s')+' · sin seguimiento')
+          ),
+          h('span',{style:{fontSize:'16px',color:'#999'}},basicosOpen?'⌃':'⌄')
+        ),
+        basicosOpen&&h('div',{style:{borderTop:'1px solid #eee'}},
+          basicos.length===0?h('div',{style:{padding:'14px',fontSize:'11px',color:'#999'}},'No hay clientes Básicos activos.'):
+          basicos.map((a,i)=>h('button',{key:String(a.AsesoradoID||a.Asesorado||i),onClick:()=>{setBasicSel(a);setAltaMsg('');},style:{width:'100%',border:'none',borderBottom:i<basicos.length-1?'1px solid #f0f0f0':'none',background:'#fff',padding:'11px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer',textAlign:'left'}},
+            h('div',null,
+              h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#111'}},String(a.Asesorado||'Sin nombre')),
+              h('div',{style:{fontSize:'10px',color:'#999',marginTop:'2px'}},'ID '+String(a.AsesoradoID||'—')+' · Inicio '+String(a.FechaInicio||'—'))
+            ),
+            h('span',{style:{fontSize:'14px',color:'#aaa'}},'›')
+          ))
+        )
+      ),
       clients.length===0&&h('div',{style:{textAlign:'center',padding:'60px 20px',color:'#999'}},
         h('div',{style:{fontSize:'40px',marginBottom:'12px'}},''),
         h('div',{style:{fontSize:'14px',fontWeight:'600'}},'No hay datos todavía'),
@@ -492,6 +515,32 @@ function ClientList({data,rutinas,decisiones,videosPend,onSelect,onRefresh}){
           )
         );
       })
+    ),
+    // ── FICHA BÁSICO · onboarding recuperable ──
+    basicSel&&h('div',{onClick:()=>setBasicSel(null),style:{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:110,display:'flex',alignItems:'flex-end'}},
+      h('div',{onClick:e=>e.stopPropagation(),style:{background:'#fff',borderRadius:'16px 16px 0 0',width:'100%',maxWidth:'480px',margin:'0 auto',padding:'20px 18px 30px',maxHeight:'90vh',overflowY:'auto'}},
+        h('div',{style:{width:'36px',height:'4px',background:'#E0E0E0',borderRadius:'2px',margin:'0 auto 16px'}}),
+        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'10px',marginBottom:'14px'}},
+          h('div',null,
+            h('div',{style:{fontSize:'18px',fontWeight:'900'}},String(basicSel.Asesorado||'Cliente Básico')),
+            h('div',{style:{fontSize:'11px',color:'#999',marginTop:'3px'}},'Básico · ID '+String(basicSel.AsesoradoID||'—'))
+          ),
+          h('button',{onClick:()=>setBasicSel(null),style:{border:'none',background:'#F3F4F6',borderRadius:'8px',padding:'6px 9px',fontSize:'12px',cursor:'pointer'}},'Cerrar')
+        ),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'12px'}},
+          h('div',{style:{background:'#F8FAFC',borderRadius:'9px',padding:'10px'}},h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#999'}},'INICIO / PAGO'),h('div',{style:{fontSize:'12px',fontWeight:'800',marginTop:'4px'}},String(basicSel.FechaInicio||basicSel.FechaCobro||'—'))),
+          h('div',{style:{background:'#F8FAFC',borderRadius:'9px',padding:'10px'}},h('div',{style:{fontSize:'9px',fontWeight:'800',color:'#999'}},'PLAN'),h('div',{style:{fontSize:'12px',fontWeight:'800',marginTop:'4px'}},'Básico'))
+        ),
+        basicOnboarding&&h('div',null,
+          h('div',{style:{display:'grid',gap:'8px',marginBottom:'12px'}},
+            h('div',{style:{background:'#F8FAFC',borderRadius:'9px',padding:'10px'}},h('div',{style:{fontSize:'10px',fontWeight:'800',color:'#999'}},'1 · DATOS INICIALES'),h('div',{style:{fontSize:'11px',color:'#333',marginTop:'4px',wordBreak:'break-all'}},basicOnboarding.cuestionario)),
+            h('div',{style:{background:'#F8FAFC',borderRadius:'9px',padding:'10px'}},h('div',{style:{fontSize:'10px',fontWeight:'800',color:'#999'}},'2 · APP BÁSICA'),h('div',{style:{fontSize:'11px',color:'#333',marginTop:'4px',wordBreak:'break-all'}},basicOnboarding.app))
+          ),
+          h('div',{style:{background:'#111',color:'#fff',borderRadius:'12px',padding:'13px',fontSize:'12px',lineHeight:'1.55',whiteSpace:'pre-wrap',marginBottom:'10px'}},basicOnboarding.mensaje),
+          altaMsg&&h('div',{style:{fontSize:'12px',color:altaMsg.includes('✓')?G:'#B42318',fontWeight:'700',marginBottom:'10px'}},altaMsg),
+          h('button',{onClick:()=>copiarTexto(basicOnboarding.mensaje),style:{width:'100%',padding:'13px',border:'none',borderRadius:'10px',background:G,color:'#fff',fontSize:'13px',fontWeight:'800',cursor:'pointer'}},'Copiar mensaje de alta')
+        )
+      )
     ),
     // ── MODAL: Alta + onboarding ──
     showAlta&&h('div',{onClick:()=>!altaSaving&&setShowAlta(false),style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:100,display:'flex',alignItems:'flex-end'}},
@@ -3004,7 +3053,7 @@ function App(){
   }
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
-      appTab==='lista'&&h(ClientList,{data,rutinas,decisiones,videosPend,onSelect:setSelected,onRefresh:loadData}),
+      appTab==='lista'&&h(ClientList,{data,rutinas,maestra,decisiones,videosPend,onSelect:setSelected,onRefresh:loadData}),
       appTab==='semv2'&&h(SemanalV2,{data:data,rutinas:rutinas,devoluciones:devoluciones,nutriResumen:nutriResumen,videos:videos,seguimiento:seguimiento,onRefresh:loadData}),
       appTab==='mensualv2'&&h(MensualV2,{maestra:maestra,data:data,rutinas:rutinas,decisiones:decisiones,videos:videos}),
       appTab==='vids'&&h(VideosGlobal,{onSelect:setSelected}),
