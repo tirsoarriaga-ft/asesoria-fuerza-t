@@ -2276,223 +2276,197 @@ function RutinaBuilder({name,rutina,ejercicios,onClose,onSaved}){
   );
 }
 // ── PESTAÑA COBROS: facturación integrada (vencimientos desde FechaInicio + registro de pagos) ──
+// COBROS V2: mes calendario + deuda previa + acciones rápidas, sin reescribir meses cerrados.
 function CobrosPanel({maestra,pagos,onRefresh}){
-  var [marcando,setMarcando]=useState(null); // asesoradoId que se está marcando
-  // Pagos marcados en esta sesión (optimista): {aseId+'_'+mes: true} — se ven al instante sin recargar.
-  var [pagosLocal,setPagosLocal]=useState({});
-  var [eliminados,setEliminados]=useState({}); // asesorados borrados en esta sesión (optimista)
-  var [confBorrar,setConfBorrar]=useState(null); // asesoradoId a confirmar borrado
-  var [busqueda,setBusqueda]=useState('');
-  var [subTab,setSubTab]=useState('todos'); // todos | moroso | hoy | aldia
-  var [mesOffset,setMesOffset]=useState(0); // 0 = mes actual, -1 = mes pasado, etc.
-  // FIX V2026-11-05: el calendario se calcula con el día REAL, jamás con día 15 fijo.
-  // Al navegar: mes anterior = evaluado al cierre de ese mes; futuro = al inicio de ese mes.
-  // Esto evita mostrar como moroso a quien vence más adelante en el mismo mes.
-  var hoyReal=new Date();hoyReal.setHours(0,0,0,0);
-  var mesVista=new Date(hoyReal.getFullYear(),hoyReal.getMonth()+mesOffset,1);
-  var fechaCorte=mesOffset===0?hoyReal:(mesOffset<0?new Date(mesVista.getFullYear(),mesVista.getMonth()+1,0):new Date(mesVista));
-  fechaCorte.setHours(0,0,0,0);
-  var nombreMes=mesVista.toLocaleDateString('es-AR',{month:'long',year:'numeric'});
-  var norm=function(x){return String(x||'').trim().toLowerCase();};
-  function parseFecha(s){
-    if(s instanceof Date)return isNaN(s.getTime())?null:new Date(s.getFullYear(),s.getMonth(),s.getDate());
-    s=String(s===null||s===undefined?'':s).trim();if(!s)return null;
-    var m,n=Number(s.replace(',','.'));
-    // Serial de Google Sheets / Excel.
-    if(/^\d+(?:[.,]\d+)?$/.test(s)&&Number.isFinite(n)&&n>20000&&n<100000){
-      var epoch=new Date(1899,11,30,12);epoch.setDate(epoch.getDate()+Math.floor(n));
-      return new Date(epoch.getFullYear(),epoch.getMonth(),epoch.getDate());
-    }
-    if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))return fechaValida(+m[1],+m[2],+m[3]);
-    if((m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/)))return fechaValida(+m[3],+m[2],+m[1]);
-    var d=new Date(s);return isNaN(d.getTime())?null:new Date(d.getFullYear(),d.getMonth(),d.getDate());
-  }
-  function fechaValida(y,m,d){
-    var x=new Date(y,m-1,d);return x.getFullYear()===y&&x.getMonth()===m-1&&x.getDate()===d?x:null;
-  }
-  function vencimientoDelMes(y,m,dia){
-    // Clientes de días 29/30/31 vencen el último día en meses más cortos, sin desbordarse.
-    return new Date(y,m,Math.min(dia,new Date(y,m+1,0).getDate()));
-  }
-  function calcCobro(fInicio){
-    var fi=parseFecha(fInicio);if(!fi)return null;
-    fi.setHours(0,0,0,0);
-    var diaCobro=fi.getDate();
-    var y=mesVista.getFullYear(),m=mesVista.getMonth();
-    var vencActual=vencimientoDelMes(y,m,diaCobro);
-    var mesActual=(y-fi.getFullYear())*12+(m-fi.getMonth())+1;
-    // Una cuota de un mes previo al alta NO existe.
-    if(mesActual<1)return {mesActual:0,vencActual:null,proxVenc:fi,diasVencido:null,diaCobro:diaCobro,anteriorAlta:true};
-    var prox=vencimientoDelMes(y,m+1,diaCobro);
-    var d1=Date.UTC(fechaCorte.getFullYear(),fechaCorte.getMonth(),fechaCorte.getDate());
-    var d2=Date.UTC(vencActual.getFullYear(),vencActual.getMonth(),vencActual.getDate());
-    var diasVencido=Math.round((d1-d2)/86400000);
-    return {mesActual:mesActual,vencActual:vencActual,proxVenc:prox,diasVencido:diasVencido,diaCobro:diaCobro,anteriorAlta:false};
-  }
-  function pagoDeMes(aseId,mes){
-    return (pagos||[]).find(function(p){return norm(p.AsesoradoID)===norm(aseId)&&String(p.MesNumero).trim()===String(mes).trim();});
-  }
-  function marcarPagado(a,mes,monto,fechaVenc){
-    var aseId=a.AsesoradoID||'';
-    if(!aseId){alert('Ese asesorado no tiene AsesoradoID.');return;}
-    // Optimista: marcar como pagado AL INSTANTE en el estado local (no espera el fetch ni recarga).
-    setPagosLocal(function(p){var n=Object.assign({},p);n[aseId+'_'+mes]=true;return n;});
-    var fechaPago=fechaVenc?fechaVenc.toLocaleDateString('es-AR'):new Date().toLocaleDateString('es-AR');
-    var payload={action:'registrarPago',asesoradoId:aseId,asesorado:a.Asesorado||'',mesNumero:mes,fechaPago:fechaPago,monto:monto||''};
-    // Se envía en segundo plano; no bloquea ni cambia de vista. El refresh real queda para cuando recargues.
-    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
-  }
-  function desmarcarPago(a,mes){
-    var aseId=a.AsesoradoID||'';
-    if(!aseId)return;
-    if(!window.confirm('¿Desmarcar el pago de '+a.Asesorado+' (mes '+mes+')?'))return;
-    // Optimista: quitar del estado local al instante.
-    setPagosLocal(function(p){var n=Object.assign({},p);n[aseId+'_'+mes]=false;return n;});
-    var payload={action:'eliminarPago',asesoradoId:aseId,mesNumero:mes};
-    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
-  }
-  function eliminarCliente(a){
-    var aseId=a.AsesoradoID||'';
-    if(!aseId){alert('Ese asesorado no tiene AsesoradoID.');return;}
-    setEliminados(function(b){var n=Object.assign({},b);n[aseId||a.Asesorado]=true;return n;});
-    setConfBorrar(null);
-    var payload={action:'eliminarAsesorado',asesoradoId:aseId,asesorado:a.Asesorado||''};
-    fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(function(){});
-  }
-  // Cobros muestra TODOS los activos (básico, online, presencial). Oculta los borrados optimistas.
-  var activos=(maestra||[]).filter(function(a){return norm(a.Estado)!=='baja'&&String(a.Asesorado||'').trim()&&!eliminados[a.AsesoradoID||a.Asesorado];});
-  var filas=activos.map(function(a){
-    var c=calcCobro(a.FechaCobro||a.FechaInicio);
-    // PrecioCuota sigue siendo preferente; para altas nuevas, el monto del primer pago
-    // funciona como referencia recurrente sin exigir un cambio de Apps Script.
-    var pagoRef=(pagos||[]).filter(function(p){return norm(p.AsesoradoID)===norm(a.AsesoradoID)&&parseFloat(String(p.Monto||'').replace(/[^\d.]/g,''))>0;}).sort(function(x,y){return (parseInt(y.MesNumero)||0)-(parseInt(x.MesNumero)||0);})[0];
-    var precio=parseFloat(String(a.PrecioCuota||'').replace(/[^\d.]/g,''))||parseFloat(String((pagoRef&&pagoRef.Monto)||'').replace(/[^\d.]/g,''))||0;
-    var localKey=a.AsesoradoID+'_'+(c?c.mesActual:'');
-    var localVal=pagosLocal[localKey];
-    var pagado;
-    if(localVal===false)pagado=null; // desmarcado localmente
-    else if(localVal===true)pagado={local:true}; // marcado localmente
-    else pagado=c?pagoDeMes(a.AsesoradoID,c.mesActual):null; // del sheet
-    var estado='sinfecha';
-    if(c){
-      if(c.anteriorAlta)estado='futuro';
-      else if(pagado)estado='aldia';               // pagó el ciclo en curso
-      else if(c.diasVencido>0)estado='vencido';  // el día ya pasó y no pagó → moroso
-      else if(c.diasVencido===0)estado='hoy';    // vence hoy
-      else estado='pendiente';                    // vence en una fecha futura del mes
-    }
-    return {a:a,c:c,precio:precio,pagado:pagado,estado:estado};
-  });
-  // Orden alfabético por nombre
-  filas.sort(function(x,y){return String(x.a.Asesorado||'').localeCompare(String(y.a.Asesorado||''));});
-  var EST={
-    vencido:{l:'Vencido',c:'#EF4444',bg:'#FEF2F2'},
-    hoy:{l:'Vence hoy',c:'#D97706',bg:'#FFFBEB'},
-    pronto:{l:'Vence pronto',c:'#D97706',bg:'#FFFBEB'},
-    pendiente:{l:'Al día',c:'#1D9E75',bg:'#F0FDF4'},
-    aldia:{l:'Pagado',c:'#1D9E75',bg:'#F0FDF4'},
-    sinfecha:{l:'Sin fecha',c:'#999',bg:'#F7F7F7'},
-    futuro:{l:'Aún no comenzó',c:'#64748B',bg:'#F1F5F9'}
+  const [mesOffset,setMesOffset]=useState(0);
+  const [subTab,setSubTab]=useState('todos');
+  const [busqueda,setBusqueda]=useState('');
+  const [ficha,setFicha]=useState(null);
+  const [edit,setEdit]=useState({});
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState('');
+  const [snapshotRows,setSnapshotRows]=useState([]);
+  const [cobrosReady,setCobrosReady]=useState(false);
+  const [syncDone,setSyncDone]=useState(false);
+  const [syncError,setSyncError]=useState('');
+  const [pagosLive,setPagosLive]=useState(pagos||[]);
+  const [masterLive,setMasterLive]=useState(maestra||[]);
+  const [localPagos,setLocalPagos]=useState({});
+  const hoy=new Date();hoy.setHours(0,0,0,0);
+  const vista=new Date(hoy.getFullYear(),hoy.getMonth()+mesOffset,1);
+  const periodo=ftCobrosPeriodo(vista);
+  const cierre=mesOffset<0?new Date(vista.getFullYear(),vista.getMonth()+1,0):(mesOffset===0?hoy:new Date(vista));
+  const norm=x=>String(x||'').trim().toLowerCase();
+  const montoVal=x=>{let s=String(x||'0').replace(/[^\d,.-]/g,'');if(s.includes(',')&&s.includes('.'))s=s.replace(/\./g,'').replace(',','.');else if(/^\d{1,3}(\.\d{3})+$/.test(s))s=s.replace(/\./g,'');else s=s.replace(',','.');return Number(s)||0;};
+  const moneda=x=>'$'+Math.round(x||0).toLocaleString('es-AR');
+  const fmt=d=>d?d.toLocaleDateString('es-AR',{day:'numeric',month:'short'}):'—';
+  const idDe=a=>String(a.AsesoradoID||'').trim();
+  const snapshot=(id,p)=>snapshotRows.find(r=>norm(r.AsesoradoID)===norm(id)&&String(r.Periodo)===p);
+  const findPago=(id,mes)=>pagosLive.find(p=>norm(p.AsesoradoID)===norm(id)&&String(p.MesNumero).trim()===String(mes))||null;
+  const pagoExiste=(id,mes)=>{
+    const k=id+'_'+mes;
+    if(localPagos[k]!==undefined)return localPagos[k];
+    return !!findPago(id,mes);
   };
-  // Totales (sobre todos, no sobre el filtro)
-  var totalMes=filas.reduce(function(a,f){return a+(f.pagado?f.precio:0);},0);
-  var pendienteMes=filas.reduce(function(a,f){return a+((!f.pagado&&f.estado!=='sinfecha'&&f.estado!=='futuro')?f.precio:0);},0);
-  // Contadores por sub-pestaña
-  var nMoroso=filas.filter(function(f){return f.estado==='vencido';}).length;
-  var nHoy=filas.filter(function(f){return f.estado==='hoy';}).length;
-  var nAldia=filas.filter(function(f){return f.estado==='aldia';}).length;
-  // Aplicar filtros: sub-pestaña + búsqueda
-  var vis=filas.filter(function(f){
-    if(subTab==='moroso'&&f.estado!=='vencido')return false;
-    if(subTab==='hoy'&&f.estado!=='hoy')return false;
-    if(subTab==='aldia'&&f.estado!=='aldia')return false;
-    if(busqueda.trim()&&norm(f.a.Asesorado).indexOf(norm(busqueda))<0)return false;
-    return true;
-  });
-  var subTabs=[
-    {v:'todos',l:'Todos',n:filas.length},
-    {v:'moroso',l:'Morosos',n:nMoroso},
-    {v:'hoy',l:'Vence hoy',n:nHoy},
-    {v:'aldia',l:'Al día',n:nAldia}
-  ];
+  const getFicha=id=>masterLive.find(a=>idDe(a)===id);
+  function readBackend(){
+    return Promise.all([
+      fetch(SCRIPT_URL+'?action=ftCobrosMeses&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json()),
+      fetch(SCRIPT_URL+'?action=pagos&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json()),
+      fetch(SCRIPT_URL+'?action=asesorados&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json())
+    ]).then(([cuotas,pa,ma])=>{
+      if(!Array.isArray(cuotas))throw new Error('El backend de Cobros V2 todavía no está desplegado.');
+      setSnapshotRows(cuotas);if(Array.isArray(pa))setPagosLive(pa);if(Array.isArray(ma))setMasterLive(ma);
+      setCobrosReady(true);setSyncError('');return {cuotas,pa,ma};
+    });
+  }
+  useEffect(()=>{setMasterLive(maestra||[]);},[maestra]);
+  useEffect(()=>{setPagosLive(pagos||[]);},[pagos]);
+  useEffect(()=>{
+    let live=true;setCobrosReady(false);
+    readBackend().catch(e=>{if(live){setSyncError(String(e.message||e));setCobrosReady(false);}});
+    return()=>{live=false;};
+  },[]);
+  // En el mes presente se asegura una foto del padrón, y al entrar por primera vez
+  // en otro mes se cierran las fotos vencidas. No se sobreescriben snapshots cerrados.
+  useEffect(()=>{
+    if(!cobrosReady||mesOffset!==0)return;
+    setSyncDone(false);
+    post({action:'ftCobrosSincronizar',periodo}).then(()=>readBackend()).then(()=>setSyncDone(true)).catch(e=>setSyncError(String(e.message||e)));
+  },[cobrosReady,periodo]);
+  function post(payload){
+    // Los POST a Apps Script son no-cors; por eso siempre corroboramos con GET posteriormente.
+    return fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
+  }
+  function serialMes(fecha){const d=ftCobrosFecha(fecha);return d?d.getFullYear()*12+d.getMonth():null;}
+  function mesNum(a,v){const d=ftCobrosFecha(a.FechaInicio||a.FechaCobro);if(!d)return 0;return(v.getFullYear()*12+v.getMonth())-(d.getFullYear()*12+d.getMonth())+1;}
+  function detalleMes(a,v){
+    const id=idDe(a),n=mesNum(a,v),per=ftCobrosPeriodo(v),registro=snapshot(id,per);
+    if(n<1)return {n:0,pagado:false,estado:'futuro',venc:null,precio:0,registro};
+    const estadoFicha=norm(registro?.Estado||a.Estado||'Activo');
+    const pausa=estadoFicha==='pausado';
+    const base=ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio);
+    const dias=registro&&registro.DiaVencimiento?Number(registro.DiaVencimiento):(Number(a.DiaCobro)||base?.getDate());
+    const venc=dias?ftCobrosVenc(v.getFullYear(),v.getMonth(),dias):null;
+    const pagoReferencia=pagosLive.filter(p=>norm(p.AsesoradoID)===norm(id)&&montoVal(p.Monto)>0).sort((p,q)=>(Number(q.MesNumero)||0)-(Number(p.MesNumero)||0))[0];
+    const pr=registro?montoVal(registro.Monto):(montoVal(a.PrecioCuota)||montoVal(pagoReferencia?.Monto));
+    const pagado=pagoExiste(id,n);
+    const limite=mesOffset<0?new Date(v.getFullYear(),v.getMonth()+1,0):mesOffset===0?hoy:new Date(v.getFullYear(),v.getMonth(),1);
+    const dif=venc?Math.round((Date.UTC(limite.getFullYear(),limite.getMonth(),limite.getDate())-Date.UTC(venc.getFullYear(),venc.getMonth(),venc.getDate()))/86400000):null;
+    const estado=pausa?'pausado':pagado?'pagado':!venc?'sinfecha':dif>0?'moroso':dif===0?'hoy':'pendiente';
+    return {n,pagado,estado,venc,precio:pr,registro,pausa};
+  }
+  function deudaAnterior(a){
+    const mesPrev=new Date(vista.getFullYear(),vista.getMonth()-1,1);
+    const prev=detalleMes(a,mesPrev);
+    if(prev.n<1||prev.pausa||prev.pagado)return null;
+    // Fecha de inicio, fecha de cobro y el MesNumero identifican una cuota; no usar fecha de pago para calcular el ciclo.
+    return {periodo:ftCobrosPeriodo(mesPrev),mes:prev.n,monto:prev.precio,consolidado:!!prev.registro};
+  }
+  function fichaAbrir(a){setFicha(idDe(a));setEdit({monto:String(a.PrecioCuota||''),fecha:String(Number(a.DiaCobro)||(ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio))?.getDate()||''),estado:norm(a.Estado)==='pausado'?'Pausado':'Activo',desde:'siguiente'});setMsg('');}
+  async function saveFicha(a,mode){
+    const id=idDe(a),campo={};
+    if(mode==='monto'){
+      const p=montoVal(edit.monto);if(!(p>0)){setMsg('Ingresá un monto válido.');return;}campo.PrecioCuota=p;
+    }else if(mode==='fecha'){
+      const d=Number(edit.fecha);if(!Number.isInteger(d)||d<1||d>31){setMsg('Elegí un día entre 1 y 31.');return;}
+      const base=ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio)||hoy;
+      const prox=new Date(hoy.getFullYear(),hoy.getMonth()+(edit.desde==='siguiente'?1:0),1);
+      const y=prox.getFullYear(),m=prox.getMonth()+1;
+      campo.FechaCobro=y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(d,new Date(y,m,0).getDate())).padStart(2,'0');
+      campo.DiaCobro=d;
+    }else if(mode==='estado')campo.Estado=edit.estado;
+    if(!Object.keys(campo).length)return;
+    if(!cobrosReady||syncError||!syncDone||mesOffset!==0){setMsg('Las ediciones de ficha sólo están disponibles en el mes actual y después de sincronizar Sheets.');return;}
+    setSaving(true);setMsg('Guardando…');
+    try{
+      await post({action:'ftCobrosEditarFicha',asesoradoId:id,asesorado:a.Asesorado,campos,periodoActual:ftCobrosPeriodo(hoy),aplicaMesActual:edit.desde==='actual'});
+      await new Promise(r=>setTimeout(r,850));
+      const check=await readBackend();const confirmado=check.ma.find(r=>idDe(r)===id);
+      const ok=confirmado&&Object.keys(campo).every(k=>String(confirmado[k]||'').trim()===String(campo[k]).trim());
+      if(!ok)throw new Error('No se pudo confirmar el cambio en Sheets. Verificá el Apps Script.');
+      setMsg('✓ Guardado y confirmado en Sheets');
+    }catch(e){setMsg(String(e.message||e));}finally{setSaving(false);}
+  }
+  async function registrarPago(a,f,desmarcar){
+    if(!f.n||!idDe(a))return;
+    if(!cobrosReady||syncError){setMsg('Primero actualizá el Apps Script de Cobros V2.');return;}
+    if(desmarcar&&!window.confirm('¿Quitar el pago del mes '+f.n+' de '+a.Asesorado+'?'))return;
+    const id=idDe(a),key=id+'_'+f.n;
+    setSaving(true);setMsg(desmarcar?'Quitando pago…':'Registrando pago…');
+    try{
+      const payload=desmarcar?{action:'eliminarPago',asesoradoId:id,mesNumero:f.n}:
+        {action:'registrarPago',asesoradoId:id,asesorado:a.Asesorado,mesNumero:f.n,fechaPago:hoy.toLocaleDateString('es-AR'),monto:f.precio};
+      await post(payload);
+      await new Promise(r=>setTimeout(r,850));
+      const data=await readBackend();
+      const found=(data.pa||[]).some(p=>norm(p.AsesoradoID)===norm(id)&&String(p.MesNumero)===String(f.n));
+      if(found===!!desmarcar)throw new Error('El cambio de pago todavía no fue confirmado por Sheets.');
+      setLocalPagos(p=>({...p,[key]:!desmarcar}));
+      setMsg(desmarcar?'Pago desmarcado ✓':'Pago confirmado ✓');
+    }catch(e){setMsg(String(e.message||e));}finally{setSaving(false);}
+  }
+  const activos=masterLive.filter(a=>norm(a.Estado)!=='baja'&&idDe(a)&&String(a.Asesorado||'').trim());
+  const filas=activos.map(a=>{const d=detalleMes(a,vista);const deuda=deudaAnterior(a);return {a,d,deuda};}).sort((x,y)=>String(x.a.Asesorado).localeCompare(String(y.a.Asesorado),'es'));
+  const morosos=filas.filter(f=>f.d.estado==='moroso');
+  const venceHoy=filas.filter(f=>f.d.estado==='hoy');
+  const pagados=filas.filter(f=>f.d.pagado);
+  const deudaPrev=filas.filter(f=>f.deuda);
+  const vis=filas.filter(f=>(subTab==='todos'||subTab==='moroso'&&f.d.estado==='moroso'||subTab==='hoy'&&f.d.estado==='hoy'||subTab==='pagado'&&f.d.pagado||subTab==='deuda'&&f.deuda)&&(!busqueda.trim()||norm(f.a.Asesorado).includes(norm(busqueda))));
+  const tabs=[['todos','Todos',filas.length],['moroso','Morosos',morosos.length],['hoy','Vence hoy',venceHoy.length],['deuda','Deuda anterior',deudaPrev.length],['pagado','Pagados',pagados.length]];
+  const totalCobrado=filas.reduce((v,f)=>v+(f.d.pagado?montoVal(findPago(idDe(f.a),f.d.n)?.Monto||f.d.precio):0),0);
+  const totalPendiente=filas.reduce((v,f)=>v+(!f.d.pagado&&!f.d.pausa&&f.d.n>0?f.d.precio:0),0);
+  const colores={moroso:['#FEF2F2','#B91C1C','Moroso'],hoy:['#FFFBEB','#B45309','Vence hoy'],pendiente:['#F1F5F9','#475569','Pendiente'],pagado:['#F0FDF4','#15803D','Pagado'],pausado:['#F3F4F6','#64748B','Pausado'],futuro:['#F1F5F9','#64748B','Aún no comenzó'],sinfecha:['#FEF2F2','#B91C1C','Sin fecha']};
+  const btn=(label,click,bg='#111',color='#fff',border='none')=>h('button',{onClick:click,disabled:saving||!cobrosReady||!!syncError,style:{border,borderRadius:'8px',background:bg,color,padding:'9px 12px',fontWeight:'800',fontSize:'11px',cursor:'pointer',opacity:saving?.6:1}},label);
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'12px 12px 90px'}},
-    h('div',{style:{marginBottom:'12px'}},
-      h('div',{style:{fontSize:'20px',fontWeight:'800'}},'Cobros'),
-      h('div',{style:{fontSize:'12px',color:'#999'}},activos.length+' activos'+(nMoroso>0?(' · '+nMoroso+' moroso'+(nMoroso>1?'s':'')):''))
-    ),
-    // Selector de mes (navegar por mes calendario)
-    h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:'#111',borderRadius:'10px',padding:'8px 12px',marginBottom:'12px'}},
-      h('button',{onClick:function(){setMesOffset(mesOffset-1);},style:{background:'rgba(255,255,255,0.1)',border:'none',color:'#fff',borderRadius:'8px',padding:'6px 12px',fontSize:'16px',cursor:'pointer',fontWeight:'700'}},'‹'),
-      h('div',{style:{textAlign:'center'}},
-        h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#fff',textTransform:'capitalize'}},nombreMes),
-        mesOffset!==0&&h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,0.5)'}},mesOffset<0?'mes pasado':'mes futuro')
+    h('div',{style:{marginBottom:'12px'}},h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Cobros'),h('div',{style:{fontSize:'11px',color:'#777',marginTop:'3px'}},'Una cuota por mes · deuda previa visible hasta que se pague')),
+    h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:'#111',color:'#fff',borderRadius:'11px',padding:'9px',marginBottom:'10px'}},
+      btn('‹',()=>setMesOffset(n=>n-1),'#292929'),h('div',{style:{fontWeight:'900',fontSize:'14px',textTransform:'capitalize'}},vista.toLocaleDateString('es-AR',{month:'long',year:'numeric'})),btn('›',()=>setMesOffset(n=>n+1),'#292929')),
+    syncError&&h('div',{style:{background:'#FEF2F2',color:'#991B1B',padding:'10px',borderRadius:'8px',fontSize:'11px',marginBottom:'10px'}},syncError,' · Se muestran cálculos provisionales. No edités hasta actualizar el backend.'),
+    h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'6px',marginBottom:'10px'}},
+      [['Cobrado',totalCobrado,'#15803D'],['Por cobrar',totalPendiente,'#B45309'],['Deuda anterior',deudaPrev.reduce((s,f)=>s+f.deuda.monto,0),'#B91C1C']].map(x=>h('div',{key:x[0],style:{background:'#fff',border:'1px solid #E5E7EB',borderRadius:'9px',padding:'9px 6px'}},h('div',{style:{fontSize:'9px',color:'#777'}},x[0]),h('div',{style:{fontSize:'14px',fontWeight:'900',color:x[2]}},moneda(x[1]))))),
+    h('input',{type:'text',value:busqueda,onChange:e=>setBusqueda(e.target.value),placeholder:'Buscar asesorado…',style:{...inp,marginBottom:'10px'}}),
+    h('div',{style:{display:'flex',gap:'5px',overflowX:'auto',paddingBottom:'7px',marginBottom:'7px'}},tabs.map(x=>btn(x[1]+' ('+x[2]+')',()=>setSubTab(x[0]),subTab===x[0]?'#111':'#eee',subTab===x[0]?'#fff':'#333'))),
+    vis.length===0&&h('div',{style:{padding:'24px',textAlign:'center',color:'#888'}},'Sin asesorados en este filtro'),
+    vis.map(f=>{const a=f.a,d=f.d,ci=colores[d.estado]||colores.pendiente,open=ficha===idDe(a);return h('div',{key:idDe(a),style:{background:'#fff',borderRadius:'12px',border:'1px solid #E5E7EB',padding:'12px',marginBottom:'8px'}},
+      h('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'8px'}},
+        h('div',null,h('div',{style:{fontWeight:'900',fontSize:'14px',color:'#111'}},a.Asesorado),h('div',{style:{fontSize:'11px',color:'#666',marginTop:'4px'}},(a.Plan||'—')+' · '+moneda(d.precio)+' · día '+(d.venc?d.venc.getDate():'—'))),
+        h('span',{style:{background:ci[0],color:ci[1],fontSize:'10px',fontWeight:'900',borderRadius:'20px',padding:'5px 8px',flexShrink:0}},ci[2])),
+      d.n>0&&h('div',{style:{fontSize:'11px',color:'#555',marginTop:'9px'}},'Cuota '+d.n+(d.venc?' · vence '+fmt(d.venc):'')+(d.registro&&norm(d.registro.Cerrado)==='si'?' · al cierre: '+(norm(d.registro.PagoAlCierre)==='si'?'pagado':norm(d.registro.PagoAlCierre)==='no'?'pendiente':String(d.registro.PagoAlCierre||'sin dato')):'')),
+      f.deuda&&h('div',{style:{marginTop:'7px',background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:'8px',padding:'8px',fontSize:'11px',color:'#991B1B',fontWeight:'800'}},'Adeuda '+f.deuda.periodo+' · '+moneda(f.deuda.monto)+(f.deuda.consolidado?'':' · histórico reconstruido')),
+      h('div',{style:{display:'flex',gap:'6px',marginTop:'10px',flexWrap:'wrap'}},
+        d.n>0&&!d.pausa&&btn(d.pagado?'✓ Pagó · desmarcar':'✓ Pagó',()=>registrarPago(a,d,d.pagado),d.pagado?'#EAF7F2':'#111',d.pagado?'#15803D':'#fff'),
+        btn(open?'Cerrar':'Editar · deuda',()=>open?setFicha(null):fichaAbrir(a),'#F3F4F6','#333'),
+        f.deuda&&btn('Cobrar deuda',()=>registrarPago(a,{n:f.deuda.mes,precio:f.deuda.monto},false),'#FEE2E2','#991B1B')
       ),
-      h('button',{onClick:function(){setMesOffset(mesOffset+1);},style:{background:'rgba(255,255,255,0.1)',border:'none',color:'#fff',borderRadius:'8px',padding:'6px 12px',fontSize:'16px',cursor:'pointer',fontWeight:'700'}},'›')
-    ),
-    // Resumen
-    h('div',{style:{display:'flex',gap:'8px',marginBottom:'12px'}},
-      h('div',{style:{flex:1,background:'#F0FDF4',borderRadius:'10px',padding:'12px'}},
-        h('div',{style:{fontSize:'10px',color:'#1D9E75',fontWeight:'700',textTransform:'uppercase'}},'Cobrado este mes'),
-        h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#111'}},'$'+totalMes.toLocaleString('es-AR'))
-      ),
-      h('div',{style:{flex:1,background:'#FEF2F2',borderRadius:'10px',padding:'12px'}},
-        h('div',{style:{fontSize:'10px',color:'#EF4444',fontWeight:'700',textTransform:'uppercase'}},'Por cobrar'),
-        h('div',{style:{fontSize:'18px',fontWeight:'800',color:'#111'}},'$'+pendienteMes.toLocaleString('es-AR'))
+      open&&h('div',{style:{background:'#F8FAFC',borderRadius:'10px',padding:'12px',marginTop:'10px',border:'1px solid #E2E8F0'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'900',marginBottom:'10px'}},'Acciones de '+a.Asesorado),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto',gap:'7px',alignItems:'center',marginBottom:'10px'}},
+          h('input',{type:'text',inputMode:'decimal',value:edit.monto,onChange:e=>setEdit(s=>({...s,monto:e.target.value})),style:inp,placeholder:'Monto de cuota'}),btn('Guardar monto',()=>saveFicha(a,'monto')),
+          h('input',{type:'number',min:1,max:31,value:edit.fecha,onChange:e=>setEdit(s=>({...s,fecha:e.target.value})),style:inp,placeholder:'Día de vencimiento'}),btn('Guardar fecha',()=>saveFicha(a,'fecha')),
+          h('select',{value:edit.estado,onChange:e=>setEdit(s=>({...s,estado:e.target.value})),style:inp},['Activo','Pausado'].map(x=>h('option',{key:x,value:x},x))),btn('Guardar estado',()=>saveFicha(a,'estado'))
+        ),
+        h('div',{style:{display:'flex',gap:'8px',alignItems:'center',marginBottom:'12px',fontSize:'11px',color:'#475569'}},
+          h('span',{style:{fontWeight:'700'}},'Cambios desde:'),
+          h('select',{value:edit.desde,onChange:e=>setEdit(s=>({...s,desde:e.target.value})),style:{...inp,flex:1,fontSize:'11px'}},h('option',{value:'siguiente'},'Mes próximo (recomendado)'),h('option',{value:'actual'},'Mes actual si está abierto'))
+        ),
+        h('div',{style:{fontSize:'11px',color:'#555',lineHeight:'1.5'}},f.deuda?'Deuda anterior: '+f.deuda.periodo+' · '+moneda(f.deuda.monto):'No registra deuda del mes anterior.'),
+        h('div',{style:{fontSize:'10px',color:'#64748B',marginTop:'8px'}},'Pausar no borra pagos ni deudas previas. Las cuotas cerradas no se reescriben.'),
+        msg&&h('div',{style:{fontSize:'11px',fontWeight:'700',color:msg.startsWith('✓')?'#15803D':'#B91C1C',marginTop:'8px'}},msg)
       )
-    ),
-    // Buscador
-    h('input',{type:'text',value:busqueda,onChange:function(e){setBusqueda(e.target.value);},placeholder:'🔍 Buscar por nombre…',
-      style:{width:'100%',boxSizing:'border-box',padding:'10px 12px',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'10px',fontSize:'14px',marginBottom:'10px'}}),
-    // Sub-pestañas
-    h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px',overflowX:'auto'}},
-      subTabs.map(function(st){
-        var sel=subTab===st.v;
-        return h('button',{key:st.v,onClick:function(){setSubTab(st.v);},
-          style:{flexShrink:0,padding:'7px 12px',borderRadius:'20px',border:'none',cursor:'pointer',fontSize:'12px',fontWeight:'700',
-            background:sel?'#111':'#F0F0F0',color:sel?'#fff':'#666'}},
-          st.l+(st.n>0?(' ('+st.n+')'):''));
-      })
-    ),
-    vis.length===0&&h('div',{style:{textAlign:'center',padding:'40px 20px',color:'#999',fontSize:'13px'}},'Nada por acá'),
-    vis.map(function(f){
-      var e=EST[f.estado];
-      var venceFecha=f.c?(f.pagado?f.c.proxVenc:(f.c.vencActual||f.c.proxVenc)):null;
-      var venceStr=venceFecha?venceFecha.toLocaleDateString('es-AR',{day:'numeric',month:'short'}):'—';
-      return h('div',{key:f.a.AsesoradoID||f.a.Asesorado,style:{background:'#fff',border:'1px solid rgba(0,0,0,0.08)',borderRadius:'12px',padding:'13px',marginBottom:'8px'}},
-        h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}},
-          h('div',null,
-            h('div',{style:{fontSize:'15px',fontWeight:'700',color:'#111'}},f.a.Asesorado),
-            h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},(f.a.Plan||'—')+(f.precio?(' · $'+f.precio.toLocaleString('es-AR')):''))
-          ),
-          h('div',{style:{display:'flex',alignItems:'center',gap:'6px'}},
-            h('span',{style:{fontSize:'10px',fontWeight:'700',color:e.c,background:e.bg,padding:'3px 8px',borderRadius:'20px'}},e.l),
-            h('button',{onClick:function(){setConfBorrar(confBorrar===(f.a.AsesoradoID||f.a.Asesorado)?null:(f.a.AsesoradoID||f.a.Asesorado));},style:{background:'none',border:'none',cursor:'pointer',fontSize:'13px',color:'#ccc',padding:'2px'}},'🗑️')
-          )
-        ),
-        // Confirmación de borrado
-        confBorrar===(f.a.AsesoradoID||f.a.Asesorado)&&h('div',{style:{background:'#FEF2F2',borderRadius:'8px',padding:'10px',marginBottom:'8px'}},
-          h('div',{style:{fontSize:'11px',color:'#991B1B',fontWeight:'700',marginBottom:'8px'}},'¿Eliminar a '+f.a.Asesorado+'? Se borra su fila. Irreversible.'),
-          h('div',{style:{display:'flex',gap:'6px'}},
-            h('button',{onClick:function(){eliminarCliente(f.a);},style:{flex:1,background:'#EF4444',color:'#fff',border:'none',borderRadius:'8px',padding:'7px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Sí, eliminar'),
-            h('button',{onClick:function(){setConfBorrar(null);},style:{flex:1,background:'#fff',color:'#666',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'7px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},'Cancelar')
-          )
-        ),
-        f.estado!=='sinfecha'&&f.estado!=='futuro'&&h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-          h('div',{style:{fontSize:'11px',color:'#666'}},
-            f.pagado?('✓ Mes '+f.c.mesActual+' pagado · próx '+venceStr):('Mes '+f.c.mesActual+' · '+(f.estado==='vencido'?'venció ':f.estado==='hoy'?'vence hoy · ':'vence ')+venceStr)
-          ),
-          f.pagado
-            ?h('button',{onClick:function(){desmarcarPago(f.a,f.c.mesActual);},
-                style:{background:'#F0FDF4',color:'#1D9E75',border:'1px solid #BBF7D0',borderRadius:'8px',padding:'7px 12px',fontSize:'11px',fontWeight:'700',cursor:'pointer'}},
-                '✓ Al día · desmarcar')
-            :h('button',{onClick:function(){marcarPagado(f.a,f.c.mesActual,f.precio,f.c.vencActual);},
-                style:{background:'#111',color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},
-                'Marcar pagado')
-        )
-      );
-    })
+    );})
   );
 }
+function ftCobrosPeriodo(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function ftCobrosFecha(v){
+  if(v instanceof Date)return isNaN(v.getTime())?null:new Date(v.getFullYear(),v.getMonth(),v.getDate());
+  const s=String(v===undefined||v===null?'':v).trim();if(!s)return null;let m;
+  if(/^\d{5}(?:[,.]\d+)?$/.test(s)){const d=new Date(1899,11,30,12);d.setDate(d.getDate()+Math.floor(Number(s.replace(',','.'))));return d;}
+  if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))return new Date(+m[1],+m[2]-1,+m[3]);
+  if((m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/)))return new Date(+m[3],+m[2]-1,+m[1]);
+  const d=new Date(s);return isNaN(d.getTime())?null:d;
+}
+function ftCobrosVenc(y,m,d){return new Date(y,m,Math.min(Number(d),new Date(y,m+1,0).getDate()));}
 
 // ── PESTAÑA REVISAR: auditoría automática de datos (detecta huecos por asesorado) ──
 // ── PESTAÑA MENSUAL: audita la asesoría como sistema (últimas 4 semanas, 4 dimensiones) ──
