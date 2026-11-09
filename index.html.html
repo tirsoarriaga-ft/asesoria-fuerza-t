@@ -95,6 +95,26 @@ function ftDarkStyle(style){
  return v;
 }
 const h=(tag,props,...children)=>createElement(tag,props&&props.style?{...props,style:ftDarkStyle(props.style)}:props,...children);
+
+// HISTÓRICO ANTROPOMÉTRICO: misma serie temporal; ninguna fila se convierte en Reporte.
+function ftMedISO(v){
+ if(v===null||v===undefined||v==='')return '';
+ if(typeof v==='number'&&v>20000&&v<100000){const d=new Date(Date.UTC(1899,11,30)+Math.floor(v)*86400000);return d.toISOString().slice(0,10);}
+ const s=String(v).trim();let m;
+ if((m=s.match(/^(\d{4})-(\d{2})-(\d{2})/)))return m[1]+'-'+m[2]+'-'+m[3];
+ if((m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/)))return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+ return '';
+}
+function ftMedVal(v){const n=Number(String(v==null?'':v).replace(',','.'));return Number.isFinite(n)&&n>0&&n<350?n:null;}
+function ftMedUnified(legacy,current){
+ const byDate={};
+ (legacy||[]).forEach(r=>{const date=ftMedISO(r.Fecha);if(!date)return;byDate[date]={date,p:ftMedVal(r.Peso),c:ftMedVal(r.Cintura)};});
+ (current||[]).forEach(r=>{const date=ftMedISO(r.Fecha||r.date);if(!date)return;const p=ftMedVal(r.Peso??r.p),c=ftMedVal(r.Cintura??r.c);
+   if(p===null&&c===null)return;const o=byDate[date]||{date,p:null,c:null};if(p!==null)o.p=p;if(c!==null)o.c=c;byDate[date]=o;
+ });
+ return Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date));
+}
+function ftMedLabel(date){return date.slice(8,10)+'/'+date.slice(5,7);}
 const FT_BUILD='FuerzaT-Personalizada-V6-REPORTES-PILOTO-2026-11-09';
 // FUERZA T V6 — intérprete de reportes compatible con DailyV5 y datos históricos.
 // Nunca atribuye equivalencia comprobada ni incumplimiento a respuestas vacías.
@@ -2699,6 +2719,26 @@ function App(){
   const [saving,setSaving]=useState(false);
   const [saved,setSaved]=useState(false);
   const [hist,setHist]=useState([]);
+  const [historicoMedidas,setHistoricoMedidas]=useState([]);
+  useEffect(()=>{
+    if(!user){setHistoricoMedidas([]);return;}
+    let live=true;
+    const read=async()=>{
+      let id=localStorage.getItem('ase_'+user+'_asesoradoId')||'';
+      if(!id){
+        try{const ases=await fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json());
+          const person=(ases||[]).find(a=>String(a.Asesorado||'').trim().toLowerCase()===String(user).trim().toLowerCase());
+          id=String(person?.AsesoradoID||'').trim();
+        }catch(e){}
+      }
+      if(!live)return;
+      if(!id){setHistoricoMedidas([]);return;}
+      try{const rows=await fetch(SCRIPT_URL+'?action=historicoMediciones&asesoradoId='+encodeURIComponent(id)+'&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json());
+        if(live)setHistoricoMedidas(Array.isArray(rows)?rows:[]);
+      }catch(e){if(live)setHistoricoMedidas([]);}
+    };
+    read();return()=>{live=false;};
+  },[user,sessionReady]);
   const [nut,setNut]=useState(iN());
   const [exes,setExes]=useState(DEFAULT_EXES);
   const [hab,setHab]=useState(iH());
@@ -3932,12 +3972,12 @@ function App(){
         .filter(Boolean).sort((a,b)=>(parseInt(String(a.wi).replace('sem_',''))||0)-(parseInt(String(b.wi).replace('sem_',''))||0));
     }catch(e){}
     function avg(vals){const a=vals.map(normNum).filter(v=>v!==null&&v>0);return a.length?a.reduce((x,y)=>x+y,0)/a.length:null;}
-    const trend=weeks.map(w=>{
-      const meds=w.h?.meds||[];
-      const p=avg(meds.map(m=>m.p));
-      const c=avg(meds.map(m=>m.c));
-      return {wi:w.wi,wl:w.wl,p:p,c:c};
-    }).filter(x=>x.p!==null||x.c!==null).slice(-4);
+    const semanasMed=weeks.map(w=>{
+      const meds=w.h?.meds||[],p=avg(meds.map(m=>m.p)),c=avg(meds.map(m=>m.c));
+      let date='';try{const num=Number(String(w.wi||'').replace('sem_',''));if(num>0){const d=getWkForNum(user,num).sun;date=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}}catch(e){}
+      return {Fecha:date,Peso:p,Cintura:c};
+    }).filter(x=>x.Fecha&&(x.Peso!==null||x.Cintura!==null));
+    const trend=ftMedUnified(historicoMedidas,semanasMed).slice(-16);
     const pData=trend.filter(x=>x.p!==null), cData=trend.filter(x=>x.c!==null);
     const tutorialItems=FT_TUTORIALES.filter(t=>!(String(cfg?.modalidad||'').toLowerCase()==='presencial'&&t.k==='videos'));
     return h('div',null,
@@ -3958,10 +3998,10 @@ function App(){
         trend.length===0
           ?h('div',{style:{fontSize:'12px',color:'#999'}},'Todavía no hay promedios semanales disponibles.')
           :h('div',null,
-            h('div',{style:{fontSize:'10px',color:'#999',marginBottom:'8px'}},'Últimos '+trend.length+' promedios semanales disponibles. Las semanas sin medición no se inventan.'),
-            pData.length>=2&&h('div',{style:{marginBottom:'10px'}},h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#FFFFFF'}},'Peso'),h(LineChart,{data:pData.map(x=>x.p),h:150,labels:pData.map(x=>String(x.wi||'').replace('sem_','S'))})),
-            cData.length>=2&&h('div',null,h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#FFFFFF'}},'Cintura'),h(LineChart,{data:cData.map(x=>x.c),h:150,labels:cData.map(x=>String(x.wi||'').replace('sem_','S'))})),
-            trend.map((x,i)=>h('div',{key:i,style:{fontSize:'11px',color:'#666',padding:'4px 0'}},String(x.wi||'').replace('sem_','S')+' · '+(x.p!==null?('Peso '+x.p.toFixed(1)+' kg'):'')+(x.p!==null&&x.c!==null?' · ':'')+(x.c!==null?('Cintura '+x.c.toFixed(1)+' cm'):'')))
+            h('div',{style:{fontSize:'10px',color:'#999',marginBottom:'8px'}},'Últimas '+trend.length+' mediciones disponibles. Las fechas sin medición no se inventan.'),
+            pData.length>=2&&h('div',{style:{marginBottom:'10px'}},h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#FFFFFF'}},'Peso'),h(LineChart,{data:pData.map(x=>x.p),h:150,labels:pData.map(x=>ftMedLabel(x.date))})),
+            cData.length>=2&&h('div',null,h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#FFFFFF'}},'Cintura'),h(LineChart,{data:cData.map(x=>x.c),h:150,labels:cData.map(x=>ftMedLabel(x.date))})),
+            trend.map((x,i)=>h('div',{key:i,style:{fontSize:'11px',color:'#666',padding:'4px 0'}},ftMedLabel(x.date)+' · '+(x.p!==null?('Peso '+x.p.toFixed(1)+' kg'):'')+(x.p!==null&&x.c!==null?' · ':'')+(x.c!==null?('Cintura '+x.c.toFixed(1)+' cm'):'')))
           )
       ),
       h('div',{style:card},
