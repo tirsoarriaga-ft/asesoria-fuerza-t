@@ -18,6 +18,26 @@ button,input,select{font-family:inherit;outline:none}
 const {useState,useEffect,useMemo,createElement:h}=React;
 
 // ── CONFIGURACIÓN ─────────────────────────────────────────────────────
+
+// HISTÓRICO ANTROPOMÉTRICO: misma serie temporal; ninguna fila se convierte en Reporte.
+function ftMedISO(v){
+ if(v===null||v===undefined||v==='')return '';
+ if(typeof v==='number'&&v>20000&&v<100000){const d=new Date(Date.UTC(1899,11,30)+Math.floor(v)*86400000);return d.toISOString().slice(0,10);}
+ const s=String(v).trim();let m;
+ if((m=s.match(/^(\d{4})-(\d{2})-(\d{2})/)))return m[1]+'-'+m[2]+'-'+m[3];
+ if((m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/)))return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+ return '';
+}
+function ftMedVal(v){const n=Number(String(v==null?'':v).replace(',','.'));return Number.isFinite(n)&&n>0&&n<350?n:null;}
+function ftMedUnified(legacy,current){
+ const byDate={};
+ (legacy||[]).forEach(r=>{const date=ftMedISO(r.Fecha);if(!date)return;byDate[date]={date,p:ftMedVal(r.Peso),c:ftMedVal(r.Cintura)};});
+ (current||[]).forEach(r=>{const date=ftMedISO(r.Fecha||r.date);if(!date)return;const p=ftMedVal(r.Peso??r.p),c=ftMedVal(r.Cintura??r.c);
+   if(p===null&&c===null)return;const o=byDate[date]||{date,p:null,c:null};if(p!==null)o.p=p;if(c!==null)o.c=c;byDate[date]=o;
+ });
+ return Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date));
+}
+function ftMedLabel(date){return date.slice(8,10)+'/'+date.slice(5,7);}
 const COACH_BUILD='FuerzaT-Coach-Cobros-Fechas-2026-11-05';
 const SCRIPT_URL='https://script.google.com/macros/s/AKfycby0tGGby72hf61Td2ctw8pEn1dW-0bgEjNgMKwTlg-0kP06Om3vLwcTlNVLhyyoX4c/exec';
 const COACH_PIN='1234'; // ← cambiá por tu PIN
@@ -811,7 +831,7 @@ function DiagnosticoPanel({rutina,weeks}){
   );
 }
 
-function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRefresh,onBack}){
+function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,medicionesHistoricas,onRefresh,onBack}){
   const [tab,setTab]=useState('med');
   const [selEx,setSelEx]=useState(0);
   const [showBuilder,setShowBuilder]=useState(false);
@@ -888,6 +908,9 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
 
   const labels=weeks.map(w=>String(w.SemanID||'').slice(5)||'');
   const pesos=weeks.map(w=>parseFloat(w.Peso)).filter((v,i)=>weeks[i].Peso&&!isNaN(v)&&v>0);
+  const historicoMed=ftMedUnified(medicionesHistoricas||[],weeks);
+  const pesosTodos=historicoMed.filter(x=>x.p!==null);
+  const cinturasTodos=historicoMed.filter(x=>x.c!==null);
   const pesoLabels=weeks.filter(w=>w.Peso&&!isNaN(parseFloat(w.Peso))&&parseFloat(w.Peso)>0).map(w=>String(w.SemanID||'').slice(5));
   const cinturas=weeks.map(w=>parseFloat(w.Cintura)).filter((v,i)=>weeks[i].Cintura&&!isNaN(v)&&v>0);
   const cinLabels=weeks.filter(w=>w.Cintura&&!isNaN(parseFloat(w.Cintura))&&parseFloat(w.Cintura)>0).map(w=>String(w.SemanID||'').slice(5));
@@ -1402,8 +1425,8 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
       tab==='med'&&h('div',null,
         (()=>{
           const hb=HIST_BASE[normName(name)]||null;
-          const pesoBase=hb?hb.p:(pesos[0]||null);
-          const cinBase=hb?hb.c:(cinturas[0]||null);
+          const pesoBase=pesosTodos.length?pesosTodos[0].p:(hb?hb.p:(pesos[0]||null));
+          const cinBase=cinturasTodos.length?cinturasTodos[0].c:(hb?hb.c:(cinturas[0]||null));
           const pesoActual=pesos.length>0?pesos[pesos.length-1]:null;
           const cinActual=cinturas.length>0?cinturas[cinturas.length-1]:null;
           const pesoColor=pesoActual&&pesoBase?(pesoActual<pesoBase?G:pesoActual>pesoBase?R:'#111'):'#111';
@@ -1411,7 +1434,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
           const pesoDelta=pesoActual&&pesoBase?(' ('+(pesoActual-pesoBase>0?'+':'')+(pesoActual-pesoBase).toFixed(1)+'kg)'):'';
           const cinDelta=cinActual&&cinBase?(' ('+(cinActual-cinBase>0?'+':'')+(cinActual-cinBase).toFixed(1)+'cm)'):'';
           return h('div',null,
-            hb&&h('div',{style:{...card,background:'#F8F8F8',marginBottom:'10px'}},
+            hb&&!medicionesHistoricas?.length&&h('div',{style:{...card,background:'#F8F8F8',marginBottom:'10px'}},
               h('div',{style:{...lbl,marginBottom:'6px'}},'Referencia pre-app ('+hb.n+' semanas)'),
               h('div',{style:{display:'flex',gap:'16px'}},
                 h('div',null,h('div',{style:{fontSize:'11px',color:'#999'}},'Peso base'),h('div',{style:{fontSize:'16px',fontWeight:'800'}},hb.p+' kg')),
@@ -1420,7 +1443,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
             ),
             h('div',{style:card},
               h('div',{style:{...lbl,marginBottom:'8px'}},'Peso'),
-              pesos.length>=1?h(LineChart,{data:pesos,color:G,h:110,labels:pesoLabels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Sin registros aún'),
+              pesosTodos.length>=2?h(LineChart,{data:pesosTodos.map(x=>x.p),color:G,h:130,labels:pesosTodos.map(x=>ftMedLabel(x.date))}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Sin registros aún'),
               pesoActual&&h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},
                 h('span',{style:{color:'#666'}},'Base: '+(pesoBase||'—')+' kg'),
                 h('span',{style:{fontWeight:'700',color:pesoColor}},pesoActual+' kg'+pesoDelta)
@@ -1428,7 +1451,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,onRef
             ),
             h('div',{style:card},
               h('div',{style:{...lbl,marginBottom:'8px'}},'Cintura'),
-              cinturas.length>=1?h(LineChart,{data:cinturas,color:B,h:110,labels:cinLabels}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Sin registros aún'),
+              cinturasTodos.length>=2?h(LineChart,{data:cinturasTodos.map(x=>x.c),color:B,h:130,labels:cinturasTodos.map(x=>ftMedLabel(x.date))}):h('div',{style:{color:'#bbb',fontSize:'12px',textAlign:'center',padding:'20px'}},'Sin registros aún'),
               cinActual&&h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'6px',fontSize:'12px'}},
                 h('span',{style:{color:'#666'}},'Base: '+(cinBase||'—')+' cm'),
                 h('span',{style:{fontWeight:'700',color:cinColor}},cinActual+' cm'+cinDelta)
@@ -2978,6 +3001,7 @@ function App(){
   const [decisiones,setDecisiones]=useState([]);
   const [devoluciones,setDevoluciones]=useState([]);
   const [seguimiento,setSeguimiento]=useState([]);
+  const [medicionesHistoricas,setMedicionesHistoricas]=useState([]);
   const [selected,setSelected]=useState(null);
   const [error,setError]=useState(null);
   const [appTab,setAppTab]=useState('lista');
@@ -2986,6 +3010,7 @@ function App(){
     setLoading(true);setError(null);
     Promise.all([
       fetch(SCRIPT_URL+'?action=reportes').then(r=>r.json()).catch(()=>[]),
+      fetch(SCRIPT_URL+'?action=historicoMediciones').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=rutinas').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=decisiones').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=asesorados').then(r=>r.json()).catch(()=>[]),
@@ -2997,7 +3022,8 @@ function App(){
       fetch(SCRIPT_URL+'?action=auditoriaNutriResumen').then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=devoluciones&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[]),
       fetch(SCRIPT_URL+'?action=seguimiento&_ts='+Date.now(),{cache:'no-store'}).then(r=>r.json()).catch(()=>[])
-    ]).then(([reportes,ruts,decs,asesorados,vids,ejs,diags,pagosData,dietasData,nutriData,devolData,segData])=>{
+    ]).then(([reportes,historicoRows,ruts,decs,asesorados,vids,ejs,diags,pagosData,dietasData,nutriData,devolData,segData])=>{
+      setMedicionesHistoricas(Array.isArray(historicoRows)?historicoRows:[]);
       // Compatibilidad con encabezados históricos del Sheet: normalizar sin modificar la hoja.
       reportes=(reportes||[]).map(function(row){return Object.assign({},row,{
         Dolor:row.Dolor!==undefined?row.Dolor:row['Dolor articular'],
@@ -3091,7 +3117,7 @@ function App(){
   if(selected){
     const rutSel=rutinas.find(r=>String(r.Asesorado||'').trim().toLowerCase()===selected.toLowerCase());
     const diagSel=(diagnosticos||[]).find(d=>String(d.Asesorado||'').trim().toLowerCase()===selected.toLowerCase()||(rutSel&&String(d.AsesoradoID||'').trim().toLowerCase()===String(rutSel.AsesoradoID||'').trim().toLowerCase()&&String(rutSel.AsesoradoID||'').trim()!==''));
-    return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutSel,ejercicios,diagnostico:diagSel,decisiones:decisiones,onRefresh:loadData,onBack:()=>setSelected(null)});
+    return h(ClientDetail,{name:selected,weeks:data[selected]||[],rutina:rutSel,ejercicios,diagnostico:diagSel,decisiones:decisiones,medicionesHistoricas:medicionesHistoricas.filter(m=>String(m.AsesoradoID||'')===String(rutSel?.AsesoradoID||'')&&!!m.AsesoradoID),onRefresh:loadData,onBack:()=>setSelected(null)});
   }
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
