@@ -115,7 +115,40 @@ function ftMedUnified(legacy,current){
  return Object.values(byDate).sort((a,b)=>a.date.localeCompare(b.date));
 }
 function ftMedLabel(date){return date.slice(8,10)+'/'+date.slice(5,7);}
-const FT_BUILD='FuerzaT-Personalizada-V6-REPORTES-PILOTO-2026-11-09';
+// Evolución corporal FT: cada marca representa una fecha real, sin recortar puntos.
+function FtMedTimeline({points,kind='p',dark=false}){
+ const col=kind==='p'?'#21B789':'#5DA8F5', unit=kind==='p'?'kg':'cm', title=kind==='p'?'Peso':'Cintura';
+ const arr=(points||[]).filter(v=>v&&/^\d{4}-\d{2}-\d{2}$/.test(v.date)&&Number.isFinite(v[kind]));
+ const recent=arr.slice(-4),fg=dark?'#EDF0F4':'#1D252E',muted=dark?'#B9BBC7':'#64748B',grid=dark?'#3A3C45':'#E4E9EF';
+ if(!arr.length)return h('div',{style:{fontSize:'12px',color:muted,padding:'20px 6px',textAlign:'center'}},'Sin mediciones registradas de '+title.toLowerCase()+'.');
+ const first=arr[0],last=arr[arr.length-1],start=Date.parse(first.date+'T12:00:00Z'),end=Date.parse(last.date+'T12:00:00Z');
+ const datespan=Math.max(1,end-start),vals=arr.map(x=>x[kind]),vmin=Math.min(...vals),vmax=Math.max(...vals),spread=Math.max(vmax-vmin,kind==='p'?.8:1.5),low=vmin-spread*.24,high=vmax+spread*.24;
+ const W=350,H=198,L=37,R=14,T=17,B=34,iw=W-L-R,ih=H-T-B;
+ const x=d=>L+((Date.parse(d+'T12:00:00Z')-start)/datespan)*iw;
+ const y=v=>T+(high-v)/(high-low)*ih;
+ const path=arr.map((r,i)=>(i?'L':'M')+x(r.date).toFixed(2)+' '+y(r[kind]).toFixed(2)).join(' ');
+ const baseline=H-B, area=path+' L '+x(last.date).toFixed(2)+' '+baseline+' L '+x(first.date).toFixed(2)+' '+baseline+' Z';
+ // Sólo 4 referencias temporales, ubicadas en marcas existentes. Cada punto tiene su fecha exacta.
+ const labelIdx=[0,Math.round((arr.length-1)/3),Math.round((arr.length-1)*2/3),arr.length-1].filter((n,i,a)=>a.indexOf(n)===i);
+ const delta=last[kind]-first[kind];const txt=v=>Number(v).toLocaleString('es-AR',{minimumFractionDigits:1,maximumFractionDigits:2});
+ return h('div',{style:{marginTop:'6px'}},
+  h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'5px'}},
+   h('span',{style:{fontSize:'11px',color:muted}},arr.length+' mediciones · '+ftMedLabel(first.date)+' al '+ftMedLabel(last.date)),
+   h('span',{style:{fontSize:'12px',fontWeight:'800',color:fg}},txt(last[kind])+' '+unit+'  ',h('span',{style:{fontSize:'11px',color:muted,fontWeight:'600'}},'('+((delta>0)?'+':'')+txt(delta)+' '+unit+' total)'))
+  ),
+  h('svg',{viewBox:'0 0 '+W+' '+H,width:'100%',role:'img','aria-label':'Evolución de '+title.toLowerCase()+' con '+arr.length+' mediciones desde '+first.date+' hasta '+last.date,style:{display:'block',overflow:'visible',borderRadius:'11px',background:dark?'#25272D':'#FAFBFC'}},
+   [0,1,2,3,4].map((i)=>{const value=low+(high-low)*i/4;const yy=y(value);return h('g',{key:'grid'+i},h('line',{x1:L,y1:yy,x2:W-R,y2:yy,stroke:grid,strokeWidth:'.8',strokeDasharray:i===0?'':'3 4'}),h('text',{x:L-5,y:yy+3.5,textAnchor:'end',fontSize:'9.5',fill:muted},value.toFixed(1)));}),
+   h('path',{d:area,fill:col,opacity:'.10'}),
+   h('path',{d:path,fill:'none',stroke:col,strokeWidth:'2.7',strokeLinejoin:'round',strokeLinecap:'round'}),
+   arr.map((r,i)=>h('circle',{key:'p'+i,cx:x(r.date),cy:y(r[kind]),r:i===arr.length-1?4.3:arr.length>35?2.1:2.8,fill:col,stroke:dark?'#25272D':'#FAFBFC',strokeWidth:i===arr.length-1?2:0.8},h('title',null,r.date.slice(8,10)+'/'+r.date.slice(5,7)+'/'+r.date.slice(0,4)+' · '+txt(r[kind])+' '+unit))),
+   labelIdx.map((j,i)=>h('text',{key:'date'+i,x:x(arr[j].date),y:H-12,textAnchor:j===0?'start':j===arr.length-1?'end':'middle',fontSize:'10',fontWeight:'650',fill:muted},ftMedLabel(arr[j].date)))
+  ),
+  h('div',{style:{fontSize:'10px',fontWeight:'750',color:muted,marginTop:'8px',marginBottom:'5px',textTransform:'uppercase',letterSpacing:'.06em'}},'Últimas '+recent.length+' marcas'),
+  h('div',{style:{display:'grid',gridTemplateColumns:'repeat('+recent.length+', minmax(0,1fr))',gap:'6px'}},recent.map((r,i)=>h('div',{key:r.date,style:{border:'1px solid '+grid,background:dark?'#303139':'#F5F8FA',borderRadius:'9px',padding:'8px 4px',textAlign:'center'}},h('div',{style:{fontSize:'10px',color:muted,marginBottom:'3px'}},ftMedLabel(r.date)),h('div',{style:{fontSize:'12px',color:fg,fontWeight:'850'}},txt(r[kind])+' '+unit))))
+ );
+}
+
+const FT_BUILD='FuerzaT-Personalizada-V6-HISTORIAL-COMPLETO-2026-11-09';
 // FUERZA T V6 — intérprete de reportes compatible con DailyV5 y datos históricos.
 // Nunca atribuye equivalencia comprobada ni incumplimiento a respuestas vacías.
 const FT_REPORT_CRITERION='FT-DECISIONES-1.0.0';
@@ -2720,8 +2753,9 @@ function App(){
   const [saved,setSaved]=useState(false);
   const [hist,setHist]=useState([]);
   const [historicoMedidas,setHistoricoMedidas]=useState([]);
+  const [medidasSheet,setMedidasSheet]=useState([]);
   useEffect(()=>{
-    if(!user){setHistoricoMedidas([]);return;}
+    if(!user){setHistoricoMedidas([]);setMedidasSheet([]);return;}
     let live=true;
     const read=async()=>{
       let id=localStorage.getItem('ase_'+user+'_asesoradoId')||'';
@@ -2732,10 +2766,13 @@ function App(){
         }catch(e){}
       }
       if(!live)return;
-      if(!id){setHistoricoMedidas([]);return;}
+      if(!id){setHistoricoMedidas([]);setMedidasSheet([]);return;}
       try{const rows=await fetch(SCRIPT_URL+'?action=historicoMediciones&asesoradoId='+encodeURIComponent(id)+'&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json());
         if(live)setHistoricoMedidas(Array.isArray(rows)?rows:[]);
       }catch(e){if(live)setHistoricoMedidas([]);}
+      try{const rows=await fetch(SCRIPT_URL+'?action=medicionesReportes&asesoradoId='+encodeURIComponent(id)+'&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json());
+        if(live)setMedidasSheet(Array.isArray(rows)?rows:[]);
+      }catch(e){if(live)setMedidasSheet([]);}
     };
     read();return()=>{live=false;};
   },[user,sessionReady]);
@@ -3977,7 +4014,7 @@ function App(){
       let date='';try{const num=Number(String(w.wi||'').replace('sem_',''));if(num>0){const d=getWkForNum(user,num).sun;date=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}}catch(e){}
       return {Fecha:date,Peso:p,Cintura:c};
     }).filter(x=>x.Fecha&&(x.Peso!==null||x.Cintura!==null));
-    const trend=ftMedUnified(historicoMedidas,semanasMed).slice(-16);
+    const trend=ftMedUnified(ftMedUnified(historicoMedidas,medidasSheet).map(r=>({Fecha:r.date,Peso:r.p,Cintura:r.c})),semanasMed);
     const pData=trend.filter(x=>x.p!==null), cData=trend.filter(x=>x.c!==null);
     const tutorialItems=FT_TUTORIALES.filter(t=>!(String(cfg?.modalidad||'').toLowerCase()==='presencial'&&t.k==='videos'));
     return h('div',null,
@@ -3998,10 +4035,11 @@ function App(){
         trend.length===0
           ?h('div',{style:{fontSize:'12px',color:'#999'}},'Todavía no hay promedios semanales disponibles.')
           :h('div',null,
-            h('div',{style:{fontSize:'10px',color:'#999',marginBottom:'8px'}},'Últimas '+trend.length+' mediciones disponibles. Las fechas sin medición no se inventan.'),
-            pData.length>=2&&h('div',{style:{marginBottom:'10px'}},h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#FFFFFF'}},'Peso'),h(LineChart,{data:pData.map(x=>x.p),h:150,labels:pData.map(x=>ftMedLabel(x.date))})),
-            cData.length>=2&&h('div',null,h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#FFFFFF'}},'Cintura'),h(LineChart,{data:cData.map(x=>x.c),h:150,labels:cData.map(x=>ftMedLabel(x.date))})),
-            trend.map((x,i)=>h('div',{key:i,style:{fontSize:'11px',color:'#666',padding:'4px 0'}},ftMedLabel(x.date)+' · '+(x.p!==null?('Peso '+x.p.toFixed(1)+' kg'):'')+(x.p!==null&&x.c!==null?' · ':'')+(x.c!==null?('Cintura '+x.c.toFixed(1)+' cm'):'')))
+            h('div',{style:{fontSize:'11px',color:'#B9BBC7',marginBottom:'8px'}},'Historial completo · '+trend.length+' fechas con mediciones. Cada punto corresponde a un dato registrado.'),
+            h('div',{style:{fontSize:'13px',fontWeight:'850',color:'#F5F5F5',marginBottom:'3px'}},'Peso'),
+            h(FtMedTimeline,{points:pData,kind:'p',dark:true}),
+            h('div',{style:{fontSize:'13px',fontWeight:'850',color:'#F5F5F5',marginTop:'16px',marginBottom:'3px'}},'Cintura'),
+            h(FtMedTimeline,{points:cData,kind:'c',dark:true})
           )
       ),
       h('div',{style:card},
