@@ -2731,6 +2731,60 @@ function AuditoriaDatos({maestra,data,rutinas,diagnosticos,videosPend}){
 }
 // ── SEMANAL V4 · SU PARTE / MI PARTE ───────────────────────────────
 const FT_AUDIT_PREFIX='FTAUDIT:';
+// FUERZA T V6 — intérprete de reportes compatible con DailyV5 y datos históricos.
+// Nunca atribuye equivalencia comprobada ni incumplimiento a respuestas vacías.
+const FT_REPORT_CRITERION='FT-DECISIONES-1.0.0';
+const FT_LEGEND='Esta devolución se basa en la información que registraste y enviaste esta semana. Si hiciste algo diferente de lo reportado, avisame para corregir la lectura. Lo que no se registra no puede evaluarse.';
+function ftV6Json(v,fb){if(Array.isArray(v)||v&&typeof v==='object')return v;try{return JSON.parse(String(v||''))}catch(e){return fb;}}
+function ftV6Meal(v){const z=String(v||'').trim().toLowerCase();return ({ok:'literal',literal:'literal',equiv:'equivalent_declared',equivalent_declared:'equivalent_declared',other:'different_unverified',different_unverified:'different_unverified',qty:'quantity_changed',quantity_changed:'quantity_changed',skip:'skipped',skipped:'skipped'})[z]||'unknown';}
+function ftV6ReadReport(row){
+ const v6=ftV6Json(row&&row.DailyV6,[]),old=ftV6Json(row&&row.DailyV5,[]),raw=Array.isArray(v6)&&v6.length?v6:(Array.isArray(old)?old:[]);
+ const days=Array.from({length:7},(_,i)=>{const d=raw[i]||{};const a=Array.isArray(d.meals)?d.meals:[];const proof=Array.isArray(d.mealProof)?d.mealProof:[];const detail=Array.isArray(d.mealDetail)?d.mealDetail:[];return {...d,meals:a.map(ftV6Meal),mealProof:proof,mealDetail:detail};});
+ const isLegacy=!(Array.isArray(v6)&&v6.length);
+ const count=Math.max(3,Math.min(4,Number(row&&row.MealCount)||4));
+ const answers=days.flatMap(d=>d.meals.slice(0,count));const known=answers.filter(x=>x!=='unknown');const literal=known.filter(x=>x==='literal').length;
+ const declared=known.filter(x=>x==='equivalent_declared').length;const uncertain=known.filter(x=>x==='different_unverified'||x==='quantity_changed').length;const missed=known.filter(x=>x==='skipped').length;
+ const verified=0; // declaración de cálculo no equivale a validación profesional
+ const withData=days.filter(d=>(d.meals||[]).some(x=>x!=='unknown')||!!d.training||!!d.water||!!d.sleepHours||!!d.weight||!!d.waist);
+ const complete=days.filter(d=>d.meals.slice(0,count).filter(x=>x!=='unknown').length===count&&!!d.training&&Number(d.water)>0&&Number(d.sleepHours)>0&&!!d.hunger&&!!d.energy&&(d.training!=='done'||!!d.performance));
+ const total=count*7;const coverage=known.length/total;const confirmed=literal+verified;
+ const adherence=known.length?Math.round(100*confirmed/known.length):null;
+ const lower=total?Math.round(100*confirmed/total):null;
+ const reportedDays=withData.length;
+ const nutritionQuality=!known.length?'sin_datos':uncertain||declared>verified?'requiere_aclaracion':coverage<.7?'cobertura_baja':isLegacy?'historica_interpretable':'evaluable';
+ return {version:row&&row.ReportContractVersion||'legacy',isLegacy,legacyNutriDias:(row&&row.NutriDias!==''&&row&&row.NutriDias!=null?Number(row.NutriDias):null),days,mealCount:count,reportedDays,completeDays:complete.length,answeredMeals:known.length,plannedMeals:total,coveragePct:Math.round(100*coverage),literal,declared,verified,uncertain,missed,adherenceObserved:adherence,confirmedMinPct:lower,nutritionQuality};
+}
+
+const FT_V6_DECISIONS=['Solicitar reporte','Aclarar registro','Corregir ejecución','Mantener plan','Ajustar plan'];
+function ftV6Evaluate(r,weeks,sem){
+ const lat=ftReportForSem(weeks,sem);
+ if(!lat)return {decision:'Solicitar reporte',signal:'Sin reporte para esta semana',reason:'No se recibió reporte.',evaluation:null};
+ const ev=ftV6ReadReport(lat),ses=Number(lat.SesionesEntreno||0),prescribed=Number(r.NumSesiones||r.numSesiones||0)||0;
+ const expected=String(r.Objetivo||'mantenimiento').toLowerCase();
+ const others=(weeks||[]).filter(w=>ftSemNum(w.SemanID)<ftSemNum(sem)).slice(-4);
+ const measures=[...others,lat].filter(w=>Number(w.Peso)>0&&Number(w.Cintura)>0);
+ const trend=measures.length>=3?{n:measures.length,peso:Number(measures[measures.length-1].Peso)-Number(measures[0].Peso),cintura:Number(measures[measures.length-1].Cintura)-Number(measures[0].Cintura)}:null;
+ const previousPerformance=others.slice().reverse().find(w=>Object.keys(ftV6Json(w.E1RM,{})).length>0);
+ const ea=ftV6Json(lat.E1RM,{}),eb=previousPerformance?ftV6Json(previousPerformance.E1RM,{}):{};
+ const exComparable=Object.keys(ea).filter(k=>Number(ea[k])>0&&Number(eb[k])>0);
+ const performance=exComparable.length?{ejerciciosComparables:exComparable.length,suben:exComparable.filter(k=>Number(ea[k])>Number(eb[k])).length,bajan:exComparable.filter(k=>Number(ea[k])<Number(eb[k])).length,iguales:exComparable.filter(k=>Number(ea[k])===Number(eb[k])).length}:null;
+ const evidence={days:ev.reportedDays,completeDays:ev.completeDays,coveragePct:ev.coveragePct,mealResponses:ev.answeredMeals,mealTotal:ev.plannedMeals,adherenceObserved:ev.adherenceObserved,confirmedMinimum:ev.confirmedMinPct,nutritionQuality:ev.nutritionQuality,declaredEquivalences:ev.declared,verifiedEquivalences:ev.verified,uncertainMeals:ev.uncertain,trainingPrescribed:prescribed,trainingDeclared:ev.days.filter(d=>d.training==='done').length,trainingRecorded:ses,block:String(r.Bloque||''),trend,performance,legacy:ev.isLegacy};
+ const done=(decision,signal,reason)=>({decision,signal,reason,evidence,evaluation:ev});
+ if(ev.reportedDays===0&&ev.answeredMeals===0)return done('Aclarar registro','Reporte sin datos diarios interpretables','Reporte recibido, pero no hay detalle diario que permita leer cobertura.');
+ if(ev.reportedDays<3||ev.coveragePct<55)return done('Aclarar registro','Cobertura insuficiente','Los datos recibidos no representan suficientemente la semana para tomar decisiones.');
+ if(ev.nutritionQuality==='requiere_aclaracion')return done('Aclarar registro','Equivalencias o respuestas no verificables','Se conservan las respuestas originales, pero no es posible atribuirles cumplimiento nutricional demostrado.');
+ if(!ev.isLegacy&&evidence.trainingDeclared!==evidence.trainingRecorded)return done('Aclarar registro','Sesiones declaradas y registradas no coinciden','La declaración diaria y la evidencia de Entreno no coinciden; pedir aclaración antes de juzgar ejecución.');
+ if(prescribed>0&&ses<prescribed)return done('Corregir ejecución','Entrenamiento sin evidencia completa','No constan todas las sesiones pautadas como ejecución registrada; primero revisar la diferencia con el asesorado.');
+ if(ev.confirmedMinPct!==null&&ev.confirmedMinPct<70)return done('Corregir ejecución','Cumplimiento comprobado inferior al 70%','Sin ejecución suficiente no corresponde ajustar automáticamente la prescripción.');
+ if(!trend)return done('Mantener plan','Tendencia todavía insuficiente','No hay al menos tres mediciones semanales comparables; mantener y observar.');
+ let contrary=false;
+ if(expected.includes('deficit'))contrary=trend.peso>0.8&&trend.cintura>0.5;
+ else if(expected.includes('superavit'))contrary=trend.peso<-.8;
+ else contrary=Math.abs(trend.peso)>1.5&&Math.abs(trend.cintura)>1;
+ if(contrary)return done('Ajustar plan','Respuesta desfavorable sostenida','Con evidencia suficiente y ejecución adecuada, las últimas mediciones muestran una dirección contraria al objetivo. Requiere revisión del coach.');
+ return done('Mantener plan','Ejecución y tendencia compatibles','Los datos disponibles no justifican modificar la prescripción.');
+}
+
 const FT_TRABAS=['Información','Entendimiento','Logística','Ejecución','Prescripción','Sin traba'];
 const FT_RESP=['—','Su parte','Mi parte','Compartida','Contexto','A confirmar'];
 const FT_DEC=['Destrabar','Educar','Adaptar','Exigir su parte','Ajustar mi parte','Sostener'];
@@ -2812,32 +2866,10 @@ function ftProofSatisfied(prev,lat){
   return false;
 }
 function ftSuggest(r,weeks,nut,prev,sem){
-  var lat=ftReportForSem(weeks,sem);
-  if(prev&&ftNorm(prev.Estado)!=='resuelto'&&!ftProofSatisfied(prev,lat))return {traba:prev.Traba||'Información',responsable:prev.Responsable||'A confirmar',decision:prev.Decision||'Destrabar',palanca:prev.Palanca||'',prueba:prev.Prueba||'',motivo:'Pendiente anterior no resuelto: sigue siendo el primer eslabón roto',fromPrev:true};
-  var faltan=[];if(!String(r.Bloque||'').trim())faltan.push('rutina/bloque');if(!String(r.Objetivo||'').trim())faltan.push('objetivo');if(!String(r.FechaInicio||'').trim())faltan.push('fecha de inicio');
-  if(faltan.length)return {traba:'Información',responsable:'Mi parte',decision:'Destrabar',palanca:'Completar datos base',prueba:'Datos base completos',motivo:'Falta '+faltan.join(', ')};
-  if(!lat)return {traba:'Información',responsable:'A confirmar',decision:'Destrabar',palanca:'Completar reporte',prueba:'Próximo reporte recibido',motivo:'No hay reporte para evaluar. Confirmar primero si faltó su parte, hubo una traba de contexto o falló una herramienta de mi parte'};
-  var nutDias=lat.NutriDias!==''&&lat.NutriDias!=null?parseInt(lat.NutriDias):null;
-  if(nutDias===null)return {traba:'Información',responsable:'A confirmar',decision:'Destrabar',palanca:'Validar registro de comidas',prueba:'Registro de comidas interpretable',motivo:'Llegó el reporte, pero falta el registro nutricional que corresponde interpretar'};
-  if(nut){
-    var comp=ftNorm(nut.Comprension),via=ftNorm(nut.Viabilidad),eje=ftNorm(nut.Ejecucion);
-    if(comp&&comp.indexOf('no')===0)return {traba:'Entendimiento',responsable:'Compartida',decision:'Educar',palanca:'Explicar qué registrar',prueba:'Próximo registro hecho correctamente',motivo:'Hay evidencia de que no está comprendida la pauta o el registro'};
-    if(via&&(via.indexOf('no viable')>=0||via.indexOf('inviable')>=0))return {traba:'Logística',responsable:'Compartida',decision:'Adaptar',palanca:'Simplificar pauta semanal',prueba:'Cumple la semana adaptada',motivo:'La pauta aparece como no viable en el contexto actual'};
-    if(eje&&eje.indexOf('irregular')>=0)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Cumplir mínimo eficiente',prueba:'Completa sesiones pautadas',motivo:'Ejecución irregular: confirmar si no sabe, no puede o sabe/puede pero no hace'};
-  }
-  if(nutDias<5)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Cumplir mínimo eficiente',prueba:'Próximo registro hecho correctamente',motivo:'La ejecución nutricional fue baja; usar causa/contexto para distinguir Entendimiento, Logística o Su parte antes de cambiar la prescripción'};
-  // Información disponible no equivale a pauta cumplida. "No me medí" informa lo ocurrido,
-  // pero sigue siendo una acción esperada no realizada. Lo mismo con 0 sesiones ejecutadas.
-  var ses=parseInt(lat.SesionesEntreno||0)||0;
-  var noPeso=ftNorm(lat.MedidoPeso)==='no';
-  var noCintura=ftNorm(lat.MedidoCintura)==='no';
-  if(ses===0)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Priorizar entrenamiento pautado',prueba:'Completa sesiones pautadas',motivo:'El reporte llegó y es interpretable, pero no hubo sesiones con ejecución registrada. Confirmar por qué antes de atribuir responsabilidad o cambiar la prescripción'};
-  if(noPeso||noCintura)return {traba:'Ejecución',responsable:'A confirmar',decision:'Destrabar',palanca:'Cumplir mediciones',prueba:'Completa mediciones pautadas',motivo:'El asesorado informó que no realizó '+(noPeso&&noCintura?'peso ni cintura':(noPeso?'el peso':'la cintura'))+'. Hay información suficiente para saber qué ocurrió, pero la acción pautada no se cumplió y limita evaluar la respuesta'};
-  var vals=weeks.slice(-3).map(function(w){return parseFloat(String(w.Cintura||'').replace(',','.'));}).filter(function(v){return !isNaN(v);});
-  if(vals.length<2)return {traba:'Sin traba',responsable:'—',decision:'Sostener',palanca:'Mantener y observar tendencia',prueba:'Mantener tendencia 2 semanas',motivo:'Su parte permite evaluar, pero todavía falta tendencia suficiente para juzgar la prescripción'};
-  var obj=ftNorm(r.Objetivo),dc=vals[vals.length-1]-vals[0],fuera=false;if(obj==='deficit')fuera=dc>=0.5;else if(obj==='mantenimiento')fuera=Math.abs(dc)>=1;
-  if(fuera)return {traba:'Prescripción',responsable:'Mi parte',decision:'Ajustar mi parte',palanca:'Ajustar nutrición',prueba:'Tendencia mejora en 2–3 semanas',motivo:'Con información y ejecución suficientes, la tendencia disponible no acompaña el objetivo'};
-  return {traba:'Sin traba',responsable:'—',decision:'Sostener',palanca:'Mantener plan actual',prueba:'Revisar próxima auditoría',motivo:'No aparece un eslabón previo roto con los datos disponibles'};
+  const e=ftV6Evaluate(r,weeks,sem);const t=e.decision;
+  const kind=t==='Solicitar reporte'?'Información':t==='Aclarar registro'?'Entendimiento':t==='Corregir ejecución'?'Ejecución':t==='Ajustar plan'?'Prescripción':'Sin traba';
+  const pal=t==='Solicitar reporte'?'Completar reporte':t==='Aclarar registro'?'Validar registro de comidas':t==='Corregir ejecución'?'Cumplir mínimo eficiente':t==='Ajustar plan'?'Ajustar nutrición':'Mantener plan actual';
+  return {traba:kind,responsable:t==='Ajustar plan'?'Mi parte':t==='Mantener plan'?'—':'A confirmar',decision:t,palanca:pal,prueba:'Próximo reporte interpretable',motivo:e.reason,signal:e.signal,v6:e};
 }
 function ClosedSelect({value,onChange,options}){return h('select',{value:value,onChange:function(e){onChange(e.target.value);},style:Object.assign({},inp,{fontSize:'12px',padding:'9px 10px'})},options.map(function(o){return h('option',{key:o,value:o},o);}));}
 function SemanalV2({data,rutinas,devoluciones,nutriResumen,videos,seguimiento,onRefresh}){
@@ -2856,7 +2888,12 @@ function SemanalV2({data,rutinas,devoluciones,nutriResumen,videos,seguimiento,on
   });
   function cur(x){var k=(x.id||x.nombre)+'_'+x.sem;if(draft[k])return draft[k];if(x.saved)return {traba:x.saved.Traba||x.sug.traba,responsable:x.saved.Responsable||x.sug.responsable,decision:x.saved.Decision||x.sug.decision,palanca:x.saved.Palanca||x.sug.palanca||'',prueba:x.saved.Prueba||x.sug.prueba||'',estado:x.saved.Estado||'Abierto',nota:x.saved.NotaInterna||'',mensaje:x.saved.MensajeAsesorado||''};return {traba:x.sug.traba,responsable:x.sug.responsable,decision:x.sug.decision,palanca:x.sug.palanca||((FT_PALANCAS[x.sug.traba]||[])[0]||''),prueba:x.sug.prueba||((FT_PRUEBAS[x.sug.traba]||[])[0]||''),estado:x.sug.traba==='Sin traba'?'Resuelto':'Abierto',nota:'',mensaje:''};}
   function upd(x,k,v){var key=(x.id||x.nombre)+'_'+x.sem,n=Object.assign({},cur(x),{[k]:v});if(k==='traba'){n.palanca=(FT_PALANCAS[v]||[])[0]||'';n.prueba=(FT_PRUEBAS[v]||[])[0]||'';if(v==='Sin traba'){n.responsable='—';n.decision='Sostener';n.estado='Resuelto';}}setDraft(Object.assign({},draft,{[key]:n}));}
-  function save(x){var c=cur(x),key=x.id||x.nombre;setSaving(key);var payload={action:'intervencionV4',asesorado:x.nombre,asesoradoId:x.id,semanID:x.sem,modalidad:x.r.Nivel||'',traba:c.traba,responsable:c.responsable,decision:c.decision,palanca:c.palanca,prueba:c.prueba,estado:c.estado,evidencia:x.ev,checklist:x.check,motivo:x.sug.motivo,mensajeAsesorado:c.mensaje||'',tutorialKey:FT_TUTORIAL_BY_PALANCA[c.palanca]||'',notaInterna:c.nota||'',videoRequerido:x.videoRequired,videoCumplido:x.videoDone};fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).finally(function(){setSaving(null);setTimeout(function(){refreshDevoluciones();if(onRefresh)onRefresh();},1800);});}
+  function save(x,stateV6){var c=cur(x),key=x.id||x.nombre;setSaving(key);var payload={action:'intervencionV4',asesorado:x.nombre,asesoradoId:x.id,semanID:x.sem,modalidad:x.r.Nivel||'',traba:c.traba,responsable:c.responsable,decision:c.decision,palanca:c.palanca,prueba:c.prueba,estado:c.estado,evidencia:x.ev,checklist:x.check,motivo:x.sug.motivo,mensajeAsesorado:c.mensaje||'',tutorialKey:FT_TUTORIAL_BY_PALANCA[c.palanca]||'',notaInterna:c.nota||'',videoRequerido:x.videoRequired,videoCumplido:x.videoDone,
+    decisionCriterioVersion:FT_REPORT_CRITERION,decisionSugeridaV6:x.sug.decision,decisionFinalV6:c.decision,
+    decisionEstadoV6:stateV6||'Confirmada',decisionMotivoV6:c.nota||x.sug.motivo,decisionEvidenciaV6:(x.sug.v6&&x.sug.v6.evidence)||{},
+    reporteContratoVersion:(x.lat&&x.lat.ReportContractVersion)||'legacy',
+    proximaSemana:c.palanca||'Mantener registro y reportar la semana próxima',
+    devolucion:c.mensaje||('Decisión: '+c.decision+'. '+x.sug.motivo+'\n\n'+FT_LEGEND)};fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).finally(function(){setSaving(null);setTimeout(function(){refreshDevoluciones();if(onRefresh)onRefresh();},1800);});}
   function toggleVideoReq(x){var key=x.id||x.nombre,val=!x.videoRequired;setVideoOverride(Object.assign({},videoOverride,{[key]:val}));setVideoSaving(Object.assign({},videoSaving,{[key]:true}));fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'seguimientoV4',asesorado:x.nombre,asesoradoId:x.id,videoSemanalRequerido:val})}).finally(function(){setVideoSaving(function(old){var z=Object.assign({},old);delete z[key];return z;});});}
   var shown=clients.filter(function(x){if(filtro==='Todos')return true;if(filtro==='Sin reporte')return !x.lat&&!x.enCurso;if(filtro==='Su parte')return !x.enCurso&&cur(x).responsable==='Su parte';if(filtro==='Mi parte')return !x.enCurso&&cur(x).responsable==='Mi parte';if(filtro==='Compartida')return !x.enCurso&&cur(x).responsable==='Compartida';if(filtro==='Contexto')return !x.enCurso&&cur(x).responsable==='Contexto';if(filtro==='Sin traba')return !x.enCurso&&cur(x).traba==='Sin traba';return true;});
   var weekLabel=weekOffset===0?'Semana actual':(weekOffset===-1?'Semana anterior':Math.abs(weekOffset)+' semanas atrás');
@@ -2878,17 +2915,29 @@ function SemanalV2({data,rutinas,devoluciones,nutriResumen,videos,seguimiento,on
         x.videoRequired&&!x.videoDone&&h('div',{style:{fontSize:'10px',color:O,marginTop:'4px'}},'⚠ Video semanal pendiente · no bloquea el checkpoint')
       ),
       ab&&h('div',{style:{borderTop:'1px solid #eee',marginTop:'10px',paddingTop:'10px'}},
+        h('div',{style:{background:'#F3F4F6',borderRadius:'9px',padding:'11px',marginBottom:'10px',fontSize:'11px',lineHeight:'1.6'}},
+          h('div',{style:{fontWeight:'900',fontSize:'12px',marginBottom:'5px'}},'LECTURA AUTOMÁTICA · '+FT_REPORT_CRITERION),
+          h('div',null,'Cobertura: '+(x.sug.v6&&x.sug.v6.evidence?x.sug.v6.evidence.days+'/7 días · '+x.sug.v6.evidence.coveragePct+'% de comidas':'Sin datos')),
+          h('div',null,'Adherencia comprobada mínima: '+(x.sug.v6&&x.sug.v6.evidence&&x.sug.v6.evidence.confirmedMinimum!==null?x.sug.v6.evidence.confirmedMinimum+'%':'No evaluable')),
+          h('div',null,'Entreno: '+(x.sug.v6&&x.sug.v6.evidence?x.sug.v6.evidence.trainingDeclared+' declarado / '+x.sug.v6.evidence.trainingRecorded+' registrado / '+x.sug.v6.evidence.trainingPrescribed+' pautado':'Sin datos')),
+          x.sug.v6&&x.sug.v6.evidence&&x.sug.v6.evidence.performance&&h('div',null,'Rendimiento: '+x.sug.v6.evidence.performance.suben+' suben, '+x.sug.v6.evidence.performance.bajan+' bajan ('+x.sug.v6.evidence.performance.ejerciciosComparables+' e1RM comparables)'),
+          h('div',{style:{marginTop:'5px',fontWeight:'800'}},'Señal: '+(x.sug.signal||'Sin evaluar')),
+          h('div',{style:{fontWeight:'800'}},'Decisión sugerida: '+x.sug.decision),
+          h('div',{style:{marginTop:'7px',color:'#555'}},FT_LEGEND)
+        ),
         h('div',{style:lbl},'SU PARTE · HECHOS'),x.check.map(function(it){var ic=it.estado==='cumplido'?'✓':(it.estado==='no_correspondia'?'—':(it.estado==='incompleto'?'⚠':'✕'));return h('div',{key:it.key,style:{fontSize:'11px',padding:'4px 0',display:'flex',gap:'7px'}},h('b',{style:{width:'14px',color:it.estado==='cumplido'?G:(it.estado==='no_correspondia'?'#999':O)}},ic),h('span',null,it.label+' · '+it.detalle));}),
         ftNorm(x.r.Nivel)==='online'&&h('button',{onClick:function(){toggleVideoReq(x);},disabled:!!videoSaving[key],style:{margin:'8px 0',border:'1px solid #ddd',borderRadius:'8px',padding:'7px 9px',background:'#fff',fontSize:'10px',fontWeight:'700'}},videoSaving[key]?'Guardando…':'Video semanal: '+(x.videoRequired?'REQUERIDO':'NO REQUERIDO')),
         x.enCurso?h('div',{style:{marginTop:'9px',padding:'10px',borderRadius:'9px',background:'#f7f7f7',fontSize:'11px',color:'#666'}},'Semana en curso: no se diagnostica ni se guarda devolución hasta que exista reporte.'):
         h('div',null,
           h('div',{style:{marginTop:'8px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}},h('div',null,h('div',{style:lbl},'TRABA'),h(ClosedSelect,{value:c.traba,onChange:function(v){upd(x,'traba',v);},options:FT_TRABAS})),h('div',null,h('div',{style:lbl},'QUIÉN'),h(ClosedSelect,{value:c.responsable,onChange:function(v){upd(x,'responsable',v);},options:FT_RESP}))),
-          h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'DECISIÓN'),h(ClosedSelect,{value:c.decision,onChange:function(v){upd(x,'decision',v);},options:FT_DEC})),
+          h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'DECISIÓN'),h(ClosedSelect,{value:c.decision,onChange:function(v){upd(x,'decision',v);},options:FT_V6_DECISIONS.concat(FT_V6_DECISIONS.includes(c.decision)?[]:[c.decision])})),
           h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'PALANCA'),h(ClosedSelect,{value:c.palanca,onChange:function(v){upd(x,'palanca',v);},options:FT_PALANCAS[c.traba]||['—']})),
           h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'PRUEBA'),h(ClosedSelect,{value:c.prueba,onChange:function(v){upd(x,'prueba',v);},options:FT_PRUEBAS[c.traba]||['—']})),
           h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'MENSAJE AL ASESORADO · OPCIONAL'),h('div',{style:{fontSize:'10px',color:'#888',marginBottom:'5px'}},'Si lo dejás vacío, la app mostrará 1–2 acciones automáticas según la prioridad elegida.'),h('textarea',{defaultValue:c.mensaje||'',id:'mensaje-v4-'+key+'-'+x.sem,onBlur:function(e){upd(x,'mensaje',e.target.value);},placeholder:'Ej.: Esta semana priorizá volver a entrenar y registrar tus sesiones.',style:Object.assign({},inp,{minHeight:'54px',resize:'vertical'})})),
           h('div',{style:{marginTop:'8px'}},h('div',{style:lbl},'NOTA INTERNA · OPCIONAL'),h('textarea',{defaultValue:c.nota||'',id:'nota-v4-'+key+'-'+x.sem,onBlur:function(e){upd(x,'nota',e.target.value);},style:Object.assign({},inp,{minHeight:'54px',resize:'vertical'})})),
-          h('button',{onClick:function(){save(x);},disabled:saving===key,style:{width:'100%',marginTop:'10px',border:'none',borderRadius:'9px',padding:'11px',fontSize:'12px',fontWeight:'800',background:GRAD,color:'#fff'}},saving===key?'Guardando…':(x.saved?'Actualizar intervención + devolución':'Guardar intervención + devolución'))
+          h('button',{onClick:function(){save(x);},disabled:saving===key,style:{width:'100%',marginTop:'10px',border:'none',borderRadius:'9px',padding:'11px',fontSize:'12px',fontWeight:'800',background:GRAD,color:'#fff'}},saving===key?'Guardando…':(x.saved?'Actualizar intervención + devolución':'Confirmar intervención + devolución')),
+          h('div',{style:{fontSize:'11px',marginTop:'7px',fontWeight:'800',color:'#555'}},'Estado: '+((x.saved&&x.saved.DecisionEstadoV6)||'Pendiente')),
+          x.saved&&h('button',{onClick:function(){save(x,'Enviada');},disabled:saving===key,style:{width:'100%',marginTop:'7px',border:'1px solid #1D9E75',borderRadius:'9px',padding:'10px',fontSize:'12px',fontWeight:'800',background:'#F0FDF4',color:'#166534'}},'Marcar devolución enviada (después de enviarla)')
         )
       )
     );})
