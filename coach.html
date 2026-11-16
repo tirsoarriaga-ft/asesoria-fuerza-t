@@ -2365,6 +2365,41 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     return !!findPago(id,mes);
   };
   const getFicha=id=>masterLive.find(a=>idDe(a)===id);
+  // Cobertura inferida de cuotas Pagos (MesNumero), NO de FechaPago.
+  // El histórico V6 no guarda inicio/fin de cobertura explícitos: marcar estimación.
+  function cobertura(a){
+    const id=idDe(a), inicio=ftCobrosFecha(a.FechaInicio||a.FechaCobro);
+    if(!inicio)return {estado:'REVISAR',hasta:null,motivo:'Sin FechaInicio'};
+    const lista=pagosLive.filter(p=>norm(p.AsesoradoID)===norm(id)&&Number(p.MesNumero)>=1&&montoVal(p.Monto)>0);
+    if(!lista.length)return {estado:'NO PAGADO',hasta:null,motivo:'Sin cuotas pagadas registradas'};
+    let maxHasta=null,ultimo=null,desde=null;
+    for(const p of lista){
+      const numero=Number(p.MesNumero),mes=new Date(inicio.getFullYear(),inicio.getMonth()+numero-1,1);
+      const snap=snapshot(id,ftCobrosPeriodo(mes));
+      const base=ftCobrosFecha(a.FechaCobro)||inicio;
+      const dia=Number(snap&&snap.DiaVencimiento)||Number(a.DiaCobro)||base.getDate();
+      const d0=ftCobrosVenc(mes.getFullYear(),mes.getMonth(),dia);
+      const d1=ftCobrosVenc(mes.getFullYear(),mes.getMonth()+1,dia);
+      d1.setDate(d1.getDate()-1);
+      if(!maxHasta||d1>maxHasta){maxHasta=d1;desde=d0;ultimo=p;}
+    }
+    const dias=maxHasta?Math.floor((Date.UTC(maxHasta.getFullYear(),maxHasta.getMonth(),maxHasta.getDate())-Date.UTC(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()))/86400000)+1:0;
+    return {estado:dias>=14?'CUBRE 14 DIAS':dias>0?'REQUIERE NUEVO PAGO':'VENCIDO',hasta:maxHasta,desde,ultimo,dias,motivo:'Estimado por mes de cuota y día de vencimiento'};
+  }
+  function exportarAuditoria(){
+    const head=['AsesoradoID','Asesorado','Plan','Estado ficha','FechaInicio','DiaCobro','PrecioCuota','UltimaFechaPagoRegistrada','MesNumeroUltimo','CoberturaDesdeEstimada','CoberturaHastaEstimada','DiasRestantesEstimados','GrupoPrueba14Dias','Observacion'];
+    const cell=v=>'"'+String(v===null||v===undefined?'':v).replace(/"/g,'""')+'"';
+    const fecha=d=>d?d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'):'';
+    const rows=masterLive.filter(a=>idDe(a)&&norm(a.Estado)!=='baja').map(a=>{
+      const c=cobertura(a);
+      const grupo=c.estado==='CUBRE 14 DIAS'?'A - Cubierta':c.estado==='REVISAR'?'REVISAR':'B - Nuevo pago / completar';
+      return [idDe(a),a.Asesorado,a.Plan,a.Estado,a.FechaInicio,a.DiaCobro,a.PrecioCuota,c.ultimo&&c.ultimo.FechaPago,c.ultimo&&c.ultimo.MesNumero,fecha(c.desde),fecha(c.hasta),c.dias,grupo,c.motivo].map(cell).join(';');
+    });
+    const csv='\uFEFF'+[head.map(cell).join(';'),...rows].join('\r\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob);
+    const link=document.createElement('a');link.href=url;link.download='fuerza_t_cobros_auditoria_'+fecha(hoy)+'.csv';document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+  }
+
   function readBackend(){
     return Promise.all([
       fetch(SCRIPT_URL+'?action=ftCobrosMeses&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json()),
@@ -2436,7 +2471,7 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     if(!cobrosReady||syncError||!syncDone||mesOffset!==0){setMsg('Las ediciones de ficha sólo están disponibles en el mes actual y después de sincronizar Sheets.');return;}
     setSaving(true);setMsg('Guardando…');
     try{
-      await post({action:'ftCobrosEditarFicha',asesoradoId:id,asesorado:a.Asesorado,campos,periodoActual:ftCobrosPeriodo(hoy),aplicaMesActual:edit.desde==='actual'});
+      await post({action:'ftCobrosEditarFicha',asesoradoId:id,asesorado:a.Asesorado,campos:campo,periodoActual:ftCobrosPeriodo(hoy),aplicaMesActual:edit.desde==='actual'});
       await new Promise(r=>setTimeout(r,850));
       const check=await readBackend();const confirmado=check.ma.find(r=>idDe(r)===id);
       const ok=confirmado&&Object.keys(campo).every(k=>String(confirmado[k]||'').trim()===String(campo[k]).trim());
@@ -2476,6 +2511,11 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   const btn=(label,click,bg='#111',color='#fff',border='none')=>h('button',{onClick:click,disabled:saving||!cobrosReady||!!syncError,style:{border,borderRadius:'8px',background:bg,color,padding:'9px 12px',fontWeight:'800',fontSize:'11px',cursor:'pointer',opacity:saving?.6:1}},label);
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'12px 12px 90px'}},
     h('div',{style:{marginBottom:'12px'}},h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Cobros'),h('div',{style:{fontSize:'11px',color:'#777',marginTop:'3px'}},'Una cuota por mes · deuda previa visible hasta que se pague')),
+    h('div',{style:{marginBottom:'10px',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
+      h('button',{disabled:!cobrosReady||!!syncError||saving,onClick:exportarAuditoria,style:{border:'none',background:'#0F172A',color:'#fff',padding:'10px',borderRadius:'8px',fontWeight:'800',fontSize:'11px'}},'Exportar lista y cobertura (CSV)'),
+      h('span',{style:{fontSize:'10px',color:'#64748B'}},'Cobertura histórica estimada; verificar excepciones antes de decidir pagos')
+    ),
+
     h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',background:'#111',color:'#fff',borderRadius:'11px',padding:'9px',marginBottom:'10px'}},
       btn('‹',()=>setMesOffset(n=>n-1),'#292929'),h('div',{style:{fontWeight:'900',fontSize:'14px',textTransform:'capitalize'}},vista.toLocaleDateString('es-AR',{month:'long',year:'numeric'})),btn('›',()=>setMesOffset(n=>n+1),'#292929')),
     syncError&&h('div',{style:{background:'#FEF2F2',color:'#991B1B',padding:'10px',borderRadius:'8px',fontSize:'11px',marginBottom:'10px'}},syncError,' · Se muestran cálculos provisionales. No edités hasta actualizar el backend.'),
@@ -2489,6 +2529,8 @@ function CobrosPanel({maestra,pagos,onRefresh}){
         h('div',null,h('div',{style:{fontWeight:'900',fontSize:'14px',color:'#111'}},a.Asesorado),h('div',{style:{fontSize:'11px',color:'#666',marginTop:'4px'}},(a.Plan||'—')+' · '+moneda(d.precio)+' · día '+(d.venc?d.venc.getDate():'—'))),
         h('span',{style:{background:ci[0],color:ci[1],fontSize:'10px',fontWeight:'900',borderRadius:'20px',padding:'5px 8px',flexShrink:0}},ci[2])),
       d.n>0&&h('div',{style:{fontSize:'11px',color:'#555',marginTop:'9px'}},'Cuota '+d.n+(d.venc?' · vence '+fmt(d.venc):'')+(d.registro&&norm(d.registro.Cerrado)==='si'?' · al cierre: '+(norm(d.registro.PagoAlCierre)==='si'?'pagado':norm(d.registro.PagoAlCierre)==='no'?'pendiente':String(d.registro.PagoAlCierre||'sin dato')):'')),
+      (()=>{const c=cobertura(a);return h('div',{style:{fontSize:'10px',color:'#475569',marginTop:'5px'}},'Prueba 14 días: '+c.estado+(c.hasta?' · cobertura estimada hasta '+fmt(c.hasta):'')+(c.dias!==undefined?' · '+c.dias+' días restantes':''));})(),
+
       f.deuda&&h('div',{style:{marginTop:'7px',background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:'8px',padding:'8px',fontSize:'11px',color:'#991B1B',fontWeight:'800'}},'Adeuda '+f.deuda.periodo+' · '+moneda(f.deuda.monto)+(f.deuda.consolidado?'':' · histórico reconstruido')),
       h('div',{style:{display:'flex',gap:'6px',marginTop:'10px',flexWrap:'wrap'}},
         d.n>0&&!d.pausa&&btn(d.pagado?'✓ Pagó · desmarcar':'✓ Pagó',()=>registrarPago(a,d,d.pagado),d.pagado?'#EAF7F2':'#111',d.pagado?'#15803D':'#fff'),
@@ -2513,6 +2555,98 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     );})
   );
 }
+// ── PESTAÑA TEMPORAL PRUEBA 14 DÍAS — SOLO LECTURA, SIN ESCRITURAS ──
+// Eliminar este bloque y los dos enlaces del menú cuando termine la regularización.
+function Prueba14Panel({maestra,pagos,data}){
+ const [busqueda,setBusqueda]=useState('');
+ const [grupo,setGrupo]=useState('ambos');
+ const [livePagos,setLivePagos]=useState(pagos||[]);
+ const [liveMaestra,setLiveMaestra]=useState(maestra||[]);
+ const [refreshing,setRefreshing]=useState(false);
+ const [syncMsg,setSyncMsg]=useState('');
+ const hoy=new Date();hoy.setHours(0,0,0,0);
+ const normal=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+ const num=x=>{let s=String(x||'').replace(/[^\d,.-]/g,'');if(s.includes(',')&&s.includes('.'))s=s.replace(/\./g,'').replace(',','.');else if(/^\d{1,3}(\.\d{3})+$/.test(s))s=s.replace(/\./g,'');else s=s.replace(',','.');return Number(s)||0;};
+ const fecha=x=>{const d=ftCobrosFecha(x);return d?d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'):'';};
+ const diasHasta=d=>d?Math.floor((Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(hoy.getFullYear(),hoy.getMonth(),hoy.getDate()))/86400000)+1:0;
+ useEffect(()=>{setLivePagos(pagos||[]);},[pagos]);
+ useEffect(()=>{setLiveMaestra(maestra||[]);},[maestra]);
+ async function refrescar(){
+  setRefreshing(true);setSyncMsg('');
+  try{
+   const [rp,ra]=await Promise.all([fetch(SCRIPT_URL+'?action=pagos&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json()),fetch(SCRIPT_URL+'?action=asesorados&_t='+Date.now(),{cache:'no-store'}).then(r=>r.json())]);
+   if(!Array.isArray(rp)||!Array.isArray(ra))throw Error('No se pudo verificar pagos y asesores desde Sheets');
+   setLivePagos(rp);setLiveMaestra(ra);setSyncMsg('Datos de Pagos y Asesorados actualizados desde Sheets');
+  }catch(e){setSyncMsg('No se pudo actualizar: '+String(e.message||e));}
+  finally{setRefreshing(false);}
+ }
+ // Sin períodos contractuales explícitos: misma estimación conservadora de Cobros V2.
+ function cobertura(a){
+  const id=normal(a.AsesoradoID),ini=ftCobrosFecha(a.FechaInicio||a.FechaCobro);
+  if(!ini)return {grupo:'B',dias:null,desde:'',hasta:'',nota:'Sin FechaInicio: verificar manualmente'};
+  const pa=livePagos.filter(p=>normal(p.AsesoradoID)===id&&Number(p.MesNumero)>0&&num(p.Monto)>0);
+  if(!pa.length)return {grupo:'B',dias:0,desde:'',hasta:'',nota:'No hay pagos registrados; confirmar si fue pagado fuera del sistema'};
+  let max=null,desde=null,ultimo=null;
+  for(const p of pa){
+   const m=new Date(ini.getFullYear(),ini.getMonth()+Number(p.MesNumero)-1,1);
+   const base=ftCobrosFecha(a.FechaCobro)||ini;
+   const dia=Number(a.DiaCobro)||base.getDate();
+   const d0=ftCobrosVenc(m.getFullYear(),m.getMonth(),dia);
+   const d1=ftCobrosVenc(m.getFullYear(),m.getMonth()+1,dia);d1.setDate(d1.getDate()-1);
+   if(!max||d1>max){max=d1;desde=d0;ultimo=p;}
+  }
+  const dias=diasHasta(max);
+  return {grupo:dias>=14?'A':'B',dias,desde:fecha(desde),hasta:fecha(max),ultimo,nota:'ESTIMACIÓN: cuota mensual calendario; verificar pagos tardíos, adelantados, excepciones y pausas'};
+ }
+ function semanas(nombre){
+  const rs=data[nombre]||Object.entries(data||{}).find(([k])=>normal(k)===normal(nombre))?.[1]||[];
+  const inWeek=(r,which)=>{const etiqueta=normal(r.Semana||r.SemanaLabel||r.SemanaTexto||r._sem||'');
+   // El informe exportado tiene Semana «Sem N · 26-1 Nov» y «Sem N · 2-8 Nov».
+   const label=String(r.Semana||r.SemanaLabel||r.SemanaTexto||r.SemanaRango||r.SemanaNombre||'');
+   const text=(etiqueta+' '+normal(label));
+   if(which===1)return /26\s*[-–]\s*1\s*nov/.test(text);
+   return /2\s*[-–]\s*8\s*nov/.test(text);
+  };
+  // La app Coach recibe reportes como objetos; cuando no hay semana textual normalizada,
+  // usamos la fecha de envío SOLO para ubicar el reporte y no contar 9–15/11.
+  const parseFecha=v=>{let s=String(v||'').trim();const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);if(m)return new Date(+m[3],+m[2]-1,+m[1]);const n=s.match(/^(\d{4})-(\d{2})-(\d{2})/);return n?new Date(+n[1],+n[2]-1,+n[3]):null;};
+  const by=[[],[]];
+  for(const r of rs){
+   const str=JSON.stringify([r.Semana,r.SemanaLabel,r.SemanaTexto,r.SemanaRango,r.SemanaNombre,r.Periodo]).toLowerCase();
+   let idx=/26\s*[-–]\s*1\s*nov/.test(str)?0:/2\s*[-–]\s*8\s*nov/.test(str)?1:-1;
+   if(idx<0){let d=parseFecha(r.Fecha||r.FechaEnvio||r.Timestamp);if(d){const n=Date.UTC(d.getFullYear(),d.getMonth(),d.getDate());if(n>=Date.UTC(2026,9,26)&&n<=Date.UTC(2026,10,1))idx=0;else if(n>=Date.UTC(2026,10,2)&&n<=Date.UTC(2026,10,11))idx=1;}}
+   if(idx>=0)by[idx].push(r);
+  }
+  const has=by.map(x=>x.length>0);
+  // Nunca presentar 'apto' basándose solo en haber enviado: V6 admitía faltantes.
+  return {s1:has[0],s2:has[1],cantidad:Number(has[0])+Number(has[1]),nota:has[0]&&has[1]?'Dos reportes recibidos: revisar integridad':has[0]||has[1]?'Solo un reporte: revisar':'Sin reportes en la ventana'};
+ }
+ const renglones=liveMaestra.filter(a=>a.AsesoradoID&&normal(a.Estado)!=='baja').map(a=>({a,c:cobertura(a),s:semanas(a.Asesorado||'')}));
+ const visibles=renglones.filter(x=>(grupo==='ambos'||x.c.grupo===grupo)&&normal(x.a.Asesorado).includes(normal(busqueda)));
+ function exportar(){
+  const head=['AsesoradoID','Asesorado','Plan','Estado','FechaInicio','FechaCobro','DiaCobro','PrecioCuota','UltimaCuotaNumero','FechaPagoUltimaCuota','DesdeEstimado','HastaEstimado','DiasRestantes','GrupoPrueba','Reporte26oct_1nov','Reporte2_8nov','EstadoReportes','AdvertenciaCobertura'];
+  const cell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const lines=renglones.map(({a,c,s})=>[a.AsesoradoID,a.Asesorado,a.Plan,a.Estado,a.FechaInicio,a.FechaCobro,a.DiaCobro,a.PrecioCuota,c.ultimo?.MesNumero,c.ultimo?.FechaPago,c.desde,c.hasta,c.dias,c.grupo==='A'?'A · Incluida en mes pagado':'B · Nuevo pago / completar',s.s1?'SI':'NO',s.s2?'SI':'NO',s.nota,c.nota].map(cell).join(';'));
+  const blob=new Blob(['\uFEFF'+[head.map(cell).join(';'),...lines].join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='fuerza_t_prueba_14_dias_'+fecha(hoy)+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+ }
+ const boton=(name,onClick,selected)=>h('button',{onClick,style:{border:'1px solid #E2E8F0',borderRadius:'8px',padding:'9px',fontSize:'11px',background:selected?'#111':'white',color:selected?'#fff':'#111',cursor:'pointer',fontWeight:'700'}},name);
+ return h('div',{style:{padding:'16px 12px 24px',maxWidth:'480px',margin:'auto'}},
+  h('div',{style:{fontWeight:900,fontSize:'20px'}},'Prueba · 14 días'),
+  h('p',{style:{fontSize:'11px',color:'#64748B',lineHeight:1.5}},'Pestaña temporal de auditoría. Agrupa según cobertura ESTIMADA desde Pagos; no cobra, no cambia estados ni modifica reportes. Fecha de corte: hoy. Ventana de reportes: 26/10–08/11/2026; 09–15/11 excluida.'),
+  h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},boton('Todos ('+renglones.length+')',()=>setGrupo('ambos'),grupo==='ambos'),boton('A · Ya cubiertos ('+renglones.filter(x=>x.c.grupo==='A').length+')',()=>setGrupo('A'),grupo==='A'),boton('B · Requiere pago ('+renglones.filter(x=>x.c.grupo==='B').length+')',()=>setGrupo('B'),grupo==='B')),
+  h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},h('button',{onClick:refrescar,disabled:refreshing,style:{padding:'9px',background:'#334155',color:'white',border:0,borderRadius:'7px',cursor:'pointer'}},refreshing?'Actualizando…':'Actualizar Sheets'),h('button',{onClick:exportar,style:{padding:'9px',background:'#0F172A',color:'white',border:0,borderRadius:'7px',cursor:'pointer'}},'Exportar CSV')),
+  syncMsg&&h('div',{style:{fontSize:'11px',marginBottom:'8px'}},syncMsg),
+  h('input',{value:busqueda,onChange:e=>setBusqueda(e.target.value),placeholder:'Buscar asesorado',style:{boxSizing:'border-box',width:'100%',border:'1px solid #DDD',padding:'10px',borderRadius:'8px',marginBottom:'12px'}}),
+  visibles.map(({a,c,s})=>h('div',{key:a.AsesoradoID,style:{border:'1px solid #e2e8f0',borderRadius:'10px',padding:'12px',marginBottom:'8px'}},
+   h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},h('b',{style:{fontSize:'13px'}},a.Asesorado),h('b',{style:{fontSize:'11px',color:c.grupo==='A'?'#047857':'#B45309'}},c.grupo==='A'?'A · Incluida':'B · Nuevo pago')),
+   h('div',{style:{fontSize:'11px',color:'#475569',marginTop:'5px'}},'Plan: '+(a.Plan||'—')+' · Última cobertura estimada: '+(c.hasta||'sin datos')+' · Días: '+(c.dias===null?'?':c.dias)),
+   h('div',{style:{fontSize:'11px',color:'#475569',marginTop:'5px'}},'Reportes 26/10–01/11: '+(s.s1?'Sí':'No')+' · 02/11–08/11: '+(s.s2?'Sí':'No')),
+   h('div',{style:{fontSize:'10px',color:'#64748B',marginTop:'5px'}},s.nota+' · '+c.nota)
+  )),
+  !visibles.length&&h('div',{style:{color:'#64748B',padding:'16px'}},'Sin asesorados en este grupo.')
+ );
+}
+
 function ftCobrosPeriodo(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function ftCobrosFecha(v){
   if(v instanceof Date)return isNaN(v.getTime())?null:new Date(v.getFullYear(),v.getMonth(),v.getDate());
@@ -3158,10 +3292,11 @@ function App(){
       appTab==='semv2'&&h(SemanalV2,{data:data,rutinas:rutinas,devoluciones:devoluciones,nutriResumen:nutriResumen,videos:videos,seguimiento:seguimiento,onRefresh:loadData}),
       appTab==='mensualv2'&&h(MensualV2,{maestra:maestra,data:data,rutinas:rutinas,decisiones:decisiones,videos:videos}),
       appTab==='vids'&&h(VideosGlobal,{onSelect:setSelected}),
-      appTab==='cobros'&&h(CobrosPanel,{maestra,pagos,onRefresh:loadData})
+      appTab==='cobros'&&h(CobrosPanel,{maestra,pagos,onRefresh:loadData}),
+      appTab==='prueba'&&h(Prueba14Panel,{maestra,pagos,data})
     ),
     h('div',{style:{position:'fixed',bottom:0,left:'50%',transform:'translateX(-50%)',width:'100%',maxWidth:'480px',background:'#fff',borderTop:'1px solid rgba(0,0,0,0.08)',display:'flex',zIndex:20}},
-      [{v:'lista',l:'Personalizados',ic:'👥'},{v:'semv2',l:'Semanal',ic:'✓'},{v:'mensualv2',l:'Mensual',ic:'📆'},{v:'vids',l:'Videos',ic:'🎬'},{v:'cobros',l:'Cobros',ic:'💰'}].map(t=>
+      [{v:'lista',l:'Personalizados',ic:'👥'},{v:'semv2',l:'Semanal',ic:'✓'},{v:'mensualv2',l:'Mensual',ic:'📆'},{v:'vids',l:'Videos',ic:'🎬'},{v:'cobros',l:'Cobros',ic:'💰'},{v:'prueba',l:'Prueba',ic:'🧪'}].map(t=>
         h('button',{key:t.v,onClick:()=>setAppTab(t.v),style:{flex:1,padding:'10px 2px 14px',fontSize:'10px',background:'none',border:'none',borderTop:appTab===t.v?'2px solid #111':'2px solid transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',color:appTab===t.v?'#111':'#999',fontWeight:appTab===t.v?'700':'400'}},h('span',{style:{fontSize:'18px'}},t.ic),t.l)
       )
     )
