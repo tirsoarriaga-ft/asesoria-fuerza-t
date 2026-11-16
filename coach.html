@@ -169,8 +169,8 @@ function getAlerts(weeks,objetivo){
   const tox=parseInt(lat.Toxicos||lat.Tóxicos||0)||0;
 
   // Compliance
-  if(compPct<60)A.push({lvl:'red',txt:'Adherencia baja — ajustar plan no tiene sentido todavía'});
-  else if(compPct<80)A.push({lvl:'yellow',txt:'Adherencia media — revisar barreras antes de cambiar variables'});
+  if(Number.isFinite(compPct)&&compPct<60)A.push({lvl:'red',txt:'Adherencia baja — ajustar plan no tiene sentido todavía'});
+  else if(Number.isFinite(compPct)&&compPct<80)A.push({lvl:'yellow',txt:'Adherencia media — revisar barreras antes de cambiar variables'});
 
   // Sensaciones
   if(estres==='Estrés alto'&&energia==='Baja toda la semana')
@@ -2436,6 +2436,7 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     if(n<1)return {n:0,pagado:false,estado:'futuro',venc:null,precio:0,registro};
     const estadoFicha=norm(registro?.Estado||a.Estado||'Activo');
     const pausa=estadoFicha==='pausado';
+    const baja=estadoFicha==='baja';
     const base=ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio);
     const dias=registro&&registro.DiaVencimiento?Number(registro.DiaVencimiento):(Number(a.DiaCobro)||base?.getDate());
     const venc=dias?ftCobrosVenc(v.getFullYear(),v.getMonth(),dias):null;
@@ -2444,17 +2445,17 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     const pagado=pagoExiste(id,n);
     const limite=mesOffset<0?new Date(v.getFullYear(),v.getMonth()+1,0):mesOffset===0?hoy:new Date(v.getFullYear(),v.getMonth(),1);
     const dif=venc?Math.round((Date.UTC(limite.getFullYear(),limite.getMonth(),limite.getDate())-Date.UTC(venc.getFullYear(),venc.getMonth(),venc.getDate()))/86400000):null;
-    const estado=pausa?'pausado':pagado?'pagado':!venc?'sinfecha':dif>0?'moroso':dif===0?'hoy':'pendiente';
-    return {n,pagado,estado,venc,precio:pr,registro,pausa};
+    const estado=baja?'baja':pausa?'pausado':pagado?'pagado':!venc?'sinfecha':dif>0?'moroso':dif===0?'hoy':'pendiente';
+    return {n,pagado,estado,venc,precio:pr,registro,pausa,baja};
   }
   function deudaAnterior(a){
     const mesPrev=new Date(vista.getFullYear(),vista.getMonth()-1,1);
     const prev=detalleMes(a,mesPrev);
-    if(prev.n<1||prev.pausa||prev.pagado)return null;
+    if(prev.n<1||prev.pausa||prev.baja||prev.pagado)return null;
     // Fecha de inicio, fecha de cobro y el MesNumero identifican una cuota; no usar fecha de pago para calcular el ciclo.
     return {periodo:ftCobrosPeriodo(mesPrev),mes:prev.n,monto:prev.precio,consolidado:!!prev.registro};
   }
-  function fichaAbrir(a){setFicha(idDe(a));setEdit({monto:String(a.PrecioCuota||''),fecha:String(Number(a.DiaCobro)||(ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio))?.getDate()||''),estado:norm(a.Estado)==='pausado'?'Pausado':'Activo',desde:'siguiente'});setMsg('');}
+  function fichaAbrir(a){setFicha(idDe(a));setEdit({monto:String(a.PrecioCuota||''),fecha:String(Number(a.DiaCobro)||(ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio))?.getDate()||''),estado:norm(a.Estado)==='pausado'?'Pausado':norm(a.Estado)==='baja'?'Baja':'Activo',plan:norm(a.Plan)==='basico'?'basico':norm(a.Plan)==='presencial'?'presencial':'online',desde:'actual'});setMsg('');}
   async function saveFicha(a,mode){
     const id=idDe(a),campo={};
     if(mode==='monto'){
@@ -2467,8 +2468,11 @@ function CobrosPanel({maestra,pagos,onRefresh}){
       campo.FechaCobro=y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(d,new Date(y,m,0).getDate())).padStart(2,'0');
       campo.DiaCobro=d;
     }else if(mode==='estado')campo.Estado=edit.estado;
+    else if(mode==='plan')campo.Plan=edit.plan;
     if(!Object.keys(campo).length)return;
-    if(!cobrosReady||syncError||!syncDone||mesOffset!==0){setMsg('Las ediciones de ficha sólo están disponibles en el mes actual y después de sincronizar Sheets.');return;}
+    if(mode==='estado'&&edit.estado==='Baja'&&!window.confirm('Dar de BAJA a '+a.Asesorado+'? Se excluye de listados activos, pero NO se borran sus pagos ni reportes.'))return;
+    if(mode==='plan'&&!window.confirm('Cambiar a '+a.Asesorado+' al plan '+edit.plan+'? Se conservará todo el historial.'))return;
+    if(!cobrosReady||syncError||mesOffset!==0){setMsg('Las ediciones sólo están disponibles en el mes actual con conexión a Sheets.');return;}
     setSaving(true);setMsg('Guardando…');
     try{
       await post({action:'ftCobrosEditarFicha',asesoradoId:id,asesorado:a.Asesorado,campos:campo,periodoActual:ftCobrosPeriodo(hoy),aplicaMesActual:edit.desde==='actual'});
@@ -2497,7 +2501,7 @@ function CobrosPanel({maestra,pagos,onRefresh}){
       setMsg(desmarcar?'Pago desmarcado ✓':'Pago confirmado ✓');
     }catch(e){setMsg(String(e.message||e));}finally{setSaving(false);}
   }
-  const activos=masterLive.filter(a=>norm(a.Estado)!=='baja'&&idDe(a)&&String(a.Asesorado||'').trim());
+  const activos=masterLive.filter(a=>idDe(a)&&String(a.Asesorado||'').trim());
   const filas=activos.map(a=>{const d=detalleMes(a,vista);const deuda=deudaAnterior(a);return {a,d,deuda};}).sort((x,y)=>String(x.a.Asesorado).localeCompare(String(y.a.Asesorado),'es'));
   const morosos=filas.filter(f=>f.d.estado==='moroso');
   const venceHoy=filas.filter(f=>f.d.estado==='hoy');
@@ -2506,8 +2510,8 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   const vis=filas.filter(f=>(subTab==='todos'||subTab==='moroso'&&f.d.estado==='moroso'||subTab==='hoy'&&f.d.estado==='hoy'||subTab==='pagado'&&f.d.pagado||subTab==='deuda'&&f.deuda)&&(!busqueda.trim()||norm(f.a.Asesorado).includes(norm(busqueda))));
   const tabs=[['todos','Todos',filas.length],['moroso','Morosos',morosos.length],['hoy','Vence hoy',venceHoy.length],['deuda','Deuda anterior',deudaPrev.length],['pagado','Pagados',pagados.length]];
   const totalCobrado=filas.reduce((v,f)=>v+(f.d.pagado?montoVal(findPago(idDe(f.a),f.d.n)?.Monto||f.d.precio):0),0);
-  const totalPendiente=filas.reduce((v,f)=>v+(!f.d.pagado&&!f.d.pausa&&f.d.n>0?f.d.precio:0),0);
-  const colores={moroso:['#FEF2F2','#B91C1C','Moroso'],hoy:['#FFFBEB','#B45309','Vence hoy'],pendiente:['#F1F5F9','#475569','Pendiente'],pagado:['#F0FDF4','#15803D','Pagado'],pausado:['#F3F4F6','#64748B','Pausado'],futuro:['#F1F5F9','#64748B','Aún no comenzó'],sinfecha:['#FEF2F2','#B91C1C','Sin fecha']};
+  const totalPendiente=filas.reduce((v,f)=>v+(!f.d.pagado&&!f.d.pausa&&!f.d.baja&&f.d.n>0?f.d.precio:0),0);
+  const colores={moroso:['#FEF2F2','#B91C1C','Moroso'],hoy:['#FFFBEB','#B45309','Vence hoy'],pendiente:['#F1F5F9','#475569','Pendiente'],pagado:['#F0FDF4','#15803D','Pagado'],pausado:['#F3F4F6','#64748B','Pausado'],baja:['#F3F4F6','#6B7280','Baja'],futuro:['#F1F5F9','#64748B','Aún no comenzó'],sinfecha:['#FEF2F2','#B91C1C','Sin fecha']};
   const btn=(label,click,bg='#111',color='#fff',border='none')=>h('button',{onClick:click,disabled:saving||!cobrosReady||!!syncError,style:{border,borderRadius:'8px',background:bg,color,padding:'9px 12px',fontWeight:'800',fontSize:'11px',cursor:'pointer',opacity:saving?.6:1}},label);
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'12px 12px 90px'}},
     h('div',{style:{marginBottom:'12px'}},h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Cobros'),h('div',{style:{fontSize:'11px',color:'#777',marginTop:'3px'}},'Una cuota por mes · deuda previa visible hasta que se pague')),
@@ -2542,7 +2546,8 @@ function CobrosPanel({maestra,pagos,onRefresh}){
         h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto',gap:'7px',alignItems:'center',marginBottom:'10px'}},
           h('input',{type:'text',inputMode:'decimal',value:edit.monto,onChange:e=>setEdit(s=>({...s,monto:e.target.value})),style:inp,placeholder:'Monto de cuota'}),btn('Guardar monto',()=>saveFicha(a,'monto')),
           h('input',{type:'number',min:1,max:31,value:edit.fecha,onChange:e=>setEdit(s=>({...s,fecha:e.target.value})),style:inp,placeholder:'Día de vencimiento'}),btn('Guardar fecha',()=>saveFicha(a,'fecha')),
-          h('select',{value:edit.estado,onChange:e=>setEdit(s=>({...s,estado:e.target.value})),style:inp},['Activo','Pausado'].map(x=>h('option',{key:x,value:x},x))),btn('Guardar estado',()=>saveFicha(a,'estado'))
+          h('select',{value:edit.estado,onChange:e=>setEdit(s=>({...s,estado:e.target.value})),style:inp},['Activo','Pausado','Baja'].map(x=>h('option',{key:x,value:x},x))),btn('Guardar estado',()=>saveFicha(a,'estado')),
+          h('select',{value:edit.plan,onChange:e=>setEdit(s=>({...s,plan:e.target.value})),style:inp},[['online','Personalizada online'],['presencial','Personalizada presencial'],['basico','Plan básico']].map(x=>h('option',{key:x[0],value:x[0]},x[1]))),btn('Guardar plan',()=>saveFicha(a,'plan'))
         ),
         h('div',{style:{display:'flex',gap:'8px',alignItems:'center',marginBottom:'12px',fontSize:'11px',color:'#475569'}},
           h('span',{style:{fontWeight:'700'}},'Cambios desde:'),
@@ -2927,6 +2932,20 @@ const FT_REPORT_CRITERION='FT-DECISIONES-1.0.0';
 const FT_LEGEND='Esta devolución se basa en la información que registraste y enviaste esta semana. Si hiciste algo diferente de lo reportado, avisame para corregir la lectura. Lo que no se registra no puede evaluarse.';
 function ftV6Json(v,fb){if(Array.isArray(v)||v&&typeof v==='object')return v;try{return JSON.parse(String(v||''))}catch(e){return fb;}}
 function ftV6Meal(v){const z=String(v||'').trim().toLowerCase();return ({ok:'literal',literal:'literal',equiv:'equivalent_declared',equivalent_declared:'equivalent_declared',other:'different_unverified',different_unverified:'different_unverified',qty:'quantity_changed',quantity_changed:'quantity_changed',skip:'skipped',skipped:'skipped'})[z]||'unknown';}
+function ftV7DailyMeasures(row){
+ const parse=v=>{const n=Number(String(v??'').replace(',','.'));return Number.isFinite(n)&&n>0?n:null;};
+ const v6=ftV6Json(row?.DailyV6,[]),v5=ftV6Json(row?.DailyV5,[]);
+ const days=Array.isArray(v6)&&v6.length?v6:(Array.isArray(v5)?v5:[]);
+ const agg=key=>{const a=days.map(d=>parse(d?.[key])).filter(x=>x!==null);return {n:a.length,prom:a.length?a.reduce((x,y)=>x+y,0)/a.length:null};};
+ return {peso:agg('weight'),cintura:agg('waist')};
+}
+function ftV7AugmentMeasures(row){
+ const m=ftV7DailyMeasures(row),out={...row};
+ if(m.peso.n)out.Peso=m.peso.prom;
+ if(m.cintura.n)out.Cintura=m.cintura.prom;
+ out.FTPesoMediciones=m.peso.n;out.FTCinturaMediciones=m.cintura.n;
+ return out;
+}
 function ftV6ReadReport(row){
  const v6=ftV6Json(row&&row.DailyV6,[]),old=ftV6Json(row&&row.DailyV5,[]),raw=Array.isArray(v6)&&v6.length?v6:(Array.isArray(old)?old:[]);
  const days=Array.from({length:7},(_,i)=>{const d=raw[i]||{};const a=Array.isArray(d.meals)?d.meals:[];const proof=Array.isArray(d.mealProof)?d.mealProof:[];const detail=Array.isArray(d.mealDetail)?d.mealDetail:[];return {...d,meals:a.map(ftV6Meal),mealProof:proof,mealDetail:detail};});
@@ -3199,6 +3218,7 @@ function App(){
         ContextoVida:row.ContextoVida!==undefined?row.ContextoVida:row['Contexto semanal']
       });});
       const grouped={};
+      reportes=(reportes||[]).map(ftV7AugmentMeasures);
       (reportes||[]).forEach(row=>{const name=String(row.Asesorado||'').trim();if(!name)return;if(!grouped[name])grouped[name]=[];grouped[name].push(row);});
       // Ordenar por NÚMERO de semana (no texto: "sem_10" > "sem_9"). Los sin SemanID van primero (más viejos).
       const semNumReport=s=>{var m=String(s||'').match(/sem_(\d+)/);return m?parseInt(m[1]):-1;};
