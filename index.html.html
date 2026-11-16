@@ -148,7 +148,7 @@ function FtMedTimeline({points,kind='p',dark=false}){
  );
 }
 
-const FT_BUILD='FuerzaT-Personalizada-V6-HISTORIAL-COMPLETO-2026-11-09';
+const FT_BUILD='FuerzaT-Personalizada-V6.1-RETEST-REVISION-2026-11-12';
 // FUERZA T V6 — intérprete de reportes compatible con DailyV5 y datos históricos.
 // Nunca atribuye equivalencia comprobada ni incumplimiento a respuestas vacías.
 const FT_REPORT_CRITERION='FT-DECISIONES-1.0.0';
@@ -299,7 +299,7 @@ function migrateHab(h){
   });
 }
 const iHiit=()=>({regs:{},hiitKg:{}});// regs: {A:{cumple:'',exig:'',fatiga:'',dolor:'',nota:''}, B:...}, hiitKg: {A:{detalle:'',ritmo:''}}
-const iH=()=>({sleep:Array(7).fill(false),toxics:Array(7).fill(false),actExtra:Array(7).fill(false),meds:[{p:'',c:''},{p:'',c:''},{p:'',c:''}],noMediPeso:false,noMediCintura:false,aguaDias7:null,sleepDias7:null,neatDias7:null,toxicosDias7:null,entrenoEstado:'',entrenoNota:'',nutriSem:{dias:null,causa:'',cantidad:'',causaCantidad:''},sens:{energia:'',hambre:'',digestion:'',estres:'',nota:'',dolor:'',dolorZona:'',dolorIntensidad:'',contextoVida:''},dailyV5:Array.from({length:7},()=>({meals:['','','',''],mealDetail:['','','',''],mealProof:['','','',''],mealKcal:['','','',''],mealProtein:['','','',''],training:'',performance:'',trainingReason:'',steps:'',water:'',weight:'',waist:'',hunger:'',energy:'',sleepHours:'',closed:false})),weekClose:{represents:'',note:'',trainingGapReason:''}});
+const iH=()=>({sleep:Array(7).fill(false),toxics:Array(7).fill(false),actExtra:Array(7).fill(false),meds:[{p:'',c:''},{p:'',c:''},{p:'',c:''}],noMediPeso:false,noMediCintura:false,aguaDias7:null,sleepDias7:null,neatDias7:null,toxicosDias7:null,entrenoEstado:'',entrenoNota:'',nutriSem:{dias:null,causa:'',cantidad:'',causaCantidad:''},sens:{energia:'',hambre:'',digestion:'',estres:'',nota:'',dolor:'',dolorZona:'',dolorIntensidad:'',contextoVida:''},dailyV5:Array.from({length:7},()=>({meals:['','','',''],mealDetail:['','','',''],mealProof:['','','',''],mealKcal:['','','',''],mealProtein:['','','',''],training:'',performance:'',trainingReason:'',steps:'',stepsStatus:'',water:'',waterStatus:'',weight:'',weightStatus:'',waist:'',waistStatus:'',hunger:'',energy:'',sleepHours:'',sleepStatus:'',closed:false})),weekClose:{represents:'',note:'',trainingGapReason:''}});
 function getWk(off=0){
   const now=new Date();now.setDate(now.getDate()+off*7);
   const d=now.getDay(),diff=d===0?-6:1-d;
@@ -1926,7 +1926,7 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                 }
                 if(esRetestFuerza){
                   const ini=initial||null;
-                  const retestKg=ini&&parseFloat(ini.kg)>0?parseFloat(ini.kg):0;
+                  const retestKg=parseFloat(t.kg)>0?parseFloat(t.kg):(ini&&parseFloat(ini.kg)>0?parseFloat(ini.kg):0);
                   const ap1=retestKg>0?Math.round(retestKg*0.5*10)/10:0;
                   const ap2=retestKg>0?Math.round(retestKg*0.75*10)/10:0;
                   const retestReps=parseInt(t.reps)||0;
@@ -1938,13 +1938,13 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                     ),
                     h('div',{style:{marginBottom:'10px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
                       h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'RETEST · Cierre de Fuerza'),
-                      ini&&h('div',{style:{fontSize:'11px',color:'#6B21A8',lineHeight:'1.55',margin:'5px 0 8px'}},'Hacé primero las aproximaciones indicadas. Después usá el mismo peso real del test inicial: '+retestKg+' kg e intentá superar las reps manteniendo la técnica. Referencia S1: '+ini.reps+' reps · e1RM '+ini.e1rm+' kg.'),
+                      ini&&h('div',{style:{fontSize:'11px',color:'#6B21A8',lineHeight:'1.55',margin:'5px 0 8px'}},'Hacé primero las aproximaciones indicadas. El peso sugerido es '+ini.kg+' kg (test inicial), pero podés ajustarlo. El resultado se compara por e1RM. Referencia S1: '+ini.reps+' reps · e1RM '+ini.e1rm+' kg.'),
                       !ini&&h('div',{style:{fontSize:'11px',color:'#B42318',margin:'5px 0 8px',fontWeight:'700'}},'No encuentro kg/reps del test inicial. No inventar referencia: revisá S1.'),
                       ini&&h('div',{style:{display:'flex',gap:'8px',alignItems:'stretch'}},
-                        h('div',{style:{...inp,textAlign:'center',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'900',background:'#F8FAFC'}},retestKg+' kg'),
-                        h('input',{type:'text',inputMode:'numeric',placeholder:'Anotá las reps',value:t.reps||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:String(retestKg),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
+                        h('input',{type:'text',inputMode:'decimal',placeholder:'kg del retest',value:t.kg!==undefined?t.kg:String(ini.kg),onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:e.target.value}})),style:{...inp,textAlign:'center'}}),
+                        h('input',{type:'text',inputMode:'numeric',placeholder:'Anotá las reps',value:t.reps||'',onChange:e=>setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),reps:e.target.value}})),style:{...inp,textAlign:'center'}})
                       ),
-                      ini&&retestReps>0&&h('button',{onClick:()=>{setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:String(retestKg),reps:String(retestReps)}}));setRmRefFinal(ex,retestE1rm);setSaved(false);},style:{marginTop:'8px',width:'100%',background:'#7E22CE',color:'#fff',border:'none',borderRadius:'8px',padding:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},(finalRef?'Actualizar':'Guardar')+' retest · e1RM '+retestE1rm+' kg'),
+                      ini&&retestKg>0&&retestReps>0&&h('button',{onClick:()=>{setRmTest(q=>({...q,[ex.id]:{...(q[ex.id]||{}),kg:String(retestKg),reps:String(retestReps)}}));setRmRefFinal(ex,retestE1rm);setSaved(false);},style:{marginTop:'8px',width:'100%',background:'#7E22CE',color:'#fff',border:'none',borderRadius:'8px',padding:'8px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},(finalRef?'Actualizar':'Guardar')+' retest · e1RM '+retestE1rm+' kg'),
                       ref>0&&h('div',{style:{marginTop:'8px',fontSize:'11px',color:'#6B21A8',fontWeight:'700'}},'e1RM inicial: '+ref+' kg'+(finalRef>0?' · e1RM final: '+finalRef+' kg · Cambio: '+(finalRef-ref>=0?'+':'')+(finalRef-ref)+' kg':''))
                     )
                   );
@@ -2368,6 +2368,26 @@ var AGUA_STATES=[
   {v:'ins',ic:'○',color:'#EF4444'},
 ];
 var DS6=['L','M','X','J','V','S'];
+function ftV7ReportMissing(hab,cfg,mealCount){
+ const days=Array.isArray(hab?.dailyV5)?hab.dailyV5:[];const missing=[];
+ const num=v=>{const x=Number(String(v??'').trim().replace(',','.'));return Number.isFinite(x)&&x>0;};
+ for(let i=0;i<7;i++){
+  const d=days[i]||{},m=(d.meals||[]).slice(0,mealCount),p='Día '+(i+1)+': ';
+  if(m.length!==mealCount||m.some(x=>!x))missing.push(p+'comidas');
+  m.forEach((x,j)=>{if(['other','qty','equiv'].includes(x)&&!String((d.mealDetail||[])[j]||'').trim())missing.push(p+'detalle de comida '+(j+1));});
+  if(!d.training)missing.push(p+'entrenamiento');
+  if(d.training==='done'&&!d.performance)missing.push(p+'rendimiento');
+  for(const [key,label] of [['water','agua'],['sleepHours','sueño'],['steps','pasos'],['weight','peso'],['waist','cintura']]){
+   if(!num(d[key])&&!['no_medi','no_registre'].includes(String(d[key+'Status']||'')))missing.push(p+label);
+  }
+  if(!d.hunger)missing.push(p+'hambre');if(!d.energy)missing.push(p+'energía');
+ }
+ const wc=hab?.weekClose||{};if(!wc.represents)missing.push('Cierre: representa semana');
+ if(wc.represents==='no'&&!String(wc.note||'').trim())missing.push('Cierre: aclaración');
+ const count=Math.max(0,Number(cfg?.num)||0);
+ for(const s of ['A','B','C','D','E'].slice(0,count))if(!wc.sessionStatus?.[s])missing.push('Sesión '+s+' realizada/no realizada');
+ return missing;
+}
 function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}){
   const DAYS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
   const mealUser=localStorage.getItem(USER_KEY)||'';
@@ -2384,6 +2404,14 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
   const chips=(items,value,onChange)=>h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'7px'}},items.map(it=>{const v=Array.isArray(it)?it[0]:it,l=Array.isArray(it)?it[1]:it,sel=value===v;return h('button',{key:v,type:'button',onClick:()=>onChange(sel?'':v),style:{padding:'7px 10px',borderRadius:'18px',border:'1px solid '+(sel?AC:'rgba(0,0,0,.12)'),background:sel?AC:'#fff',color:sel?'#fff':'#555',fontSize:'11px',fontWeight:'800',cursor:'pointer'}},l);}));
   const cleanNum=v=>String(v??'').replace(',','.').replace(/[^0-9.]/g,'').replace(/(\..*)\./g,'$1');
   const numInput=(value,onChange,placeholder)=>h('input',{type:'text',inputMode:'decimal',value:value??'',placeholder,onChange:e=>onChange(cleanNum(e.target.value)),style:{...inp,marginTop:'6px'}});
+  const measure=(d,i,label,key,unit,notValue,placeholder)=>h('div',null,
+    h('div',{style:{fontSize:'11px',fontWeight:'800'}},label),
+    numInput(d[key],v=>setDay(i,{[key]:v,[key+'Status']:v?'valor':'',closed:false}),placeholder),
+    chips([[notValue,notValue==='no_medi'?'No me medí':'No lo registré']],d[key+'Status']===notValue?notValue:'',v=>setDay(i,{[key+'Status']:v,[key]:v?'':d[key],closed:false}))
+  );
+  const positive=v=>{const n=normNum(v);return Number.isFinite(n)&&n>0;};
+  const filled=(d,key)=>positive(d[key])||d[key+'Status']==='no_medi'||d[key+'Status']==='no_registre';
+  const weekMissing=()=>{const missing=[];daily.forEach((d,i)=>{const m=requiredMissing(d);if(m.length)missing.push(DAYS[i]+': '+m.join(', '));});if(!close.represents)missing.push('Confirmar cierre semanal');if(close.represents==='no'&&!String(close.note||'').trim())missing.push('Aclaración del cierre semanal');if(prescribedSessions>0){const statuses=close.sessionStatus||{};for(const s of ['A','B','C','D','E'].slice(0,prescribedSessions)){if(!statuses[s])missing.push('Sesión '+s+': realizada/no realizada');}}return missing;};
   const avg=(key)=>{const v=daily.map(d=>normNum(d[key])).filter(x=>isFinite(x)&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const weights=daily.map(d=>normNum(d.weight)).filter(x=>isFinite(x)&&x>0),waists=daily.map(d=>normNum(d.waist)).filter(x=>isFinite(x)&&x>0);
   const mealAnswered=daily.reduce((n,d)=>n+(d.meals||[]).filter(Boolean).length,0),mealOk=daily.reduce((n,d)=>n+(d.meals||[]).filter(x=>x==='ok').length,0);
@@ -2393,17 +2421,28 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
   const trainDone=daily.filter(d=>d.training==='done').length;
   const trainGap=Math.max(0,prescribedSessions-trainDone);
   const waterAvg=avg('water'),sleepAvg=avg('sleepHours'),stepsAvg=avg('steps');
-  const requiredMissing=d=>{const miss=[];if((d.meals||[]).slice(0,mealCount).filter(Boolean).length<mealCount)miss.push(mealCount+' comidas');if(!d.training)miss.push('entrenamiento');if(!normNum(d.water))miss.push('agua');if(!normNum(d.sleepHours))miss.push('sueño');if(!d.hunger)miss.push('hambre');if(!d.energy)miss.push('energía');if(d.training==='done'&&!d.performance)miss.push('rendimiento');return miss;};
+  const requiredMissing=d=>{const miss=[];
+    const meals=(d.meals||[]).slice(0,mealCount);
+    if(meals.filter(Boolean).length<mealCount)miss.push('todas las comidas');
+    meals.forEach((m,j)=>{if(['other','qty','equiv'].includes(m)&&!String((d.mealDetail||[])[j]||'').trim())miss.push(MEALS[j]+': explicar qué comiste');});
+    if(!d.training)miss.push('entrené/no entrené');
+    if(d.training==='done'&&!d.performance)miss.push('rendimiento');
+    if(!filled(d,'water'))miss.push('agua: litros o no registrado');
+    if(!filled(d,'sleepHours'))miss.push('sueño: horas o no registrado');
+    if(!filled(d,'steps'))miss.push('pasos: valor o no registrados');
+    if(!filled(d,'weight'))miss.push('peso: valor o no me medí');
+    if(!filled(d,'waist'))miss.push('cintura: valor o no me medí');
+    if(!d.hunger)miss.push('hambre');if(!d.energy)miss.push('energía');return miss;};
   const closeDay=i=>{const d=daily[i]||emptyDay();const miss=requiredMissing(d);if(miss.length){setDayErrors(Object.assign({},dayErrors,{[i]:'Falta registrar: '+miss.join(', ')}));setOpen(Object.assign({},open,{[i]:true}));return;}const ne=Object.assign({},dayErrors);delete ne[i];setDayErrors(ne);setDay(i,{closed:true});setOpen(Object.assign({},open,{[i]:false}));};
   const reopenDay=i=>{setDay(i,{closed:false});setOpen(Object.assign({},open,{[i]:true}));};
   return h('div',null,
-    h('div',{style:{...card,background:'#F8FAFC'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Registro diario'),h('div',{style:{fontSize:'11px',color:'#667085',marginTop:'4px',lineHeight:'1.5'}},'Podés enviar con 1 a 7 días registrados. Los días incompletos conservan sus datos y se identifican como parciales. Una sustitución declarada no es equivalencia validada automáticamente.')),
+    h('div',{style:{...card,background:'#F8FAFC'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Registro diario'),h('div',{style:{fontSize:'11px',color:'#667085',marginTop:'4px',lineHeight:'1.5'}},'Para enviar, respondé los siete días. Una pauta no cumplida también se registra: elegí No, No me medí o No lo registré. Ninguna respuesta debe quedar vacía.')),
     DAYS.map((name,i)=>{const d=daily[i]||emptyDay();const answered=(d.meals||[]).filter(Boolean).length+(d.training?1:0)+(d.water?1:0)+(d.sleepHours?1:0)+(d.hunger?1:0)+(d.energy?1:0);return h('div',{key:name,style:{...card,padding:'0',overflow:'hidden'}},
       h('button',{type:'button',onClick:()=>setOpen(Object.assign({},open,{[i]:!open[i]})),style:{width:'100%',padding:'14px',border:'none',background:'#fff',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}},h('div',{style:{textAlign:'left'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},name),h('div',{style:{fontSize:'10px',color:d.closed?G:(answered?'#D97706':'#999'),marginTop:'2px'}},d.closed?'✓ Día registrado':(answered?'En progreso':'Pendiente'))),h('div',{style:{fontSize:'18px',color:'#999'}},open[i]?'⌃':'⌄')),
       open[i]&&h('div',{style:{padding:'0 14px 14px',borderTop:'1px solid #eee'}},
         d.closed&&h('div',{style:{fontSize:'10px',color:G,fontWeight:'800',marginTop:'10px'}},'Día cerrado. Podés corregirlo y volver a cerrarlo.'),
         h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'12px'}},'🍽️ ¿Cómo fueron tus comidas de hoy?'),
-        MEALS.map((m,mi)=>h('div',{key:m,style:{padding:'9px 0',borderBottom:'1px solid #f2f2f2'}},h('div',{style:{fontSize:'11px',fontWeight:'800'}},m),chips([['ok','Según pauta y porciones'],['equiv','Diferente, objetivos respetados'],['other','Diferente, sin equivalencia comprobada'],['qty','Según pauta, cambié cantidades'],['skip','No comí']],(d.meals||[])[mi]||'',v=>{const ms=[...(d.meals||['','','',''])];ms[mi]=v;setDay(i,{meals:ms,closed:false});}),(['qty','other','equiv'].includes((d.meals||[])[mi]))&&h('input',{type:'text',defaultValue:(d.mealDetail||[])[mi]||'',placeholder:'Qué y cuánto consumiste',onBlur:e=>{const md=[...(d.mealDetail||['','','',''])];md[mi]=e.target.value;setDay(i,{mealDetail:md,closed:false});},style:{...inp,marginTop:'7px'}}),
+        MEALS.map((m,mi)=>h('div',{key:m,style:{padding:'9px 0',borderBottom:'1px solid #f2f2f2'}},h('div',{style:{fontSize:'11px',fontWeight:'800'}},m),chips([['ok','Cumplí el menú pautado'],['equiv','Combiné alimentos (sin equivalencia aún verificada)'],['other','Comí otra cosa'],['qty','Cambié cantidades'],['skip','No comí']],(d.meals||[])[mi]||'',v=>{const ms=[...(d.meals||['','','',''])];ms[mi]=v;setDay(i,{meals:ms,closed:false});}),(['qty','other','equiv'].includes((d.meals||[])[mi]))&&h('input',{type:'text',defaultValue:(d.mealDetail||[])[mi]||'',placeholder:'Qué y cuánto consumiste',onBlur:e=>{const md=[...(d.mealDetail||['','','',''])];md[mi]=e.target.value;setDay(i,{mealDetail:md,closed:false});},style:{...inp,marginTop:'7px'}}),
           ['qty','other','equiv'].includes((d.meals||[])[mi])&&h('div',{style:{marginTop:'6px'}},
             h('div',{style:{fontSize:'10px',color:'#A8A8AE'}},'¿Cómo estimaste cantidades/equivalencia? (opcional)'),
             chips([['app','Aplicación externa'],['calculo','Cálculo propio'],['estimacion','Estimación']],(d.mealProof||[])[mi]||'',v=>{const a=[...(d.mealProof||['','','',''])];a[mi]=v;setDay(i,{mealProof:a,closed:false});}),
@@ -2416,11 +2455,11 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
         chips([['done','Sí'],['no','No']],d.training||'',v=>setDay(i,{training:v,performance:v==='done'?d.performance:'',closed:false})),
         d.training==='done'&&h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'700',marginTop:'8px'}},'Rendimiento vs. la última vez'),chips([['better','Mejor'],['same','Igual'],['worse','Peor']],d.performance||'',v=>setDay(i,{performance:v,closed:false}))),
         h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'13px'}},
-          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'💧 Agua (L)'),numInput(d.water,v=>setDay(i,{water:v,closed:false}),'ej. 2,5')),
-          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'🚶 Pasos (si los sabés)'),numInput(d.steps,v=>setDay(i,{steps:v,closed:false}),'opcional')),
-          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'⚖️ Peso (kg)'),numInput(d.weight,v=>setDay(i,{weight:v,closed:false}),'opcional')),
-          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'📏 Cintura (cm)'),numInput(d.waist,v=>setDay(i,{waist:v,closed:false}),'opcional')),
-          h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'😴 Sueño (h)'),numInput(d.sleepHours,v=>setDay(i,{sleepHours:v,closed:false}),'7–9 h'))
+          measure(d,i,'💧 Agua (L)','water','L','no_registre','ej. 2,5'),
+          measure(d,i,'🚶 Pasos (sugeridos)','steps','pasos','no_registre','ej. 7000'),
+          measure(d,i,'⚖️ Peso (kg)','weight','kg','no_medi','kg'),
+          measure(d,i,'📏 Cintura (cm)','waist','cm','no_medi','cm'),
+          measure(d,i,'😴 Sueño (h)','sleepHours','h','no_registre','7–9 h')
         ),
         h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'13px'}},'Sensaciones'),
         h('div',{style:{fontSize:'11px',fontWeight:'700',marginTop:'7px'}},'Hambre'),chips([['high','Alta'],['normal','Normal'],['low','Baja']],d.hunger||'',v=>setDay(i,{hunger:v,closed:false})),
@@ -2430,8 +2469,21 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
       )
     );}),
     h('div',{style:card},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Resumen automático'),h('div',{style:{fontSize:'11px',lineHeight:'1.7',color:'#555',marginTop:'7px'}},'Cobertura: '+coveredDays+'/7 días · Comidas respondidas: '+mealAnswered+'/'+(mealCount*7)+' ('+mealCoveragePct+'%) · Cumplimiento confirmado mínimo: '+(nutPct===null?'—':nutPct+'%')+' · Entrenos: '+trainDone+'/'+prescribedSessions+(trainGap?' · faltan '+trainGap:' ✓')+' · Agua prom.: '+(waterAvg?waterAvg.toFixed(2)+' L':'—')+' · Sueño prom.: '+(sleepAvg?sleepAvg.toFixed(1)+' h':'—')+(stepsAvg?' · Pasos prom.: '+Math.round(stepsAvg):'')+' · Peso prom.: '+(weights.length?(weights.reduce((a,b)=>a+b,0)/weights.length).toFixed(1)+' kg':'—')+' · Cintura prom.: '+(waists.length?(waists.reduce((a,b)=>a+b,0)/waists.length).toFixed(1)+' cm':'—')),trainGap>0&&h('div',{style:{marginTop:'10px'}},h('div',{style:{fontSize:'11px',fontWeight:'800'}},'Tenías '+prescribedSessions+' sesiones pautadas y registraste '+trainDone+'. ¿Por qué faltó'+(trainGap>1?' alguna/s':' una')+'?'),h('textarea',{defaultValue:close.trainingGapReason||'',placeholder:'Motivo breve',onBlur:e=>setH({weekClose:Object.assign({},close,{trainingGapReason:e.target.value})}),style:{...inp,minHeight:'58px',resize:'vertical',marginTop:'6px'}}))),
+    prescribedSessions>0&&h('div',{style:card},
+      h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Sesiones pautadas · ¿Se hicieron?'),
+      h('div',{style:{fontSize:'11px',color:'#667085',marginTop:'4px'}},'Este registro confirma la asistencia. Si entrenaste, cargá ejecución real en Entreno; si no, elegí No realizada. No se supone cumplimiento por precarga.'),
+      ['A','B','C','D','E'].slice(0,prescribedSessions).map(s=>h('div',{key:s,style:{padding:'8px 0',borderBottom:'1px solid #eee'}},
+        h('div',{style:{fontSize:'12px',fontWeight:'800'}},'Sesión '+s),
+        chips([['hecha','Realizada'],['no','No realizada']],(close.sessionStatus||{})[s]||'',v=>setH({weekClose:{...close,sessionStatus:{...(close.sessionStatus||{}),[s]:v}}}))
+      ))
+    ),
     h('div',{style:card},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Cierre semanal'),h('div',{style:{fontSize:'12px',fontWeight:'700',marginTop:'9px'}},'¿Lo que registraste representa correctamente cómo fue tu semana?'),chips([['si','Sí'],['no','No']],close.represents||'',v=>setH({weekClose:Object.assign({},close,{represents:v})})),(close.represents==='no')&&h('textarea',{defaultValue:close.note||'',placeholder:'¿Qué falta, qué corregirías o qué debería saber tu coach?',onBlur:e=>setH({weekClose:Object.assign({},close,{note:e.target.value})}),style:{...inp,minHeight:'70px',resize:'vertical',marginTop:'10px'}})),
-    h('button',{onClick:onEnviarReporte,disabled:saving||(!canSaveWeek&&!isViewingPast),style:{width:'100%',padding:'15px',border:'none',borderRadius:'12px',background:canSaveWeek||isViewingPast?GRAD:'#D1D5DB',color:'#fff',fontWeight:'900',fontSize:'15px',cursor:canSaveWeek||isViewingPast?'pointer':'default',marginTop:'4px'}},saving?'Enviando...':(reporteYaEnviado?'✓ Reporte enviado · Actualizar':'Enviar semana')),
+    weekMissing().length>0&&h('div',{style:{...card,border:'1px solid #FDE68A',background:'#FFFBEB',color:'#92400E',fontSize:'11px'}},
+      h('div',{style:{fontWeight:'900',marginBottom:'5px'}},'Pendiente para enviar ('+weekMissing().length+')'),
+      weekMissing().slice(0,16).map((m,i)=>h('div',{key:i,style:{margin:'4px 0'}},'• '+m)),
+      weekMissing().length>16&&h('div',null,'Y '+(weekMissing().length-16)+' campos más…')
+    ),
+    h('button',{onClick:onEnviarReporte,disabled:saving||weekMissing().length>0||(!canSaveWeek&&!isViewingPast),style:{width:'100%',padding:'15px',border:'none',borderRadius:'12px',background:(canSaveWeek||isViewingPast)&&!weekMissing().length?GRAD:'#D1D5DB',color:'#fff',fontWeight:'900',fontSize:'15px',cursor:canSaveWeek||isViewingPast?'pointer':'default',marginTop:'4px'}},saving?'Enviando...':(reporteYaEnviado?'✓ Reporte enviado · Actualizar':'Enviar semana')),
     !canSaveWeek&&!isViewingPast&&h('div',{style:{fontSize:'11px',color:'#999',textAlign:'center',marginTop:'7px'}},'Disponible sáb/dom · '+wkSat.toLocaleDateString('es-AR',{day:'numeric',month:'short'}))
   );
 }
@@ -2502,9 +2554,10 @@ function Hiit({cfg,hiitData,setHiitData,setSaved}){
         h('div',{style:{fontSize:'13px',fontWeight:'700',marginBottom:'8px'}},'¿Cumpliste el protocolo?'),
         h('div',{style:{display:'flex',gap:'8px'}},
           h(SelBtn,{val:'Sí',cur:getReg(curS.id,'cumple'),onClick:()=>setReg(curS.id,'cumple',getReg(curS.id,'cumple')==='Sí'?'':'Sí'),color:G}),
-          h(SelBtn,{val:'Parcial',cur:getReg(curS.id,'cumple'),onClick:()=>setReg(curS.id,'cumple',getReg(curS.id,'cumple')==='Parcial'?'':'Parcial'),color:O})
+          h(SelBtn,{val:'Parcial',cur:getReg(curS.id,'cumple'),onClick:()=>setReg(curS.id,'cumple',getReg(curS.id,'cumple')==='Parcial'?'':'Parcial'),color:O}),
+          h(SelBtn,{val:'No',cur:getReg(curS.id,'cumple'),onClick:()=>setReg(curS.id,'cumple',getReg(curS.id,'cumple')==='No'?'':'No'),color:R})
         ),
-        getReg(curS.id,'cumple')==='Parcial'&&h('input',{type:'text',placeholder:'¿Qué fue distinto?',value:getReg(curS.id,'cumpleParcial'),onChange:e=>setReg(curS.id,'cumpleParcial',e.target.value),style:{...inp,marginTop:'8px',fontSize:'13px'}})
+        ['Parcial','No'].includes(getReg(curS.id,'cumple'))&&h('input',{type:'text',placeholder:'¿Qué fue distinto?',value:getReg(curS.id,'cumpleParcial'),onChange:e=>setReg(curS.id,'cumpleParcial',e.target.value),style:{...inp,marginTop:'8px',fontSize:'13px'}})
       ),
       // Exigencia
       h('div',{style:{marginBottom:'14px'}},
@@ -3305,17 +3358,14 @@ function App(){
     return()=>{window.removeEventListener('error',onErr);window.removeEventListener('unhandledrejection',onRej);};
   },[]);
   function validateSave(){
-    const errors=[];
-    const close=hab.weekClose||{};
-    const days=(hab.dailyV5&&hab.dailyV5.length===7)?hab.dailyV5:[];
-    // Un día con alguna respuesta sirve para reportar: los incompletos se conservan como parciales.
-    const withData=days.filter(d=>((d.meals||[]).some(Boolean)||!!d.training||!!d.water||!!d.sleepHours||!!d.weight||!!d.waist||!!d.hunger||!!d.energy));
-    if(!withData.length)errors.push('Registrá al menos un día con información para enviar.');
-    const prescribed=Math.max(0,parseInt(cfg?.num)||0),done=days.filter(d=>d.training==='done').length;
-    // La diferencia entre sesiones prescritas/declaradas/registradas se evalúa en Coach;
-    // no bloquear un reporte parcial ni atribuir automáticamente ausencias.
-    if(!close.represents)errors.push('Cierre semanal: confirmá si lo registrado representa correctamente tu semana');
-    if(close.represents==='no'&&!String(close.note||'').trim())errors.push('Cierre semanal: contanos brevemente qué falta o qué deberíamos corregir');
+    const errors=ftV7ReportMissing(hab,cfg,localStorage.getItem(`ase_${user}_comidasPorDia`)==='3'?3:4);
+    for(const hs of (cfg?.hiit||[])){
+      const r=hiitData?.regs?.[hs.id]||{};
+      if(!r.cumple)errors.push('HIIT '+hs.id+': Cumplí / Parcial / No');
+      if(r.cumple==='Parcial'&&!String(r.cumpleParcial||'').trim())errors.push('HIIT '+hs.id+': explicar parcial');
+      if(r.cumple==='No'&&!String(r.cumpleParcial||'').trim())errors.push('HIIT '+hs.id+': motivo');
+      if(r.cumple!=='No'&&(!r.exig||!r.fatiga||!r.dolor))errors.push('HIIT '+hs.id+': exigencia, fatiga y dolor');
+    }
     return errors;
   }
 
@@ -3359,7 +3409,7 @@ function App(){
     if(!faltan.length)return '';
     return 'No encuentro kg + repeticiones registradas en '+(faltan.length===1?'la sesión ':'las sesiones ')+faltan.join(', ')+'.\n\nEsto puede estar bien si no entrenaste '+(faltan.length===1?'esa sesión':'esas sesiones')+'. Si sí entrenaste, quizá te olvidaste de cargar los datos: elegí Cancelar, volvé a Entreno y completalos.\n\n¿Confirmás que está bien enviar el reporte con esos datos de entrenamiento vacíos?';
   }
-  async function doSave(completeWeek){
+  async function doSave(completeWeek, reportRevision){
     if(completeWeek){
       const errs=validateSave();
       if(errs.length>0){setSaveErrors(errs);return;}
@@ -3481,6 +3531,7 @@ function App(){
         // La respuesta POST puede ser opaca/CORS en Safari: no la usamos como confirmación.
         // La confirmación real sigue siendo el GET posterior a Reportes por AsesoradoID + SemanID.
         const finalReport={
+          reportRevision:reportRevision||'',
           user:user,asesoradoId:localStorage.getItem(`ase_${user}_asesoradoId`)||'',wl:wk.label,wi:wk.id,pp,pc,pC,pS,sC,
           neat:actExtraC,toxics:toxC,
           sens:hab.sens||{},
@@ -3530,7 +3581,7 @@ function App(){
           nutriCausaCantidad:(hab.nutriSem&&hab.nutriSem.causaCantidad)||'',
           dailyV5:hab.dailyV5||[],
           dailyV6:hab.dailyV5||[],
-          reportContractVersion:'FT-REPORTE-6.0',
+          reportContractVersion:'FT-REPORTE-7.0',
           mealCount:(localStorage.getItem(`ase_${user}_comidasPorDia`)==='3'?3:4),
           weekClose:hab.weekClose||{},
           aguaPromL:(()=>{const a=(hab.dailyV5||[]).map(d=>parseFloat(d.water)).filter(x=>isFinite(x)&&x>0);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length*100)/100:'';})(),
@@ -3557,11 +3608,12 @@ function App(){
     }
   }
 
-  async function reportExistsOnSheet(){
+  async function reportExistsOnSheet(expectedRevision){
     const expectedId=localStorage.getItem(`ase_${user}_asesoradoId`)||'';
     try{
       const rows=await fetch(SCRIPT_URL+'?action=reportes&_t='+Date.now()).then(r=>r.json());
       return (rows||[]).some(function(r){
+        if(expectedRevision && String(r.ReportRevision||'').trim()!==String(expectedRevision).trim())return false;
         const sameWeek=String(r.SemanID||'').trim()===String(wk.id||'').trim();
         const rowId=String(r.AsesoradoID||'').trim();
         const rowName=String(r.Asesorado||'').trim().toLowerCase();
@@ -3572,10 +3624,10 @@ function App(){
     }catch(e){return false;}
   }
 
-  async function confirmReportSaved(){
+  async function confirmReportSaved(expectedRevision){
     for(let i=0;i<4;i++){
       if(i)await new Promise(r=>setTimeout(r,700));
-      if(await reportExistsOnSheet())return true;
+      if(await reportExistsOnSheet(expectedRevision))return true;
     }
     return false;
   }
@@ -3598,10 +3650,12 @@ function App(){
     if(!user||!wk.id)return;
     let alive=true;
     const sentKey=`ase_${user}_reporteSent_${wk.id}`;
+    const pendingRevision=localStorage.getItem(`ase_${user}_pendingReport_${wk.id}`)||'';
     const expectedId=localStorage.getItem(`ase_${user}_asesoradoId`)||'';
     fetch(SCRIPT_URL+'?action=reportes&_t='+Date.now()).then(r=>r.json()).then(rows=>{
       if(!alive)return;
       const found=(rows||[]).some(function(r){
+        if(pendingRevision && String(r.ReportRevision||'')!==pendingRevision)return false;
         const sameWeek=String(r.SemanID||'').trim()===String(wk.id||'').trim();
         const rowId=String(r.AsesoradoID||'').trim();
         const rowName=String(r.Asesorado||'').trim().toLowerCase();
@@ -3630,14 +3684,17 @@ function App(){
     if(localStorage.getItem(sentKey)){
       if(!confirm('Ya enviaste el reporte de esta semana.\n\n¿Querés sobreescribirlo con los datos actuales?\n\nEn el sheet quedará solo un reporte por semana.'))return;
     }
-    const dispatched=await doSave(true);
+    const reportRevision=String(Date.now())+'-'+Math.random().toString(36).slice(2,12);
+    const pendingKey=`ase_${user}_pendingReport_${wk.id}`;
+    localStorage.setItem(pendingKey,reportRevision);
+    const dispatched=await doSave(true,reportRevision);
     if(!dispatched){
       localStorage.removeItem(sentKey);
       setSaved(false);
       setSaveErrors(['No se pudo completar el envío del reporte. Tu progreso quedó guardado en Drafts. Intentá nuevamente.']);
       return;
     }
-    const confirmed=await confirmReportSaved();
+    const confirmed=await confirmReportSaved(reportRevision);
     if(!confirmed){
       localStorage.removeItem(sentKey);
       setSaved(false);
@@ -3645,6 +3702,7 @@ function App(){
       return;
     }
     localStorage.setItem(sentKey,'1');
+    localStorage.removeItem(pendingKey);
     setSaved(true);
   }
   async function saveProgress(){
