@@ -148,7 +148,7 @@ function FtMedTimeline({points,kind='p',dark=false}){
  );
 }
 
-const FT_BUILD='FuerzaT-Personalizada-V6.1-RETEST-REVISION-2026-11-12';
+const FT_BUILD='FuerzaT-Personalizada-V7.1-REGISTRO-SESIONES-2026-11-16';
 // FUERZA T V6 — intérprete de reportes compatible con DailyV5 y datos históricos.
 // Nunca atribuye equivalencia comprobada ni incumplimiento a respuestas vacías.
 const FT_REPORT_CRITERION='FT-DECISIONES-1.0.0';
@@ -891,7 +891,11 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
   const seriesBase=Math.min(4,Math.max(2,cfg?.series||2));
   const defCfg={num:3,assign:{A:[],B:[],C:[],D:[]}};
   if(!cfg)cfg=defCfg;
-  const [activeSess,setActiveSess]=useState('A');
+  const [activeSess,setActiveSess]=useState(()=>{
+    const requested=localStorage.getItem(`ase_${user}_focusSession_${wk.id}`)||'A';
+    localStorage.removeItem(`ase_${user}_focusSession_${wk.id}`);
+    return ['A','B','C','D','E'].includes(requested)?requested:'A';
+  });
   const [tut,setTut]=useState(null);
   const [shareEx,setShareEx]=useState(null);
   const [shareMode,setShareMode]=useState('evol');
@@ -924,6 +928,25 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
     setSeriesKg(next);_ftSafeSetItem(kgSeriesKey,JSON.stringify(next),user);setSaved(false);
   };
   const explicitaKg=(sess,id,n)=>{const value=Number(String(getSeriesKg(sess,id,n)).replace(',','.'));return Number.isFinite(value)&&value>0?value:0;};
+  // Ausencias explícitas por serie/ejercicio; una sugerencia de kg NO es ejecución.
+  const ftOmitKey=`ase_${user}_omitSeries_${wk.id}`;
+  const readOmit=()=>{try{return JSON.parse(localStorage.getItem(ftOmitKey)||'{}')||{};}catch(e){return{};}};
+  const [omitSeries,setOmitSeries]=useState(readOmit);
+  useEffect(()=>{setOmitSeries(readOmit());},[ftOmitKey,isViewingPast]);
+  const omission=(sess,id)=>omitSeries?.[sess]?.[String(id)]||{};
+  const toggleOmitExercise=(sess,id)=>{
+    if(isViewingPast||isViewingFuture)return;
+    const old=omission(sess,id),newValue=old.all?{}:{all:true};
+    const next={...omitSeries,[sess]:{...(omitSeries[sess]||{}),[String(id)]:newValue}};
+    setOmitSeries(next);_ftSafeSetItem(ftOmitKey,JSON.stringify(next),user);setSaved(false);
+  };
+  const toggleOmitSerie=(sess,id,n)=>{
+    if(isViewingPast||isViewingFuture)return;
+    const old=omission(sess,id),key=n==='backoff'?'backoff':'r'+n;
+    const next={...omitSeries,[sess]:{...(omitSeries[sess]||{}),[String(id)]:{...old,all:false,[key]:!old[key]}}};
+    setOmitSeries(next);_ftSafeSetItem(ftOmitKey,JSON.stringify(next),user);setSaved(false);
+  };
+
 
   // Historial remoto de lectura; NUNCA modifica snapshots, sessKg ni Drafts.
   const [historicoCentral,setHistoricoCentral]=useState(null);
@@ -1855,14 +1878,7 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                   h('button',{onClick:()=>{setShareEx(ex);setShareMode('evol');},style:{display:'block',background:'none',border:'none',padding:0,marginTop:'4px',cursor:'pointer',fontSize:'11px',color:'#111',fontWeight:'800',textAlign:'left'}},'Compartir'),
                   prev&&h('div',{style:{marginTop:'5px',fontSize:'11px',color:G,fontWeight:'700'}},prev.kg?'Último rendimiento: '+prev.reps+' × '+prev.kg+' kg':'Último rendimiento: '+prev.reps+' reps')
                 ),
-                !(bloque==='fuerza'&&rolFuerza(ex)==='principal')&&h('div',{style:{textAlign:'right'}},
-                  editing
-                    ?h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('input',{type:'text',inputMode:'decimal',value:kgVal,onChange:e=>setKgVal(e.target.value),onKeyDown:e=>e.key==='Enter'&&doSaveKg(ex,kgVal),onBlur:()=>doSaveKg(ex,kgVal),autoFocus:true,style:{width:'64px',textAlign:'center',fontSize:'18px',fontWeight:'700',padding:'4px 6px',border:'2px solid '+G,borderRadius:'6px',color:'#111'}}),h('span',{style:{fontSize:'13px',color:'#999'}},'kg'))
-                    :getKg(ex)!==undefined
-                      ?h('div',{onClick:()=>{if(!isViewingPast||correcting){setEditKg(ex.id);setKgVal(String(getKg(ex)||''));}},style:{cursor:(!isViewingPast||correcting)?'pointer':'default'}},h('div',{style:{fontSize:'22px',fontWeight:'800'}},getKg(ex),' ',h('span',{style:{fontSize:'13px',color:'#999'}},'kg')),h('div',{style:{fontSize:'10px',color:'#ccc',textAlign:'right'}},isViewingPast?(correcting?'toca para corregir':'registro de esta semana'):'toca para editar'))
-                      :h('div',{onClick:()=>{if(!isViewingPast||correcting){setEditKg(ex.id);setKgVal('');}},style:{cursor:(!isViewingPast||correcting)?'pointer':'default',textAlign:'right'}},h('div',{style:{fontSize:'22px',fontWeight:'800',color:'#DDD'}},'— kg'),h('div',{style:{fontSize:'10px',color:G,fontWeight:'600',textAlign:'right'}},isViewingPast?(correcting?'toca para cargar kg':'usá Corregir para cargarlo'):'establecer peso inicial')),
-                  h('div',{style:{fontSize:'11px',color:'#999',marginTop:'2px'}},ex.low+'–'+ex.hi+' reps')
-                )
+                h('div',{style:{textAlign:'right',fontSize:'10px',color:'#888',minWidth:'72px'}},ex.low+'–'+ex.hi+' reps')
               ),
               to&&ex.url&&h('div',{style:{background:'#EBF4FF',border:'1px solid rgba(55,138,221,0.2)',borderRadius:'8px',padding:'10px 12px',marginBottom:'10px'}},h('a',{href:ex.url,target:'_blank',rel:'noreferrer',style:{fontSize:'13px',color:B,fontWeight:'600',textDecoration:'none'}},'▶ Ver video tutorial')),
               h('div',{style:{marginBottom:'8px'}},
@@ -1894,6 +1910,9 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                       ));
                     return h('div',{style:{background:st.state==='sent'?'#ECFDF5':'#F5F5F5',borderRadius:'8px',padding:'7px 12px',fontSize:'12px',color:st.state==='sent'?G:'#777',textAlign:'center',fontWeight:'700'}},st.state==='processing'?'⏳ Procesando video…':st.state==='uploading'?'⬆️ Subiendo…':st.state==='confirming'?'🔄 Confirmando recepción…':st.state==='sent'?'✓ Video enviado.':'Procesando…');})()
               ),
+              h('button',{type:'button',disabled:isViewingPast||isViewingFuture,onClick:()=>toggleOmitExercise(activeSess,ex.id),style:{width:'100%',background:omission(activeSess,ex.id).all?'#FEE2E2':'#F8FAFC',color:omission(activeSess,ex.id).all?'#991B1B':'#52525B',border:'1px solid #E5E7EB',borderRadius:'8px',padding:'8px',marginBottom:'9px',fontWeight:'800',fontSize:'11px'}},omission(activeSess,ex.id).all?'↶ Deshacer · ejercicio no realizado':'No realicé este ejercicio'),
+              omission(activeSess,ex.id).all?h('div',{style:{padding:'10px',borderRadius:'8px',background:'#FFF1F2',color:'#9F1239',marginBottom:'12px',fontWeight:'700',fontSize:'12px'}},'Ejercicio no realizado. No es necesario completar sus series.'):
+              h(React.Fragment,null,
               // FUERZA: principal = test/protocolo/retest + back-off S1-S7.
               (bloque==='fuerza'&&rolFuerza(ex)==='principal'&&(function(){
                 const ref=getRmRef(ex), finalRef=getRmRefFinal(ex), t=rmTest[ex.id]||{};
@@ -1919,7 +1938,7 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                       h('div',{style:{fontSize:'12px',fontWeight:'900',color:'#9A3412'}},'BACK-OFF · 1 serie · 70%'),
                       h('div',{style:{fontSize:'14px',fontWeight:'900',color:'#7C2D12',marginTop:'4px'}},backKg+' kg · Al fallo técnico'),
                       h('div',{style:{display:'flex',alignItems:'center',gap:'7px',marginTop:'8px'}},
-                        h('input',{type:'text',inputMode:'numeric',placeholder:'Anotá las reps',value:bo.reps||'',onChange:e=>setBackoffReps(ex,e.target.value),style:{...inp,textAlign:'center',maxWidth:'150px'}})
+                        h('input',{type:'text',inputMode:'numeric',placeholder:'Anotá las reps',value:bo.reps||'',disabled:!!omission(activeSess,ex.id).backoff,onChange:e=>setBackoffReps(ex,e.target.value),style:{...inp,textAlign:'center',maxWidth:'150px'}}),h('button',{type:'button',onClick:()=>toggleOmitSerie(activeSess,ex.id,'backoff'),style:{border:'1px solid #D97706',borderRadius:'7px',background:omission(activeSess,ex.id).backoff?'#FED7AA':'#fff',color:'#9A3412',fontSize:'10px',padding:'6px'}},omission(activeSess,ex.id).backoff?'↶ Back-off omitido':'No realicé back-off')
                       )
                     )
                   );
@@ -1975,7 +1994,7 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                     h('div',{style:{fontSize:'12px',fontWeight:'900',color:'#9A3412'}},'BACK-OFF · 1 serie · 70%'),
                     h('div',{style:{fontSize:'14px',fontWeight:'900',color:'#7C2D12',marginTop:'4px'}},backKg+' kg · Al fallo técnico'),
                     h('div',{style:{display:'flex',alignItems:'center',gap:'7px',marginTop:'8px'}},
-                      h('input',{type:'text',inputMode:'numeric',placeholder:'Anotá las reps',value:bo.reps||'',onChange:e=>setBackoffReps(ex,e.target.value),style:{...inp,textAlign:'center',maxWidth:'150px'}})
+                      h('input',{type:'text',inputMode:'numeric',placeholder:'Anotá las reps',value:bo.reps||'',disabled:!!omission(activeSess,ex.id).backoff,onChange:e=>setBackoffReps(ex,e.target.value),style:{...inp,textAlign:'center',maxWidth:'150px'}}),h('button',{type:'button',onClick:()=>toggleOmitSerie(activeSess,ex.id,'backoff'),style:{border:'1px solid #D97706',borderRadius:'7px',background:omission(activeSess,ex.id).backoff?'#FED7AA':'#fff',color:'#9A3412',fontSize:'10px',padding:'6px'}},omission(activeSess,ex.id).backoff?'↶ Back-off omitido':'No realicé back-off')
                     )
                   )
                 );
@@ -2006,24 +2025,30 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                 :h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:nk?'10px':'0'}},
                   seriesKeysEx(ex).map((k,i)=>{
                     const repVal=getRep(activeSess,ex.id,k),kgVal=getSeriesKg(activeSess,ex.id,i+1),suggested=getKg(ex);
+                    const isOmit=!!omission(activeSess,ex.id)?.[k];
+                    const exOmit=!!omission(activeSess,ex.id)?.all;
+                    const allOmit=isOmit||exOmit;
+                    const suggestedDisplay=i===0&&!kgVal&&suggested>0?String(suggested):kgVal;
+                    const isRecorded=Number(String(kgVal).replace(',','.'))>0&&Number(repVal)>0;
                     const prevRep=i>0?Number(getRep(activeSess,ex.id,'r'+i)):0;
                     const midpoint=(Number(ex.low)+Number(ex.hi))/2;
                     const below=prevRep>0&&prevRep<midpoint;
-                    return h('div',{key:k,style:{background:'#27272B',padding:'10px',borderRadius:'12px',minWidth:0}},
+                    return h('div',{key:k,style:{background:allOmit?'#3F3030':'#27272B',padding:'10px',borderRadius:'12px',minWidth:0,opacity:exOmit?.65:1}},
                       h('div',{style:{...lbl,color:'#D2D2D7'}},'Serie '+(i+1)),
                       h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
                         h('div',null,
                           h('div',{style:{fontSize:'10px',color:'#AAA',marginBottom:'5px'}},'Kg reales'),
-                          h('input',{className:'ft-series-input',type:'text',inputMode:'decimal',placeholder:'kg',value:kgVal,disabled:isViewingPast||isViewingFuture,onChange:e=>setSerieKg(activeSess,ex.id,i+1,e.target.value),style:{...inp}})
+                          h('input',{className:'ft-series-input',type:'text',inputMode:'decimal',placeholder:'kg',value:suggestedDisplay,disabled:allOmit||isViewingPast||isViewingFuture,onChange:e=>setSerieKg(activeSess,ex.id,i+1,e.target.value),style:{...inp}})
                         ),
                         h('div',null,
                           h('div',{style:{fontSize:'10px',color:'#AAA',marginBottom:'5px'}},'Reps'),
-                          h('input',{className:'ft-series-input',type:'text',inputMode:'numeric',placeholder:'reps',value:repVal,onChange:e=>setRep(activeSess,ex.id,k,e.target.value),style:{...inp}})
+                          h('input',{className:'ft-series-input',type:'text',inputMode:'numeric',placeholder:'reps',value:allOmit?'':repVal,disabled:allOmit||isViewingPast||isViewingFuture,onChange:e=>{const r=e.target.value;if(r&&i===0&&!kgVal&&suggested>0)setSerieKg(activeSess,ex.id,i+1,String(suggested));setRep(activeSess,ex.id,k,r);} ,style:{...inp}})
                         )
                       ),
                       !kgVal&&suggested>0&&h('button',{type:'button',disabled:isViewingPast||isViewingFuture,onClick:()=>setSerieKg(activeSess,ex.id,i+1,String(suggested)),style:{background:'transparent',color:'#FFB380',border:'none',textAlign:'left',padding:'7px 0 1px',fontSize:'10px',fontWeight:'700',cursor:'pointer'}},'✓ Usé '+suggested+' kg sugeridos'),
                       below&&h('div',{className:'ft-series-warning'},'Serie anterior: '+prevRep+' reps. Considerá bajar carga si corresponde; decidís vos.'),
-                      !kgVal&&h('div',{className:'ft-series-hint'},'Confirmá los kg realmente ejecutados.')
+                      !allOmit&&!kgVal&&h('div',{className:'ft-series-hint'},i===0?'Kg sugeridos precargados: se confirman cuando ingresás reps.':'Confirmá los kg realmente ejecutados.'),
+                      h('button',{type:'button',disabled:isViewingPast||isViewingFuture,onClick:()=>toggleOmitSerie(activeSess,ex.id,i+1),style:{width:'100%',border:'1px solid '+(isOmit?'#FECACA':'#666'),background:isOmit?'#7F1D1D':'transparent',color:isOmit?'#fff':'#ddd',borderRadius:'7px',padding:'7px',marginTop:'7px',fontSize:'10px',fontWeight:'700'}},isOmit?'↶ Deshacer · no realizada':exOmit?'Ejercicio no realizado':isRecorded?'✓ Serie registrada':'No realicé esta serie')
                     );
                   })
                 ),
@@ -2045,6 +2070,7 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                 getIntensityExecution(ex)&&h('div',{style:{fontSize:'10px',color:'#555',marginTop:'7px'}},'Ejecutada: '+(TECNICAS.find(t=>t.id===getIntensityExecution(ex))?.n||getIntensityExecution(ex)))
               ),
               nk&&bloque!=='base'&&h('div',{style:{background:'#EAF7F2',border:'1px solid #A3DFC8',borderRadius:'8px',padding:'10px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}},h('span',{style:{fontSize:'12px',color:G,fontWeight:'600'}},'Próxima sesión'),h('span',{style:{fontWeight:'800',color:G,fontSize:'15px'}},'↑ '+nk+' kg'))
+              )
             );
           };
           const tecBanner=null;
@@ -2368,27 +2394,88 @@ var AGUA_STATES=[
   {v:'ins',ic:'○',color:'#EF4444'},
 ];
 var DS6=['L','M','X','J','V','S'];
-function ftV7ReportMissing(hab,cfg,mealCount){
+// AUDITORIA CANONICA DE SESIONES: ninguna carga sugerida es evidencia de ejecución.
+function ftSessionAudit(user,wk,cfg,exes,sr){
+ const wkId=wk&&wk.id||'';
+ const read=(key)=>{try{return JSON.parse(localStorage.getItem(key)||'{}')||{};}catch(_e){return{};}};
+ const omit=read(`ase_${user}_omitSeries_${wkId}`),sk=ftReadKgSeries(user,wkId);
+ const sessionNo=read(`ase_${user}_sessionNotDone_${wkId}`);
+ const block=String(cfg?.bloque||'volumen').toLowerCase();
+ const bn=Math.max(1,(Number(wk?.num)||1)-(Number(cfg?.bloqueInicio)||1)+1);
+ const n=block==='volumen'?Math.min(4,Math.max(2,Number(cfg?.series)||2)+Math.floor((bn-1)/2)):
+  ((block==='base'||block==='rehab')?3:Math.max(1,Number(cfg?.series)||2));
+ const num=v=>{const x=Number(String(v??'').replace(',','.'));return Number.isFinite(x)&&x>0;};
+ const all=[];
+ for(const sess of ['A','B','C','D','E'].slice(0,Number(cfg?.num)||0)){
+  const ids=[...(cfg?.assign?.[sess]||[])].flat(Infinity).filter(v=>v!==''&&v!==null&&v!==undefined).map(String);
+  if(!ids.length)continue;
+  const pending=[],evidence=[];
+  const bp=read(`ase_${user}_baseProto_${wkId}_${sess}`),fp=read(`ase_${user}_forceProto_${wkId}_${sess}`);
+  const test=read(`ase_${user}_rmTest_${wkId}_${sess}`);
+  const backoff=read(`ase_${user}_forceBackoff_${wkId}_${sess}`);
+  for(let j=0;j<ids.length;j++){
+   const id=ids[j],ex=(exes||[]).find(e=>String(e.id)===id||String(e.origId)===id);
+   const name=ex?.n||'Ejercicio '+(j+1),skip=omit?.[sess]?.[id]||{};
+   if(skip.all){evidence.push(name+' omitido');continue;}
+   if(block==='base'||block==='rehab'){
+    if(bp[id]==='si'||bp[id]==='no')evidence.push(name+' protocolo');
+    else pending.push(name+': falta Cumplí / No cumplí');
+    continue;
+   }
+   if(block==='fuerza'&&j===0){
+    if(bn===1||bn===8){
+     const v=test[id]||{},ok=num(v.kg)&&num(v.reps);
+     if(ok)evidence.push(name+' test/retest');else pending.push(name+': falta kg + reps del test/retest');
+    }else if(bn>=2&&bn<=7){
+     if(fp[id]==='si'||fp[id]==='no')evidence.push(name+' protocolo');
+     else pending.push(name+': falta Cumplí / No cumplí del protocolo');
+    }
+    // Back-off cuenta como dosis pautada en S1-S7 y necesita dato o ausencia explícita.
+    if(bn>=1&&bn<=7){
+     if(skip.backoff)evidence.push(name+' back-off no realizado');
+     else if(num(backoff[id]?.reps))evidence.push(name+' back-off');
+     else pending.push(name+': faltan reps o «No realicé back-off»');
+    }
+    continue;
+   }
+   const reps=sr?.[sess]?.[id]||{},kgs=sk?.[sess]?.[id]||{};
+   const cnt=block==='fuerza'?(j<=2?2:1):n;
+   for(let k=1;k<=cnt;k++){
+    const r=reps['r'+k],kg=kgs['k'+k];
+    if(skip['r'+k]){evidence.push(name+' serie '+k+' omitida');continue;}
+    if(num(r)&&num(kg))evidence.push(name+' serie '+k+' hecha');
+    else pending.push(name+' · serie '+k+': kg + reps o «No realicé»');
+   }
+  }
+  const skipped=!!sessionNo[sess];
+  // Nunca aceptar «No realicé sesión» si existe ejecución/omisión individual.
+  const conflict=skipped&&evidence.length>0;
+  const state=conflict?'conflicto':skipped?'no_realizada':(!evidence.length?'vacia':pending.length?'parcial':'completa');
+  all.push({sess,state,pending,evidence:evidence.length,conflict});
+ }
+ return all;
+}
+
+function ftV7ReportMissing(hab,cfg,mealCount,user,wk,exes,sessionReps){
  const days=Array.isArray(hab?.dailyV5)?hab.dailyV5:[];const missing=[];
  const num=v=>{const x=Number(String(v??'').trim().replace(',','.'));return Number.isFinite(x)&&x>0;};
  for(let i=0;i<7;i++){
   const d=days[i]||{},m=(d.meals||[]).slice(0,mealCount),p='Día '+(i+1)+': ';
   if(m.length!==mealCount||m.some(x=>!x))missing.push(p+'comidas');
   m.forEach((x,j)=>{if(['other','qty','equiv'].includes(x)&&!String((d.mealDetail||[])[j]||'').trim())missing.push(p+'detalle de comida '+(j+1));});
-  if(!d.training)missing.push(p+'entrenamiento');
-  if(d.training==='done'&&!d.performance)missing.push(p+'rendimiento');
   for(const [key,label] of [['water','agua'],['sleepHours','sueño'],['steps','pasos'],['weight','peso'],['waist','cintura']]){
    if(!num(d[key])&&!['no_medi','no_registre'].includes(String(d[key+'Status']||'')))missing.push(p+label);
   }
   if(!d.hunger)missing.push(p+'hambre');if(!d.energy)missing.push(p+'energía');
  }
- const wc=hab?.weekClose||{};if(!wc.represents)missing.push('Cierre: representa semana');
- if(wc.represents==='no'&&!String(wc.note||'').trim())missing.push('Cierre: aclaración');
- const count=Math.max(0,Number(cfg?.num)||0);
- for(const s of ['A','B','C','D','E'].slice(0,count))if(!wc.sessionStatus?.[s])missing.push('Sesión '+s+' realizada/no realizada');
+ for(const a of ftSessionAudit(user,wk,cfg,exes,sessionReps)){
+  if(a.state==='vacia')missing.push('Sesión '+a.sess+': sin datos, elegí Entreno o No realicé la sesión');
+  if(a.state==='conflicto')missing.push('Sesión '+a.sess+': está marcada como no realizada pero tiene registro de ejercicios');
+  if(a.state==='parcial')missing.push(...a.pending.map(x=>'Sesión '+a.sess+': '+x));
+ }
  return missing;
 }
-function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat}){
+function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,user,wk,exes,sessionReps,onGoTraining}){
   const DAYS=['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
   const mealUser=localStorage.getItem(USER_KEY)||'';
   const mealCount=localStorage.getItem(`ase_${mealUser}_comidasPorDia`)==='3'?3:4;
@@ -2397,6 +2484,17 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
   const daily=(hab.dailyV5&&hab.dailyV5.length===7)?hab.dailyV5:Array.from({length:7},emptyDay);
   const close=hab.weekClose||{represents:'',note:'',trainingGapReason:''};
   const prescribedSessions=Math.max(0,parseInt(cfg?.num)||0);
+  const audits=ftSessionAudit(user,wk,cfg,exes,sessionReps);
+  const [sessionRevision,setSessionRevision]=useState(0);
+  const sessionNoKey=`ase_${user}_sessionNotDone_${wk.id}`;
+  const setSessionNo=(sess,yes)=>{
+    let old={};try{old=JSON.parse(localStorage.getItem(sessionNoKey)||'{}')||{};}catch(_e){}
+    const next={...old,[sess]:!!yes};
+    if(!yes)delete next[sess];
+    _ftSafeSetItem(sessionNoKey,JSON.stringify(next),user);
+    setSessionRevision(v=>v+1);setSaved(false);
+  };
+  const goTraining=sess=>{onGoTraining(sess);};
   const [open,setOpen]=useState(()=>{const x={};x[Math.min(6,Math.max(0,(new Date().getDay()+6)%7))]=true;return x;});
   const [dayErrors,setDayErrors]=useState({});
   const setH=(patch)=>{setHab(Object.assign({},hab,patch));setSaved(false);};
@@ -2411,22 +2509,21 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
   );
   const positive=v=>{const n=normNum(v);return Number.isFinite(n)&&n>0;};
   const filled=(d,key)=>positive(d[key])||d[key+'Status']==='no_medi'||d[key+'Status']==='no_registre';
-  const weekMissing=()=>{const missing=[];daily.forEach((d,i)=>{const m=requiredMissing(d);if(m.length)missing.push(DAYS[i]+': '+m.join(', '));});if(!close.represents)missing.push('Confirmar cierre semanal');if(close.represents==='no'&&!String(close.note||'').trim())missing.push('Aclaración del cierre semanal');if(prescribedSessions>0){const statuses=close.sessionStatus||{};for(const s of ['A','B','C','D','E'].slice(0,prescribedSessions)){if(!statuses[s])missing.push('Sesión '+s+': realizada/no realizada');}}return missing;};
+  const weekMissing=()=>ftV7ReportMissing(hab,cfg,mealCount,user,wk,exes,sessionReps);
   const avg=(key)=>{const v=daily.map(d=>normNum(d[key])).filter(x=>isFinite(x)&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const weights=daily.map(d=>normNum(d.weight)).filter(x=>isFinite(x)&&x>0),waists=daily.map(d=>normNum(d.waist)).filter(x=>isFinite(x)&&x>0);
   const mealAnswered=daily.reduce((n,d)=>n+(d.meals||[]).filter(Boolean).length,0),mealOk=daily.reduce((n,d)=>n+(d.meals||[]).filter(x=>x==='ok').length,0);
   const nutPct=mealAnswered?Math.round(mealOk/(mealCount*7)*100):null;
   const coveredDays=daily.filter(d=>(d.meals||[]).some(Boolean)||!!d.training||!!d.water||!!d.sleepHours||!!d.weight||!!d.waist).length;
   const mealCoveragePct=Math.round(100*mealAnswered/(mealCount*7));
-  const trainDone=daily.filter(d=>d.training==='done').length;
-  const trainGap=Math.max(0,prescribedSessions-trainDone);
+  const trainDone=audits.filter(a=>a.state==='completa').length;
+  const trainNo=audits.filter(a=>a.state==='no_realizada').length;
+  const trainGap=audits.filter(a=>a.state==='vacia'||a.state==='parcial'||a.state==='conflicto').length;
   const waterAvg=avg('water'),sleepAvg=avg('sleepHours'),stepsAvg=avg('steps');
   const requiredMissing=d=>{const miss=[];
     const meals=(d.meals||[]).slice(0,mealCount);
     if(meals.filter(Boolean).length<mealCount)miss.push('todas las comidas');
     meals.forEach((m,j)=>{if(['other','qty','equiv'].includes(m)&&!String((d.mealDetail||[])[j]||'').trim())miss.push(MEALS[j]+': explicar qué comiste');});
-    if(!d.training)miss.push('entrené/no entrené');
-    if(d.training==='done'&&!d.performance)miss.push('rendimiento');
     if(!filled(d,'water'))miss.push('agua: litros o no registrado');
     if(!filled(d,'sleepHours'))miss.push('sueño: horas o no registrado');
     if(!filled(d,'steps'))miss.push('pasos: valor o no registrados');
@@ -2437,10 +2534,15 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
   const reopenDay=i=>{setDay(i,{closed:false});setOpen(Object.assign({},open,{[i]:true}));};
   return h('div',null,
     h('div',{style:{...card,background:'#F8FAFC'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Registro diario'),h('div',{style:{fontSize:'11px',color:'#667085',marginTop:'4px',lineHeight:'1.5'}},'Para enviar, respondé los siete días. Una pauta no cumplida también se registra: elegí No, No me medí o No lo registré. Ninguna respuesta debe quedar vacía.')),
-    DAYS.map((name,i)=>{const d=daily[i]||emptyDay();const answered=(d.meals||[]).filter(Boolean).length+(d.training?1:0)+(d.water?1:0)+(d.sleepHours?1:0)+(d.hunger?1:0)+(d.energy?1:0);return h('div',{key:name,style:{...card,padding:'0',overflow:'hidden'}},
+    DAYS.map((name,i)=>{const d=daily[i]||emptyDay();const answered=(d.meals||[]).filter(Boolean).length+(d.water?1:0)+(d.sleepHours?1:0)+(d.hunger?1:0)+(d.energy?1:0);return h('div',{key:name,style:{...card,padding:'0',overflow:'hidden'}},
       h('button',{type:'button',onClick:()=>setOpen(Object.assign({},open,{[i]:!open[i]})),style:{width:'100%',padding:'14px',border:'none',background:'#fff',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}},h('div',{style:{textAlign:'left'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},name),h('div',{style:{fontSize:'10px',color:d.closed?G:(answered?'#D97706':'#999'),marginTop:'2px'}},d.closed?'✓ Día registrado':(answered?'En progreso':'Pendiente'))),h('div',{style:{fontSize:'18px',color:'#999'}},open[i]?'⌃':'⌄')),
       open[i]&&h('div',{style:{padding:'0 14px 14px',borderTop:'1px solid #eee'}},
         d.closed&&h('div',{style:{fontSize:'10px',color:G,fontWeight:'800',marginTop:'10px'}},'Día cerrado. Podés corregirlo y volver a cerrarlo.'),
+        h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'12px'}},'🌅 En ayunas · mediciones'),
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'8px'}},
+          measure(d,i,'⚖️ Peso (kg)','weight','kg','no_medi','kg'),
+          measure(d,i,'📏 Cintura (cm)','waist','cm','no_medi','cm')
+        ),
         h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'12px'}},'🍽️ ¿Cómo fueron tus comidas de hoy?'),
         MEALS.map((m,mi)=>h('div',{key:m,style:{padding:'9px 0',borderBottom:'1px solid #f2f2f2'}},h('div',{style:{fontSize:'11px',fontWeight:'800'}},m),chips([['ok','Cumplí el menú pautado'],['equiv','Combiné alimentos (sin equivalencia aún verificada)'],['other','Comí otra cosa'],['qty','Cambié cantidades'],['skip','No comí']],(d.meals||[])[mi]||'',v=>{const ms=[...(d.meals||['','','',''])];ms[mi]=v;setDay(i,{meals:ms,closed:false});}),(['qty','other','equiv'].includes((d.meals||[])[mi]))&&h('input',{type:'text',defaultValue:(d.mealDetail||[])[mi]||'',placeholder:'Qué y cuánto consumiste',onBlur:e=>{const md=[...(d.mealDetail||['','','',''])];md[mi]=e.target.value;setDay(i,{mealDetail:md,closed:false});},style:{...inp,marginTop:'7px'}}),
           ['qty','other','equiv'].includes((d.meals||[])[mi])&&h('div',{style:{marginTop:'6px'}},
@@ -2451,14 +2553,9 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
               h('input',{type:'number',inputMode:'decimal',placeholder:'Proteína g (opcional)',defaultValue:(d.mealProtein||[])[mi]||'',onBlur:e=>{const a=[...(d.mealProtein||['','','',''])];a[mi]=e.target.value;setDay(i,{mealProtein:a,closed:false});},style:{...inp,marginTop:'6px'}})
             )
           ))),
-        h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'13px'}},'🏋️ ¿Entrenaste hoy?'),
-        chips([['done','Sí'],['no','No']],d.training||'',v=>setDay(i,{training:v,performance:v==='done'?d.performance:'',closed:false})),
-        d.training==='done'&&h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'700',marginTop:'8px'}},'Rendimiento vs. la última vez'),chips([['better','Mejor'],['same','Igual'],['worse','Peor']],d.performance||'',v=>setDay(i,{performance:v,closed:false}))),
         h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'13px'}},
           measure(d,i,'💧 Agua (L)','water','L','no_registre','ej. 2,5'),
           measure(d,i,'🚶 Pasos (sugeridos)','steps','pasos','no_registre','ej. 7000'),
-          measure(d,i,'⚖️ Peso (kg)','weight','kg','no_medi','kg'),
-          measure(d,i,'📏 Cintura (cm)','waist','cm','no_medi','cm'),
           measure(d,i,'😴 Sueño (h)','sleepHours','h','no_registre','7–9 h')
         ),
         h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'13px'}},'Sensaciones'),
@@ -2468,16 +2565,25 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
         h('button',{type:'button',onClick:()=>d.closed?reopenDay(i):closeDay(i),style:{width:'100%',marginTop:'14px',padding:'11px',border:'1px solid '+(d.closed?G:AC),borderRadius:'10px',background:d.closed?'#ECFDF3':'#fff',color:d.closed?G:AC,fontWeight:'900',cursor:'pointer'}},d.closed?'Reabrir día':'Cerrar día')
       )
     );}),
-    h('div',{style:card},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Resumen automático'),h('div',{style:{fontSize:'11px',lineHeight:'1.7',color:'#555',marginTop:'7px'}},'Cobertura: '+coveredDays+'/7 días · Comidas respondidas: '+mealAnswered+'/'+(mealCount*7)+' ('+mealCoveragePct+'%) · Cumplimiento confirmado mínimo: '+(nutPct===null?'—':nutPct+'%')+' · Entrenos: '+trainDone+'/'+prescribedSessions+(trainGap?' · faltan '+trainGap:' ✓')+' · Agua prom.: '+(waterAvg?waterAvg.toFixed(2)+' L':'—')+' · Sueño prom.: '+(sleepAvg?sleepAvg.toFixed(1)+' h':'—')+(stepsAvg?' · Pasos prom.: '+Math.round(stepsAvg):'')+' · Peso prom.: '+(weights.length?(weights.reduce((a,b)=>a+b,0)/weights.length).toFixed(1)+' kg':'—')+' · Cintura prom.: '+(waists.length?(waists.reduce((a,b)=>a+b,0)/waists.length).toFixed(1)+' cm':'—')),trainGap>0&&h('div',{style:{marginTop:'10px'}},h('div',{style:{fontSize:'11px',fontWeight:'800'}},'Tenías '+prescribedSessions+' sesiones pautadas y registraste '+trainDone+'. ¿Por qué faltó'+(trainGap>1?' alguna/s':' una')+'?'),h('textarea',{defaultValue:close.trainingGapReason||'',placeholder:'Motivo breve',onBlur:e=>setH({weekClose:Object.assign({},close,{trainingGapReason:e.target.value})}),style:{...inp,minHeight:'58px',resize:'vertical',marginTop:'6px'}}))),
+    h('div',{style:card},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Resumen automático'),h('div',{style:{fontSize:'11px',lineHeight:'1.7',color:'#555',marginTop:'7px'}},'Cobertura: '+coveredDays+'/7 días · Comidas respondidas: '+mealAnswered+'/'+(mealCount*7)+' ('+mealCoveragePct+'%) · Cumplimiento confirmado mínimo: '+(nutPct===null?'—':nutPct+'%')+' · Sesiones hechas: '+trainDone+' · No realizadas: '+trainNo+(trainGap?' · Pendientes: '+trainGap:' ✓')+' · Agua prom.: '+(waterAvg?waterAvg.toFixed(2)+' L':'—')+' · Sueño prom.: '+(sleepAvg?sleepAvg.toFixed(1)+' h':'—')+(stepsAvg?' · Pasos prom.: '+Math.round(stepsAvg):'')+' · Peso prom.: '+(weights.length?(weights.reduce((a,b)=>a+b,0)/weights.length).toFixed(1)+' kg':'—')+' · Cintura prom.: '+(waists.length?(waists.reduce((a,b)=>a+b,0)/waists.length).toFixed(1)+' cm':'—'))),
     prescribedSessions>0&&h('div',{style:card},
-      h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Sesiones pautadas · ¿Se hicieron?'),
-      h('div',{style:{fontSize:'11px',color:'#667085',marginTop:'4px'}},'Este registro confirma la asistencia. Si entrenaste, cargá ejecución real en Entreno; si no, elegí No realizada. No se supone cumplimiento por precarga.'),
-      ['A','B','C','D','E'].slice(0,prescribedSessions).map(s=>h('div',{key:s,style:{padding:'8px 0',borderBottom:'1px solid #eee'}},
-        h('div',{style:{fontSize:'12px',fontWeight:'800'}},'Sesión '+s),
-        chips([['hecha','Realizada'],['no','No realizada']],(close.sessionStatus||{})[s]||'',v=>setH({weekClose:{...close,sessionStatus:{...(close.sessionStatus||{}),[s]:v}}}))
+      h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Entrenamientos · lectura automática'),
+      h('div',{style:{fontSize:'11px',color:'#667085',marginTop:'4px',marginBottom:'8px'}},'La ejecución se obtiene de Entreno. No volvemos a preguntarte por una sesión que ya registraste.'),
+      audits.map(a=>h('div',{key:a.sess,style:{padding:'11px 0',borderTop:'1px solid #eee'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'center'}},
+          h('div',{style:{fontWeight:'900',fontSize:'12px'}},'Sesión '+a.sess),
+          h('div',{style:{fontSize:'11px',fontWeight:'800',color:a.state==='completa'?'#15803D':a.state==='no_realizada'?'#475569':'#B45309'}},({completa:'✓ Registrada',no_realizada:'No realizada',vacia:'Sin datos',parcial:'Registro parcial',conflicto:'Inconsistencia'})[a.state])
+        ),
+        a.state==='vacia'&&h('div',{style:{fontSize:'11px',color:'#92400E',marginTop:'5px'}},'No hay datos de esta sesión. Si entrenaste, cargá kg/reps o el protocolo; si no, indicá que no la realizaste.'),
+        a.state==='parcial'&&h('div',{style:{fontSize:'11px',color:'#92400E',marginTop:'5px'}},'Faltan '+a.pending.length+' registros: '+a.pending.slice(0,3).join('; ')+(a.pending.length>3?'…':'')),
+        a.state==='conflicto'&&h('div',{style:{fontSize:'11px',color:'#B91C1C',marginTop:'5px'}},'Esta sesión se marcó como no realizada, pero existen datos de sus ejercicios. Resolvé la contradicción.'),
+        (a.state==='vacia'||a.state==='parcial'||a.state==='conflicto')&&h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap',marginTop:'9px'}},
+          h('button',{type:'button',onClick:()=>goTraining(a.sess),style:{padding:'9px 11px',border:'none',background:AC,color:'#fff',borderRadius:'7px',fontSize:'11px',fontWeight:'800'}},a.state==='vacia'?'Sí entrené · cargar datos':'Ir a Entreno · completar'),
+          (a.state==='vacia'||a.state==='conflicto')&&h('button',{type:'button',disabled:isViewingPast,onClick:()=>setSessionNo(a.sess,a.state!=='vacia'),style:{padding:'9px 11px',border:'1px solid #CBD5E1',background:'#fff',color:'#334155',borderRadius:'7px',fontSize:'11px',fontWeight:'800'}},a.state==='conflicto'?'Deshacer «No realicé sesión»':'No realicé la sesión')
+        ),
+        a.state==='no_realizada'&&h('button',{type:'button',disabled:isViewingPast,onClick:()=>setSessionNo(a.sess,false),style:{marginTop:'8px',padding:'6px 8px',border:'1px solid #CBD5E1',background:'#fff',borderRadius:'7px',fontSize:'10px'}},'↶ Corregir · sí entrené')
       ))
     ),
-    h('div',{style:card},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Cierre semanal'),h('div',{style:{fontSize:'12px',fontWeight:'700',marginTop:'9px'}},'¿Lo que registraste representa correctamente cómo fue tu semana?'),chips([['si','Sí'],['no','No']],close.represents||'',v=>setH({weekClose:Object.assign({},close,{represents:v})})),(close.represents==='no')&&h('textarea',{defaultValue:close.note||'',placeholder:'¿Qué falta, qué corregirías o qué debería saber tu coach?',onBlur:e=>setH({weekClose:Object.assign({},close,{note:e.target.value})}),style:{...inp,minHeight:'70px',resize:'vertical',marginTop:'10px'}})),
     weekMissing().length>0&&h('div',{style:{...card,border:'1px solid #FDE68A',background:'#FFFBEB',color:'#92400E',fontSize:'11px'}},
       h('div',{style:{fontWeight:'900',marginBottom:'5px'}},'Pendiente para enviar ('+weekMissing().length+')'),
       weekMissing().slice(0,16).map((m,i)=>h('div',{key:i,style:{margin:'4px 0'}},'• '+m)),
@@ -3011,6 +3117,7 @@ function App(){
       if(d){
         if(d.sr)setSessionReps(d.sr);
         if(d.seriesKg&&!localStorage.getItem('ase_'+user+'_seriesKg_'+wkId))_ftSafeSetItem('ase_'+user+'_seriesKg_'+wkId,JSON.stringify(d.seriesKg),user);
+        if(d.exec?.sessionNotDone&&!localStorage.getItem('ase_'+user+'_sessionNotDone_'+wkId))_ftSafeSetItem('ase_'+user+'_sessionNotDone_'+wkId,JSON.stringify(d.exec.sessionNotDone),user);
         setPersistedExecKg(d.skUsed||d.sk||{});
         if(d.n)setNut(migrateNut(d.n));
         if(d.h)setHab(migrateHab(d.h));
@@ -3358,7 +3465,7 @@ function App(){
     return()=>{window.removeEventListener('error',onErr);window.removeEventListener('unhandledrejection',onRej);};
   },[]);
   function validateSave(){
-    const errors=ftV7ReportMissing(hab,cfg,localStorage.getItem(`ase_${user}_comidasPorDia`)==='3'?3:4);
+    const errors=ftV7ReportMissing(hab,cfg,localStorage.getItem(`ase_${user}_comidasPorDia`)==='3'?3:4,user,wk,exes,sessionRepsRef.current);
     for(const hs of (cfg?.hiit||[])){
       const r=hiitData?.regs?.[hs.id]||{};
       if(!r.cumple)errors.push('HIIT '+hs.id+': Cumplí / Parcial / No');
@@ -3431,6 +3538,8 @@ function App(){
             return String(v??'').trim()!=='' && !isNaN(parseFloat(v));
           });
           if(!hasRealRep)return;
+          let omissions={};try{omissions=JSON.parse(localStorage.getItem(`ase_${user}_omitSeries_${wk.id}`)||'{}')||{};}catch(_e){}
+          if(omissions?.[sess]?.[exId]?.all||omissions?.[sess]?.[exId]?.r1)return;
           const kg=seriesKgNow?.[sess]?.[exId]?.k1;
           if(parseFloat(kg)>0){
             if(!skUsed[sess])skUsed[sess]={};
@@ -3469,7 +3578,9 @@ function App(){
         semanaBloque:semanaBloqueSave,
         fuerzaProtocolo:bloqueSave==='fuerza'?(fuerzaProtocolosSave[semanaBloqueSave]||null):null
       };
-      const execMeta={baseProto:{},forceProto:{},intensity:{},forceTests:{},forceRefs:{},forceFinalRefs:{},forceInitial:{},forceBackoff:{}};
+      const execMeta={baseProto:{},forceProto:{},intensity:{},forceTests:{},forceRefs:{},forceFinalRefs:{},forceInitial:{},forceBackoff:{},omitSeries:{}};
+      try{execMeta.omitSeries=JSON.parse(localStorage.getItem(`ase_${user}_omitSeries_${wk.id}`)||'{}')||{};}catch(_e){}
+      try{execMeta.sessionNotDone=JSON.parse(localStorage.getItem(`ase_${user}_sessionNotDone_${wk.id}`)||'{}')||{};}catch(_e){}
       ['A','B','C','D','E'].slice(0,parseInt(cfg?.num)||0).forEach(function(sess){
         try{execMeta.baseProto[sess]=JSON.parse(localStorage.getItem(`ase_${user}_baseProto_${wk.id}_${sess}`)||'{}')||{};}catch(e){}
         try{execMeta.forceProto[sess]=JSON.parse(localStorage.getItem(`ase_${user}_forceProto_${wk.id}_${sess}`)||'{}')||{};}catch(e){}
@@ -3588,8 +3699,9 @@ function App(){
           suenoPromH:(()=>{const a=(hab.dailyV5||[]).map(d=>parseFloat(d.sleepHours)).filter(x=>isFinite(x)&&x>0);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length*100)/100:'';})(),
           pasosProm:(()=>{const a=(hab.dailyV5||[]).map(d=>parseFloat(d.steps)).filter(x=>isFinite(x)&&x>0);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):'';})(),
           nutriCompliance:(()=>{const a=(hab.dailyV5||[]).flatMap(d=>d.meals||[]).filter(Boolean);return a.length?Math.round(a.filter(x=>x==='ok').length/a.length*100):'';})(),
-          entrenoRealizadas:(hab.dailyV5||[]).filter(d=>d.training==='done').length,
-          entrenoOmitidas:Math.max(0,(parseInt(cfg?.num)||0)-(hab.dailyV5||[]).filter(d=>d.training==='done').length),
+          entrenoRealizadas:ftSessionAudit(user,wk,cfg,exes,curSR).filter(a=>a.state==='completa').length,
+          entrenoOmitidas:ftSessionAudit(user,wk,cfg,exes,curSR).filter(a=>a.state==='no_realizada').length,
+          sesionesRegistro:ftSessionAudit(user,wk,cfg,exes,curSR).map(a=>({sesion:a.sess,estado:a.state,pendientes:a.pending})),
           medPesoJSON:(hab.dailyV5||[]).map(d=>parseFloat(d.weight)).filter(x=>isFinite(x)&&x>0),
           medCinturaJSON:(hab.dailyV5||[]).map(d=>parseFloat(d.waist)).filter(x=>isFinite(x)&&x>0)
         };
@@ -3676,9 +3788,8 @@ function App(){
     const errs=validateSave();
     if(errs.length>0){setSaveErrors(errs);return;}
     setSaveErrors([]);
-    // REGLA FINAL DE REPORTE: solo Mi Semana valida si el reporte puede enviarse.
-    // Entreno, Dieta, Inicio, Devolución, videos, e1RM, kg/reps y Guardar progreso
-    // nunca bloquean ni exigen confirmación para reportar. Sus vacíos viajan como información real.
+    // Mi Semana no formula preguntas duplicadas: valida ejecución registrada en Entreno,
+    // pautas diarias, ausencias explícitas, protocolos e HIIT. Videos: aviso no bloqueante.
     // Verificar si ya se mandó reporte esta sem
     const sentKey=`ase_${user}_reporteSent_${wk.id}`;
     if(localStorage.getItem(sentKey)){
@@ -4182,7 +4293,7 @@ function App(){
       tab==='d'&&h(Dashboard,null),
       tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,persistedExecKg,hist,wk,loadingExes,isViewingPast,isViewingFuture,realWkNum,onReloadHist:loadH}),
       tab==='die'&&h(Diet,{key:'diet',hab,user,menusVer,metaAgua,metaSal,nutriConfirmado}),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek:true,isViewingPast,reporteYaEnviado,wkSat}),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek:true,isViewingPast,reporteYaEnviado,wkSat,user,wk,exes,sessionReps,onGoTraining:s=>{localStorage.setItem(`ase_${user}_focusSession_${wk.id}`,s);setTab('t');}}),
         tab==='dev'&&h(Devolucion,null),
       tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
     ),
