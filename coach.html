@@ -2437,6 +2437,7 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     const estadoFicha=norm(registro?.Estado||a.Estado||'Activo');
     const pausa=estadoFicha==='pausado';
     const baja=estadoFicha==='baja';
+    const noPaga=norm(registro?.CondicionCobro||((mesOffset>=0)?a.CondicionCobro:'')||'Paga')==='no paga';
     const base=ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio);
     const dias=registro&&registro.DiaVencimiento?Number(registro.DiaVencimiento):(Number(a.DiaCobro)||base?.getDate());
     const venc=dias?ftCobrosVenc(v.getFullYear(),v.getMonth(),dias):null;
@@ -2445,42 +2446,55 @@ function CobrosPanel({maestra,pagos,onRefresh}){
     const pagado=pagoExiste(id,n);
     const limite=mesOffset<0?new Date(v.getFullYear(),v.getMonth()+1,0):mesOffset===0?hoy:new Date(v.getFullYear(),v.getMonth(),1);
     const dif=venc?Math.round((Date.UTC(limite.getFullYear(),limite.getMonth(),limite.getDate())-Date.UTC(venc.getFullYear(),venc.getMonth(),venc.getDate()))/86400000):null;
-    const estado=baja?'baja':pausa?'pausado':pagado?'pagado':!venc?'sinfecha':dif>0?'moroso':dif===0?'hoy':'pendiente';
-    return {n,pagado,estado,venc,precio:pr,registro,pausa,baja};
+    const estado=baja?'baja':pausa?'pausado':noPaga?'nopaga':pagado?'pagado':!venc?'sinfecha':dif>0?'moroso':dif===0?'hoy':'pendiente';
+    return {n,pagado,estado,venc,precio:noPaga?0:pr,registro,pausa,baja,noPaga};
   }
   function deudaAnterior(a){
     const mesPrev=new Date(vista.getFullYear(),vista.getMonth()-1,1);
     const prev=detalleMes(a,mesPrev);
-    if(prev.n<1||prev.pausa||prev.baja||prev.pagado)return null;
+    if(prev.n<1||prev.pausa||prev.baja||prev.noPaga||prev.pagado)return null;
     // Fecha de inicio, fecha de cobro y el MesNumero identifican una cuota; no usar fecha de pago para calcular el ciclo.
     return {periodo:ftCobrosPeriodo(mesPrev),mes:prev.n,monto:prev.precio,consolidado:!!prev.registro};
   }
-  function fichaAbrir(a){setFicha(idDe(a));setEdit({monto:String(a.PrecioCuota||''),fecha:String(Number(a.DiaCobro)||(ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio))?.getDate()||''),estado:norm(a.Estado)==='pausado'?'Pausado':norm(a.Estado)==='baja'?'Baja':'Activo',plan:norm(a.Plan)==='basico'?'basico':norm(a.Plan)==='presencial'?'presencial':'online',desde:'actual'});setMsg('');}
-  async function saveFicha(a,mode){
+  function fichaAbrir(a){setFicha(idDe(a));setEdit({condicion:norm(a.CondicionCobro)==='no paga'?'No paga':'Paga',monto:String(a.PrecioCuota||''),fecha:String(Number(a.DiaCobro)||(ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio))?.getDate()||''),estado:norm(a.Estado)==='pausado'?'Pausado':norm(a.Estado)==='baja'?'Baja':'Activo',plan:norm(a.Plan)==='basico'?'basico':norm(a.Plan)==='presencial'?'presencial':'online',desde:'actual'});setMsg('');}
+  async function saveFicha(a){
     const id=idDe(a),campo={};
-    if(mode==='monto'){
-      const p=montoVal(edit.monto);if(!(p>0)){setMsg('Ingresá un monto válido.');return;}campo.PrecioCuota=p;
-    }else if(mode==='fecha'){
-      const d=Number(edit.fecha);if(!Number.isInteger(d)||d<1||d>31){setMsg('Elegí un día entre 1 y 31.');return;}
-      const base=ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio)||hoy;
+    const precio=montoVal(edit.monto),dia=Number(edit.fecha);
+    const noPaga=edit.condicion==='No paga';
+    if(!noPaga&&!(precio>0)){setMsg('Ingresá un monto válido.');return;}
+    if(!noPaga&&(!Number.isInteger(dia)||dia<1||dia>31)){setMsg('Elegí un día de cobro entre 1 y 31.');return;}
+    const originalDia=Number(a.DiaCobro)||(ftCobrosFecha(a.FechaCobro)||ftCobrosFecha(a.FechaInicio))?.getDate()||0;
+    const originalPlan=norm(a.Plan)==='basico'?'basico':norm(a.Plan)==='presencial'?'presencial':'online';
+    const originalEstado=norm(a.Estado)==='pausado'?'Pausado':norm(a.Estado)==='baja'?'Baja':'Activo';
+    if(precio!==montoVal(a.PrecioCuota)&&precio>0)campo.PrecioCuota=precio;
+    if(edit.condicion!==(norm(a.CondicionCobro)==='no paga'?'No paga':'Paga'))campo.CondicionCobro=edit.condicion;
+    if(!noPaga&&dia!==originalDia){
       const prox=new Date(hoy.getFullYear(),hoy.getMonth()+(edit.desde==='siguiente'?1:0),1);
       const y=prox.getFullYear(),m=prox.getMonth()+1;
-      campo.FechaCobro=y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(d,new Date(y,m,0).getDate())).padStart(2,'0');
-      campo.DiaCobro=d;
-    }else if(mode==='estado')campo.Estado=edit.estado;
-    else if(mode==='plan')campo.Plan=edit.plan;
-    if(!Object.keys(campo).length)return;
-    if(mode==='estado'&&edit.estado==='Baja'&&!window.confirm('Dar de BAJA a '+a.Asesorado+'? Se excluye de listados activos, pero NO se borran sus pagos ni reportes.'))return;
-    if(mode==='plan'&&!window.confirm('Cambiar a '+a.Asesorado+' al plan '+edit.plan+'? Se conservará todo el historial.'))return;
-    if(!cobrosReady||syncError||mesOffset!==0){setMsg('Las ediciones sólo están disponibles en el mes actual con conexión a Sheets.');return;}
-    setSaving(true);setMsg('Guardando…');
+      campo.FechaCobro=y+'-'+String(m).padStart(2,'0')+'-'+String(Math.min(dia,new Date(y,m,0).getDate())).padStart(2,'0');
+      campo.DiaCobro=dia;
+    }
+    if(edit.estado!==originalEstado)campo.Estado=edit.estado;
+    if(edit.plan!==originalPlan)campo.Plan=edit.plan;
+    if(!Object.keys(campo).length){setMsg('No hay cambios para guardar.');return;}
+    if(campo.Estado==='Baja'&&!window.confirm('¿Dar de BAJA a '+a.Asesorado+'? El historial de pagos y reportes se conserva.'))return;
+    if(campo.Plan&&!window.confirm('¿Cambiar el plan de '+a.Asesorado+' a '+edit.plan+'? El historial se conserva.'))return;
+    if(!cobrosReady||syncError){setMsg('No se pudo verificar la conexión con Sheets. Actualizá e intentá otra vez.');return;}
+    setSaving(true);setMsg('Guardando cambios…');
     try{
       await post({action:'ftCobrosEditarFicha',asesoradoId:id,asesorado:a.Asesorado,campos:campo,periodoActual:ftCobrosPeriodo(hoy),aplicaMesActual:edit.desde==='actual'});
       await new Promise(r=>setTimeout(r,850));
-      const check=await readBackend();const confirmado=check.ma.find(r=>idDe(r)===id);
-      const ok=confirmado&&Object.keys(campo).every(k=>String(confirmado[k]||'').trim()===String(campo[k]).trim());
-      if(!ok)throw new Error('No se pudo confirmar el cambio en Sheets. Verificá el Apps Script.');
-      setMsg('✓ Guardado y confirmado en Sheets');
+      const check=await readBackend(),confirmado=check.ma.find(r=>idDe(r)===id);
+      const ok=confirmado&&Object.keys(campo).every(k=>{
+        if(k==='PrecioCuota')return montoVal(confirmado[k])===montoVal(campo[k]);
+        if(k==='FechaCobro'){
+          const got=ftCobrosFecha(confirmado[k]),expected=ftCobrosFecha(campo[k]);
+          return !!got&&!!expected&&got.getFullYear()===expected.getFullYear()&&got.getMonth()===expected.getMonth()&&got.getDate()===expected.getDate();
+        }
+        return String(confirmado[k]??'').trim()===String(campo[k]).trim();
+      });
+      if(!ok)throw new Error('La modificación no pudo confirmarse en Sheets. Verificá el registro antes de volver a guardar.');
+      setMsg('✓ Todos los cambios confirmados en Sheets');
     }catch(e){setMsg(String(e.message||e));}finally{setSaving(false);}
   }
   async function registrarPago(a,f,desmarcar){
@@ -2510,8 +2524,8 @@ function CobrosPanel({maestra,pagos,onRefresh}){
   const vis=filas.filter(f=>(subTab==='todos'||subTab==='moroso'&&f.d.estado==='moroso'||subTab==='hoy'&&f.d.estado==='hoy'||subTab==='pagado'&&f.d.pagado||subTab==='deuda'&&f.deuda)&&(!busqueda.trim()||norm(f.a.Asesorado).includes(norm(busqueda))));
   const tabs=[['todos','Todos',filas.length],['moroso','Morosos',morosos.length],['hoy','Vence hoy',venceHoy.length],['deuda','Deuda anterior',deudaPrev.length],['pagado','Pagados',pagados.length]];
   const totalCobrado=filas.reduce((v,f)=>v+(f.d.pagado?montoVal(findPago(idDe(f.a),f.d.n)?.Monto||f.d.precio):0),0);
-  const totalPendiente=filas.reduce((v,f)=>v+(!f.d.pagado&&!f.d.pausa&&!f.d.baja&&f.d.n>0?f.d.precio:0),0);
-  const colores={moroso:['#FEF2F2','#B91C1C','Moroso'],hoy:['#FFFBEB','#B45309','Vence hoy'],pendiente:['#F1F5F9','#475569','Pendiente'],pagado:['#F0FDF4','#15803D','Pagado'],pausado:['#F3F4F6','#64748B','Pausado'],baja:['#F3F4F6','#6B7280','Baja'],futuro:['#F1F5F9','#64748B','Aún no comenzó'],sinfecha:['#FEF2F2','#B91C1C','Sin fecha']};
+  const totalPendiente=filas.reduce((v,f)=>v+(!f.d.pagado&&!f.d.pausa&&!f.d.baja&&!f.d.noPaga&&f.d.n>0?f.d.precio:0),0);
+  const colores={nopaga:['#EFF6FF','#1D4ED8','No paga'],moroso:['#FEF2F2','#B91C1C','Moroso'],hoy:['#FFFBEB','#B45309','Vence hoy'],pendiente:['#F1F5F9','#475569','Pendiente'],pagado:['#F0FDF4','#15803D','Pagado'],pausado:['#F3F4F6','#64748B','Pausado'],baja:['#F3F4F6','#6B7280','Baja'],futuro:['#F1F5F9','#64748B','Aún no comenzó'],sinfecha:['#FEF2F2','#B91C1C','Sin fecha']};
   const btn=(label,click,bg='#111',color='#fff',border='none')=>h('button',{onClick:click,disabled:saving||!cobrosReady||!!syncError,style:{border,borderRadius:'8px',background:bg,color,padding:'9px 12px',fontWeight:'800',fontSize:'11px',cursor:'pointer',opacity:saving?.6:1}},label);
   return h('div',{style:{maxWidth:'480px',margin:'0 auto',padding:'12px 12px 90px'}},
     h('div',{style:{marginBottom:'12px'}},h('div',{style:{fontSize:'20px',fontWeight:'900'}},'Cobros'),h('div',{style:{fontSize:'11px',color:'#777',marginTop:'3px'}},'Una cuota por mes · deuda previa visible hasta que se pague')),
@@ -2537,24 +2551,26 @@ function CobrosPanel({maestra,pagos,onRefresh}){
 
       f.deuda&&h('div',{style:{marginTop:'7px',background:'#FEF2F2',border:'1px solid #FECACA',borderRadius:'8px',padding:'8px',fontSize:'11px',color:'#991B1B',fontWeight:'800'}},'Adeuda '+f.deuda.periodo+' · '+moneda(f.deuda.monto)+(f.deuda.consolidado?'':' · histórico reconstruido')),
       h('div',{style:{display:'flex',gap:'6px',marginTop:'10px',flexWrap:'wrap'}},
-        d.n>0&&!d.pausa&&btn(d.pagado?'✓ Pagó · desmarcar':'✓ Pagó',()=>registrarPago(a,d,d.pagado),d.pagado?'#EAF7F2':'#111',d.pagado?'#15803D':'#fff'),
+        d.n>0&&!d.pausa&&!d.noPaga&&btn(d.pagado?'✓ Pagó · desmarcar':'✓ Pagó',()=>registrarPago(a,d,d.pagado),d.pagado?'#EAF7F2':'#111',d.pagado?'#15803D':'#fff'),
         btn(open?'Cerrar':'Editar · deuda',()=>open?setFicha(null):fichaAbrir(a),'#F3F4F6','#333'),
         f.deuda&&btn('Cobrar deuda',()=>registrarPago(a,{n:f.deuda.mes,precio:f.deuda.monto},false),'#FEE2E2','#991B1B')
       ),
       open&&h('div',{style:{background:'#F8FAFC',borderRadius:'10px',padding:'12px',marginTop:'10px',border:'1px solid #E2E8F0'}},
         h('div',{style:{fontSize:'12px',fontWeight:'900',marginBottom:'10px'}},'Acciones de '+a.Asesorado),
-        h('div',{style:{display:'grid',gridTemplateColumns:'1fr auto',gap:'7px',alignItems:'center',marginBottom:'10px'}},
-          h('input',{type:'text',inputMode:'decimal',value:edit.monto,onChange:e=>setEdit(s=>({...s,monto:e.target.value})),style:inp,placeholder:'Monto de cuota'}),btn('Guardar monto',()=>saveFicha(a,'monto')),
-          h('input',{type:'number',min:1,max:31,value:edit.fecha,onChange:e=>setEdit(s=>({...s,fecha:e.target.value})),style:inp,placeholder:'Día de vencimiento'}),btn('Guardar fecha',()=>saveFicha(a,'fecha')),
-          h('select',{value:edit.estado,onChange:e=>setEdit(s=>({...s,estado:e.target.value})),style:inp},['Activo','Pausado','Baja'].map(x=>h('option',{key:x,value:x},x))),btn('Guardar estado',()=>saveFicha(a,'estado')),
-          h('select',{value:edit.plan,onChange:e=>setEdit(s=>({...s,plan:e.target.value})),style:inp},[['online','Personalizada online'],['presencial','Personalizada presencial'],['basico','Plan básico']].map(x=>h('option',{key:x[0],value:x[0]},x[1]))),btn('Guardar plan',()=>saveFicha(a,'plan'))
+        h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'7px',alignItems:'center',marginBottom:'10px'}},
+          h('label',{style:{fontSize:'11px',fontWeight:'700'}},'Monto de cuota',h('input',{type:'text',inputMode:'decimal',value:edit.monto,onChange:e=>setEdit(s=>({...s,monto:e.target.value})),style:{...inp,width:'100%',boxSizing:'border-box'},placeholder:'Monto de cuota'})),
+          h('label',{style:{fontSize:'11px',fontWeight:'700'}},'Día de cobro',h('input',{type:'number',min:1,max:31,value:edit.fecha,onChange:e=>setEdit(s=>({...s,fecha:e.target.value})),style:{...inp,width:'100%',boxSizing:'border-box'}})),
+          h('label',{style:{fontSize:'11px',fontWeight:'700'}},'Condición de cobro',h('select',{value:edit.condicion,onChange:e=>setEdit(q=>({...q,condicion:e.target.value})),style:{...inp,width:'100%',boxSizing:'border-box'}},h('option',{value:'Paga'},'Paga'),h('option',{value:'No paga'},'No paga'))),
+          h('label',{style:{fontSize:'11px',fontWeight:'700'}},'Estado',h('select',{value:edit.estado,onChange:e=>setEdit(s=>({...s,estado:e.target.value})),style:{...inp,width:'100%',boxSizing:'border-box'}},['Activo','Pausado','Baja'].map(x=>h('option',{key:x,value:x},x)))),
+          h('label',{style:{fontSize:'11px',fontWeight:'700'}},'Plan vigente',h('select',{value:edit.plan,onChange:e=>setEdit(s=>({...s,plan:e.target.value})),style:{...inp,width:'100%',boxSizing:'border-box'}},[['online','Personalizada online'],['presencial','Personalizada presencial'],['basico','Plan básico']].map(x=>h('option',{key:x[0],value:x[0]},x[1]))))
         ),
         h('div',{style:{display:'flex',gap:'8px',alignItems:'center',marginBottom:'12px',fontSize:'11px',color:'#475569'}},
           h('span',{style:{fontWeight:'700'}},'Cambios desde:'),
           h('select',{value:edit.desde,onChange:e=>setEdit(s=>({...s,desde:e.target.value})),style:{...inp,flex:1,fontSize:'11px'}},h('option',{value:'siguiente'},'Mes próximo (recomendado)'),h('option',{value:'actual'},'Mes actual si está abierto'))
         ),
+        h('button',{type:'button',disabled:saving,onClick:()=>saveFicha(a),style:{width:'100%',border:0,borderRadius:'9px',padding:'12px',background:saving?'#9CA3AF':'#111',color:'#fff',fontWeight:'900',fontSize:'13px',marginBottom:'10px'}},saving?'Guardando…':'Guardar cambios'),
         h('div',{style:{fontSize:'11px',color:'#555',lineHeight:'1.5'}},f.deuda?'Deuda anterior: '+f.deuda.periodo+' · '+moneda(f.deuda.monto):'No registra deuda del mes anterior.'),
-        h('div',{style:{fontSize:'10px',color:'#64748B',marginTop:'8px'}},'Pausar no borra pagos ni deudas previas. Las cuotas cerradas no se reescriben.'),
+        h('div',{style:{fontSize:'10px',color:'#64748B',marginTop:'8px'}},'No paga excluye cuotas futuras de morosidad, sin borrar ni saldar deudas anteriores. Pausar no borra registros históricos.'),
         msg&&h('div',{style:{fontSize:'11px',fontWeight:'700',color:msg.startsWith('✓')?'#15803D':'#B91C1C',marginTop:'8px'}},msg)
       )
     );})
