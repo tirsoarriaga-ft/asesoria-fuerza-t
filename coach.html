@@ -864,6 +864,17 @@ function DiagnosticoPanel({rutina,weeks}){
   );
 }
 
+function ftCoachDailySummary(row){
+ const parse=v=>{if(Array.isArray(v))return v;try{return JSON.parse(String(v||'[]'))||[];}catch(e){return[];}};
+ const v7=parse(row&&row.DailyV7),v6=parse(row&&row.DailyV6),v5=parse(row&&row.DailyV5);
+ const days=(v7.length?v7:v6.length?v6:v5).slice(0,7);
+ if(!days.length)return null;
+ const fallback=Number(row&&row.MealCount)===3?3:4;
+ const dayN=d=>{const n=Number(d.mealCount);if(n===3||n===4)return n;return d.meals&&d.meals[3]?4:(d.meals||[]).slice(0,3).every(Boolean)?3:fallback;};
+ const sum=(key)=>{const a=days.map(d=>Number(String(d[key]??'').replace(',','.'))).filter(x=>Number.isFinite(x)&&x>0);return a.length?Math.round(a.reduce((p,q)=>p+q,0)/a.length*100)/100:null;};
+ let total=0,answered=0,ok=0;days.forEach(d=>{const arr=(d.meals||[]).slice(0,dayN(d));total+=dayN(d);arr.forEach(v=>{if(v)answered++;if(v==='ok'||v==='equiv_validada')ok++;});});
+ return {total,answered,ok,peso:sum('weight'),cintura:sum('waist'),agua:sum('water'),sueno:sum('sleepHours'),registroCompleto:total>0&&answered===total};
+}
 function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,medicionesHistoricas,onRefresh,onBack}){
   const [tab,setTab]=useState('med');
   const [selEx,setSelEx]=useState(0);
@@ -938,6 +949,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,medic
   const pendientes=checklist.filter(c=>!c.ok).length;
   const alerts=getAlerts(weeks,String(rutina?.Objetivo||'mantenimiento'));
   const lat=weeks[weeks.length-1]||{};
+  const dailySummary=ftCoachDailySummary(lat);
 
   const labels=weeks.map(w=>String(w.SemanID||'').slice(5)||'');
   const pesos=weeks.map(w=>parseFloat(w.Peso)).filter((v,i)=>weeks[i].Peso&&!isNaN(v)&&v>0);
@@ -1337,6 +1349,14 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,medic
       )
     ),
     h('div',{style:{padding:'12px',paddingBottom:'20px'}},
+      dailySummary&&h('div',{style:{...card,borderLeft:'4px solid '+(dailySummary.registroCompleto?G:O)}},
+        h('div',{style:{fontSize:'13px',fontWeight:'900',marginBottom:'7px'}},'Registro semanal · lectura real'),
+        h('div',{style:{fontSize:'11px',color:'#555',lineHeight:'1.7'}},
+          'Comidas cumplidas '+dailySummary.ok+'/'+dailySummary.total+' · respuestas '+dailySummary.answered+'/'+dailySummary.total,
+          ' · Peso medio: '+(dailySummary.peso??'—')+' kg · Cintura media: '+(dailySummary.cintura??'—')+' cm',
+          ' · Agua media: '+(dailySummary.agua??'—')+' L · Sueño medio: '+(dailySummary.sueno??'—')+' h'),
+        h('div',{style:{fontSize:'10px',color:'#667085',marginTop:'5px'}},'Los registros históricos sin detalle diario muestran solamente la información recuperable. Cumplimiento ≠ integridad del reporte.')
+      ),
       // ── Checklist de progreso (Fase 3B) ──
       h('div',{style:{background:'#fff',borderRadius:'10px',border:'1px solid rgba(0,0,0,0.08)',marginBottom:'10px',overflow:'hidden'}},
         h('div',{onClick:()=>setShowChecklist(s=>!s),style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',cursor:'pointer'}},
@@ -1645,6 +1665,7 @@ function VideoPanel({name}){
     revList.map((v,i)=>{
       const vk=String(v.Sesion||'')+'|'+String(v.Ejercicio||'')+'|'+String(v.URL||'');
       const yaRevisado=String(v.Revisado||'').toLowerCase()==='si'||savedIdx[vk];
+      const anterior=conIdx.filter(x=>x._ord<v._ord&&String(x.Sesion||'')===String(v.Sesion||'')&&String(x.Ejercicio||'')===String(v.Ejercicio||'')).slice(-1)[0];
       return h('div',{key:vk,style:{padding:'12px',marginBottom:'8px',borderRadius:'10px',border:'1px solid '+(yaRevisado?'rgba(0,0,0,0.08)':'#FED7AA'),background:yaRevisado?'#fff':'#FFFBEB'}},
         h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
           h('div',null,
@@ -1653,6 +1674,10 @@ function VideoPanel({name}){
           ),
           h('a',{href:v.URL,target:'_blank',rel:'noreferrer',style:{background:'#EAF7F2',color:G,borderRadius:'8px',padding:'6px 12px',fontSize:'12px',fontWeight:'700',textDecoration:'none',flexShrink:0}},'▶ Ver')
         ),
+        anterior&&h('div',{style:{fontSize:'11px',marginBottom:'8px',color:'#64748B'}},'Comparar con video anterior ('+String(anterior.Fecha||'sin fecha')+'): ',h('a',{href:anterior.URL,target:'_blank',rel:'noreferrer'},'▶ Abrir anterior')),
+        h('div',{style:{fontSize:'10px',color:'#64748B',marginBottom:'5px'}},'Progresión técnica: requiere valoración humana. Las cargas no demuestran mejoría técnica.'),
+        h('select',{defaultValue:String(v.ValoracionTecnica||''),onChange:e=>{const val=e.target.value;if(!val)return;fetch(SCRIPT_URL,{method:'POST',mode:'no-cors',body:JSON.stringify({action:'ftVideoTecnica',asesorado:name,url:v.URL,valoracion:val})}).catch(()=>{});},style:{width:'100%',padding:'8px',marginBottom:'8px',borderRadius:'8px'}},
+          h('option',{value:''},'Valorar técnica (coach)'),h('option',{value:'mejoro'},'Mejoró'),h('option',{value:'igual'},'Sin cambios'),h('option',{value:'empeoro'},'Empeoró'),h('option',{value:'no_evaluable'},'No evaluable')),
         h('textarea',{value:fb[vk]||'',onChange:e=>{const val=e.target.value;setFb(s=>({...s,[vk]:val}));},placeholder:'Corrección técnica para el asesorado…',rows:2,style:{width:'100%',boxSizing:'border-box',border:'1px solid rgba(0,0,0,0.15)',borderRadius:'8px',padding:'8px',fontSize:'13px',resize:'vertical',fontFamily:'inherit'}}),
         h('button',{onClick:()=>guardarFeedback(v,vk),disabled:saving===vk||!((fb[vk]||'').trim()),style:{marginTop:'6px',background:saving===vk?'#ccc':AC,color:'#fff',border:'none',borderRadius:'8px',padding:'7px 14px',fontSize:'12px',fontWeight:'700',cursor:saving===vk?'default':'pointer'}},saving===vk?'Guardando…':savedIdx[vk]?'✓ Enviado — reenviar':'Enviar corrección')
       );
