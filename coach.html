@@ -841,7 +841,7 @@ function ftCoachDailySummary(row){
  const fallback=Number(row&&row.MealCount)===3?3:4;
  const dayN=d=>{const n=Number(d.mealCount);if(n===3||n===4)return n;return d.meals&&d.meals[3]?4:(d.meals||[]).slice(0,3).every(Boolean)?3:fallback;};
  const sum=(key)=>{const a=days.map(d=>Number(String(d[key]??'').replace(',','.'))).filter(x=>Number.isFinite(x)&&x>0);return a.length?Math.round(a.reduce((p,q)=>p+q,0)/a.length*100)/100:null;};
- let total=0,answered=0,ok=0;days.forEach(d=>{const arr=(d.meals||[]).slice(0,dayN(d));total+=dayN(d);arr.forEach(v=>{if(v)answered++;if(v==='ok'||v==='equiv_validada')ok++;});});
+ let total=0,answered=0,ok=0;days.forEach(d=>{const arr=(d.meals||[]).slice(0,dayN(d));total+=dayN(d)+(Array.isArray(d.skippedMealIds)?d.skippedMealIds.length:0);answered+=(Array.isArray(d.skippedMealIds)?d.skippedMealIds.length:0);arr.forEach(v=>{if(v)answered++;if(v==='ok'||v==='equiv_validada')ok++;});});
  return {total,answered,ok,peso:sum('weight'),cintura:sum('waist'),agua:sum('water'),sueno:sum('sleepHours'),registroCompleto:total>0&&answered===total};
 }
 
@@ -3199,7 +3199,7 @@ function FTV9AnalisisSemanal({data,rutinas,devoluciones,videos,onRefresh}){
        [3,4].includes(Number(d.mealCount))?Number(d.mealCount):[3,4].includes(Number(report.MealCount))?Number(report.MealCount):4;
      return Array.isArray(d.meals)&&d.meals.slice(0,n).filter(Boolean).length===n;
    })));
-   const mealCount=days.reduce((n,d)=>n+(Array.isArray(d.mealIds)&&[3,4].includes(d.mealIds.length)?d.mealIds.length:Number(d.mealCount)===3?3:4),0);
+   const mealCount=days.reduce((n,d)=>n+(Array.isArray(d.mealIds)&&[3,4].includes(d.mealIds.length)?d.mealIds.length:Number(d.mealCount)===3?3:4)+(Array.isArray(d.skippedMealIds)?d.skippedMealIds.length:0),0);
    const mealOk=days.reduce((n,d)=>n+(d.meals||[]).filter(x=>x==='ok'||x==='equiv_validada').length,0);
    const mealPct=days.length===7?pct(mealOk,mealCount):null;
    const sessionTarget=Math.max(0,Number(r.NumSesiones)||0);
