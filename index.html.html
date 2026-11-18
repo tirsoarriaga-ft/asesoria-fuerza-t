@@ -1440,7 +1440,14 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
   // Fuerza: la referencia pertenece al bloque, no al usuario para siempre.
   const rmRefKey=(ex)=>`ase_${user}_rmRef_b${bloqueInicio}_${activeSess}_${ex.id}`;
   const rmRefLegacyKey=(ex)=>`ase_${user}_rmRef_${activeSess}_${ex.id}`;
-  const getRmRef=(ex)=>{if(isViewingPast&&_wSnap?.exec?.forceRefs){const z=parseFloat(_wSnap.exec.forceRefs?.[activeSess]?.[ex.id]||_wSnap.exec.forceRefs?.[activeSess]?.[String(ex.id)]);return isNaN(z)?0:z;}let v=parseFloat(localStorage.getItem(rmRefKey(ex)));if(isNaN(v)&&!isViewingPast){v=parseFloat(localStorage.getItem(rmRefLegacyKey(ex)));if(!isNaN(v))try{localStorage.setItem(rmRefKey(ex),String(v));}catch(e){}}return isNaN(v)?0:v;};
+  const getRmRef=(ex)=>{
+    // Un snapshot histórico sin referencia no invalida un test de S1 recuperado posteriormente.
+    // La referencia se identifica por bloque + sesión + ejercicio, no por la semana visualizada.
+    if(isViewingPast&&_wSnap?.exec?.forceRefs){const z=parseFloat(_wSnap.exec.forceRefs?.[activeSess]?.[ex.id]??_wSnap.exec.forceRefs?.[activeSess]?.[String(ex.id)]);if(z>0)return z;}
+    let v=parseFloat(localStorage.getItem(rmRefKey(ex)));
+    if(!(v>0)&&!isViewingPast){v=parseFloat(localStorage.getItem(rmRefLegacyKey(ex)));if(v>0)try{localStorage.setItem(rmRefKey(ex),String(v));}catch(e){}}
+    return v>0?v:0;
+  };
   const rmRefFinalKey=(ex)=>`ase_${user}_rmRefFinal_b${bloqueInicio}_${activeSess}_${ex.id}`;
   const rmRefFinalLegacyKey=(ex)=>`ase_${user}_rmRefFinal_${activeSess}_${ex.id}`;
   const getRmRefFinal=(ex)=>{if(isViewingPast&&_wSnap?.exec?.forceFinalRefs){const z=parseFloat(_wSnap.exec.forceFinalRefs?.[activeSess]?.[ex.id]||_wSnap.exec.forceFinalRefs?.[activeSess]?.[String(ex.id)]);return isNaN(z)?0:z;}let v=parseFloat(localStorage.getItem(rmRefFinalKey(ex)));if(isNaN(v)&&!isViewingPast){v=parseFloat(localStorage.getItem(rmRefFinalLegacyKey(ex)));if(!isNaN(v))try{localStorage.setItem(rmRefFinalKey(ex),String(v));}catch(e){}}return isNaN(v)?0:v;};
@@ -1733,8 +1740,40 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                   if(val)bp[exId]=val;else delete bp[exId];
                 }
               });
+              // FUERZA S1: la corrección histórica del test principal debe alimentar
+              // la referencia del bloque. Guardar kg/reps como serie ejecutada no alcanza.
+              var retroTest=null;
+              if(bloque==='fuerza'&&semEnBloque===1){
+                var firstId=(cfg.assign?.[activeSess]||[]).flat(Infinity)[0];
+                if(firstId!=null){
+                  var firstKey=String(firstId);
+                  var kgRaw=Object.prototype.hasOwnProperty.call(corrEdits,firstKey+'|kg')?corrEdits[firstKey+'|kg']:(d.skUsed?.[activeSess]?.[firstKey]??d.sk?.[activeSess]?.[firstKey]);
+                  var repsRaw=Object.prototype.hasOwnProperty.call(corrEdits,firstKey+'|r1')?corrEdits[firstKey+'|r1']:d.sr?.[activeSess]?.[firstKey]?.r1;
+                  var kgT=Number(kgRaw),repsT=Number(repsRaw);
+                  var changedTest=Object.prototype.hasOwnProperty.call(corrEdits,firstKey+'|kg')||Object.prototype.hasOwnProperty.call(corrEdits,firstKey+'|r1');
+                  if(changedTest){
+                    if(!(kgT>0&&Number.isInteger(repsT)&&repsT>=3&&repsT<=5))throw new Error('El test de Fuerza necesita kg positivos y entre 3 y 5 repeticiones.');
+                    retroTest={id:firstKey,kg:kgT,reps:repsT,e1rm:Math.round(kgT*(1+repsT/30)*10)/10};
+                    d.exec=d.exec||{};
+                    ['forceTests','forceRefs','forceInitial'].forEach(function(k){d.exec[k]=d.exec[k]||{};d.exec[k][activeSess]=d.exec[k][activeSess]||{};});
+                    d.exec.forceTests[activeSess][firstKey]={kg:String(kgT),reps:String(repsT)};
+                    d.exec.forceRefs[activeSess][firstKey]=retroTest.e1rm;
+                    d.exec.forceInitial[activeSess][firstKey]={kg:kgT,reps:repsT,e1rm:retroTest.e1rm};
+                  }
+                }
+              }
               localStorage.setItem('ase_'+user+'_'+wk.id,JSON.stringify(d));
               localStorage.setItem(`ase_${user}_baseProto_${wk.id}_${activeSess}`,JSON.stringify(bp));
+              if(retroTest){
+                var idT=retroTest.id,biT=bloqueInicio;
+                localStorage.setItem(`ase_${user}_rmRef_b${biT}_${activeSess}_${idT}`,String(retroTest.e1rm));
+                localStorage.setItem(`ase_${user}_forceInitial_b${biT}_${activeSess}_${idT}`,JSON.stringify({kg:retroTest.kg,reps:retroTest.reps,e1rm:retroTest.e1rm}));
+                var rk=`ase_${user}_rmTest_${wk.id}_${activeSess}`;
+                var tests={};try{tests=JSON.parse(localStorage.getItem(rk)||'{}')||{};}catch(_e){}
+                tests[idT]={kg:String(retroTest.kg),reps:String(retroTest.reps)};
+                localStorage.setItem(rk,JSON.stringify(tests));
+                setRmTest(function(x){return {...x,[idT]:tests[idT]};});
+              }
 
               // BASE: una corrección confirmada alimenta la exposición siguiente.
               // Si la semana siguiente ya tiene kg realmente registrados, no los pisa.
@@ -1772,10 +1811,10 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
               }
               // Alinear draft histórico para que no restaure valores anteriores.
               var dk='ase_'+user+'_draft_'+wk.id;var drw=localStorage.getItem(dk);
-              if(drw){try{var dr=JSON.parse(drw);dr.sr=d.sr;dr.sk=d.sk;dr.skUsed=d.skUsed;localStorage.setItem(dk,JSON.stringify(dr));}catch(e){}}
-              setBaseProto(bp);setCorrEdits({});setCorrecting(false);setCorrMsg('Corrección guardada en '+wk.id+'.');
+              if(drw){try{var dr=JSON.parse(drw);dr.sr=d.sr;dr.sk=d.sk;dr.skUsed=d.skUsed;if(retroTest)dr.exec=d.exec;localStorage.setItem(dk,JSON.stringify(dr));}catch(e){}}
+              setBaseProto(bp);setCorrEdits({});setCorrecting(false);setCorrMsg(retroTest?'Test S1 recuperado: '+retroTest.kg+' kg × '+retroTest.reps+' reps · e1RM '+retroTest.e1rm+' kg. Las semanas 2–7 usarán esta referencia al abrirse.':'Corrección guardada en '+wk.id+'.');
               if(onReloadHist)onReloadHist();
-            }catch(e){setCorrMsg('No se pudo guardar la corrección.');}
+            }catch(e){setCorrMsg(e&&e.message?e.message:'No se pudo guardar la corrección.');}
           }
         },style:{background:correcting?'#166534':'#EA580C',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 14px',fontSize:'12px',fontWeight:'700',cursor:'pointer'}},correcting?'Guardar corrección':'Corregir')
       ),
@@ -4665,31 +4704,4 @@ function App(){
     ),
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       pendingPrior&&h('div',{style:{background:'#FEF3C7',border:'1px solid #F59E0B',padding:'12px',borderRadius:'12px',marginBottom:'12px'}},
-        h('div',{style:{fontSize:'13px',fontWeight:'900',color:'#92400E'}},'Semana anterior pendiente de enviar'),
-        h('div',{style:{fontSize:'11px',color:'#92400E',margin:'5px 0'}},'Cerrá '+String(pendingPrior.label||pendingPrior.id)+' sin mezclarla con los registros de esta semana.'),
-        h('button',{onClick:()=>{goToWeekNum(pendingPrior.num);setTab('ms');},style:{border:'none',padding:'9px 12px',borderRadius:'8px',background:'#92400E',color:'#fff',fontWeight:'800'}},'Completar reporte anterior')
-      ),
-      isViewingPast&&h('div',{style:{background:'#0A0A0A',borderRadius:'12px',padding:'12px 14px',marginBottom:'10px',display:'flex',gap:'10px',alignItems:'center'}},
-        h('span',{style:{fontSize:'18px'}},'✏️'),
-        h('div',null,
-          h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#fff',marginBottom:'2px'}},'Semana pasada — editable'),
-          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)'}},'Podés completar o corregir esta semana y enviar el reporte con su SemanID correspondiente.')
-        )
-      ),
-      tab==='d'&&h(Dashboard,null),
-      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,persistedExecKg,hist,wk,loadingExes,isViewingPast,isViewingFuture,realWkNum,onReloadHist:loadH}),
-      tab==='die'&&h(Diet,{key:'diet',hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfirmado}),
-      tab==='ms'&&pautaHabitosV9&&h('div',{style:{padding:'10px',borderRadius:'9px',background:'#EFF6FF',fontSize:'11px',fontWeight:'700',marginBottom:'10px'}},'Pauta vigente · Agua '+(pautaHabitosV9.AguaLitros||'—')+' L/día · Sueño '+(pautaHabitosV9.SuenoMinHoras||7)+'–'+(pautaHabitosV9.SuenoMaxHoras||9)+' h/día · Caminar '+(pautaHabitosV9.CaminataKmDia||'—')+' km/día · HIIT '+(pautaHabitosV9.HiitSesionesSemana??0)+' sesiones/sem.'),
-      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,user,wk,exes,sessionReps,onGoTraining:s=>{localStorage.setItem(`ase_${user}_focusSession_${wk.id}`,s);setTab('t');}}),
-        tab==='dev'&&h(Devolucion,null),
-      tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
-    ),
-    h('div',{style:{background:'#0A0A0A',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',position:'sticky',bottom:0,zIndex:10}},
-      TABS.map(t=>h('button',{key:t.id,onClick:()=>setTab(t.id),style:{flex:'0 0 68px',padding:'10px 2px 14px',fontSize:'10px',background:'none',border:'none',borderTop:tab===t.id?`2px solid ${AC}`:'2px solid transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',color:tab===t.id?AC:'rgba(255,255,255,0.35)',fontWeight:tab===t.id?'800':'400',transition:'color 0.2s'}},h('span',{style:{fontSize:'18px'}},t.ic),t.l))
-    )
-  );
-}
-ReactDOM.createRoot(document.getElementById('root')).render(h(App,null));
-</script>
-</body>
-</html>
+        h('div',{style:{fon
