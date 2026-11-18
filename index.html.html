@@ -47,6 +47,35 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 </head>
 <body>
 <div id="root"></div>
+<script id="ft-boot-diag">
+(function(){
+  var started=Date.now(), params=new URLSearchParams(location.search), debug=params.get('debug')==='true';
+  var stage='HTML cargado', errors=[], touched=false;
+  function clean(v){return String(v==null?'':v).slice(0,900);}
+  function render(force){
+    var root=document.getElementById('root'), populated=!!(root&&root.children.length);
+    var el=document.getElementById('ft-start-diagnostic');
+    if(populated&&!debug){if(el)el.remove();return;}
+    if(!debug&&!force&&!errors.length)return;
+    if(!el){el=document.createElement('div');el.id='ft-start-diagnostic';document.body.appendChild(el);}
+    el.style.cssText='position:fixed;inset:0;z-index:2147483647;overflow:auto;background:#101012;color:#f5f5f5;padding:30px 18px;font:14px/1.5 system-ui,sans-serif;';
+    var headings=['Fuerza T · Diagnóstico de inicio','Etapa: '+stage,'React: '+(typeof React),'ReactDOM: '+(typeof ReactDOM),'Pantalla: '+(populated?'renderizada':'sin contenido'),'Tiempo: '+Math.round((Date.now()-started)/1000)+' s'];
+    el.textContent='';
+    var h=document.createElement('h2');h.textContent=headings[0];h.style.cssText='font-size:19px;margin:0 0 18px;color:#ff9d72';el.appendChild(h);
+    headings.slice(1).forEach(function(x){var p=document.createElement('p');p.textContent=x;el.appendChild(p);});
+    if(errors.length){var h2=document.createElement('h3');h2.textContent='Errores detectados';h2.style.marginTop='20px';el.appendChild(h2);errors.forEach(function(x){var pre=document.createElement('pre');pre.textContent=x;pre.style.cssText='padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:#3a2525;border:1px solid #8a4a4a;border-radius:10px;font-size:12px;';el.appendChild(pre);});}
+    if(!errors.length&&!populated){var p=document.createElement('p');p.textContent='Sin error capturado. El código principal no logró montar la interfaz. Revisar etapa y cargas.';p.style.color='#ffc6a6';el.appendChild(p);}
+    var btn=document.createElement('button');btn.textContent='Copiar diagnóstico';btn.style.cssText='padding:11px;margin-top:15px;border:1px solid #777;border-radius:8px;background:#29292d;color:#fff';btn.onclick=function(){var result=headings.join('\n')+'\n'+errors.join('\n');if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(result).catch(function(){});else prompt('Copiá el diagnóstico',result);};el.appendChild(btn);
+    if(debug&&populated){var close=document.createElement('button');close.textContent='Cerrar diagnóstico';close.style.cssText=btn.style.cssText+';margin-left:9px';close.onclick=function(){el.remove();};el.appendChild(close);}
+  }
+  function fault(msg){errors.push(clean(msg));render(true);}
+  window.FT_BOOT_DIAG={step:function(s){stage=clean(s);if(debug)render(true);},fail:fault,success:function(){stage='React montado';if(debug)render(true);else{var el=document.getElementById('ft-start-diagnostic');if(el)el.remove();}},inspect:function(){render(true);}};
+  window.addEventListener('error',function(e){fault((e.message||'Error desconocido')+(e.filename?' · '+e.filename+':'+e.lineno+':'+e.colno:'')+(e.error&&e.error.stack?'\n'+e.error.stack:''));});
+  window.addEventListener('unhandledrejection',function(e){fault('Promesa rechazada: '+(e.reason&&e.reason.stack||e.reason||'sin motivo'));});
+  setTimeout(function(){var root=document.getElementById('root');if(!root||!root.children.length)render(true);else if(debug)render(true);},4000);
+})();
+</script>
+
 <script>
 const {useState,useEffect,useRef,useMemo,useCallback,createElement}=React;
 // V3: visual unificado, sin modificar la estructura de las pantallas ni los estados operativos.
@@ -4704,4 +4733,45 @@ function App(){
     ),
     h('div',{style:{padding:'14px',paddingBottom:'80px'}},
       pendingPrior&&h('div',{style:{background:'#FEF3C7',border:'1px solid #F59E0B',padding:'12px',borderRadius:'12px',marginBottom:'12px'}},
-        h('div',{style:{fon
+        h('div',{style:{fontSize:'13px',fontWeight:'900',color:'#92400E'}},'Semana anterior pendiente de enviar'),
+        h('div',{style:{fontSize:'11px',color:'#92400E',margin:'5px 0'}},'Cerrá '+String(pendingPrior.label||pendingPrior.id)+' sin mezclarla con los registros de esta semana.'),
+        h('button',{onClick:()=>{goToWeekNum(pendingPrior.num);setTab('ms');},style:{border:'none',padding:'9px 12px',borderRadius:'8px',background:'#92400E',color:'#fff',fontWeight:'800'}},'Completar reporte anterior')
+      ),
+      isViewingPast&&h('div',{style:{background:'#0A0A0A',borderRadius:'12px',padding:'12px 14px',marginBottom:'10px',display:'flex',gap:'10px',alignItems:'center'}},
+        h('span',{style:{fontSize:'18px'}},'✏️'),
+        h('div',null,
+          h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#fff',marginBottom:'2px'}},'Semana pasada — editable'),
+          h('div',{style:{fontSize:'11px',color:'rgba(255,255,255,0.5)'}},'Podés completar o corregir esta semana y enviar el reporte con su SemanID correspondiente.')
+        )
+      ),
+      tab==='d'&&h(Dashboard,null),
+      tab==='t'&&h(Training,{key:'training',exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSessionReps,sessionKg,setSessionKg,persistedExecKg,hist,wk,loadingExes,isViewingPast,isViewingFuture,realWkNum,onReloadHist:loadH}),
+      tab==='die'&&h(Diet,{key:'diet',hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfirmado}),
+      tab==='ms'&&pautaHabitosV9&&h('div',{style:{padding:'10px',borderRadius:'9px',background:'#EFF6FF',fontSize:'11px',fontWeight:'700',marginBottom:'10px'}},'Pauta vigente · Agua '+(pautaHabitosV9.AguaLitros||'—')+' L/día · Sueño '+(pautaHabitosV9.SuenoMinHoras||7)+'–'+(pautaHabitosV9.SuenoMaxHoras||9)+' h/día · Caminar '+(pautaHabitosV9.CaminataKmDia||'—')+' km/día · HIIT '+(pautaHabitosV9.HiitSesionesSemana??0)+' sesiones/sem.'),
+      tab==='ms'&&h(MiSemana,{key:'misemana',nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEnviarReporte:save,saving,canSaveWeek,isViewingPast,reporteYaEnviado,wkSat,user,wk,exes,sessionReps,onGoTraining:s=>{localStorage.setItem(`ase_${user}_focusSession_${wk.id}`,s);setTab('t');}}),
+        tab==='dev'&&h(Devolucion,null),
+      tab==='hiit'&&h(Hiit,{key:'hiit',cfg,hiitData,setHiitData,setSaved})
+    ),
+    h('div',{style:{background:'#0A0A0A',borderTop:'1px solid rgba(255,255,255,0.06)',display:'flex',position:'sticky',bottom:0,zIndex:10}},
+      TABS.map(t=>h('button',{key:t.id,onClick:()=>setTab(t.id),style:{flex:'0 0 68px',padding:'10px 2px 14px',fontSize:'10px',background:'none',border:'none',borderTop:tab===t.id?`2px solid ${AC}`:'2px solid transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',color:tab===t.id?AC:'rgba(255,255,255,0.35)',fontWeight:tab===t.id?'800':'400',transition:'color 0.2s'}},h('span',{style:{fontSize:'18px'}},t.ic),t.l))
+    )
+  );
+}
+function FTBootMark(){React.useEffect(function(){if(window.FT_BOOT_DIAG)window.FT_BOOT_DIAG.success();},[]);return null;}
+// V9.10: diagnóstico de arranque independiente de las funciones del sistema.
+if(window.FT_BOOT_DIAG)window.FT_BOOT_DIAG.step('Código principal evaluado');
+class FTStartBoundary extends React.Component {
+ constructor(props){super(props);this.state={err:null};}
+ static getDerivedStateFromError(err){return {err:err};}
+ componentDidCatch(err,info){if(window.FT_BOOT_DIAG)window.FT_BOOT_DIAG.fail((err&&err.stack||String(err))+'\n'+(info&&info.componentStack||''));}
+ render(){if(this.state.err)return h('div',{style:{padding:'20px',color:'#fff'}},'Error al mostrar Fuerza T. Abrí ?debug=true para ver el diagnóstico.');return this.props.children;}
+}
+try {
+ if(window.FT_BOOT_DIAG)window.FT_BOOT_DIAG.step('Iniciando React');
+ ReactDOM.createRoot(document.getElementById('root')).render(h(FTStartBoundary,null,h(FTBootMark,null),h(App,null)));
+ if(window.FT_BOOT_DIAG)window.FT_BOOT_DIAG.step('Render solicitado');
+} catch(e){if(window.FT_BOOT_DIAG)window.FT_BOOT_DIAG.fail(e&&e.stack||String(e));else throw e;}
+
+</script>
+</body>
+</html>
