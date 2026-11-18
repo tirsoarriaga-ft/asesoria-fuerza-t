@@ -2326,16 +2326,29 @@ function FoodWheel({items,index,onChange,pesoMode}){
 // V9.6: una fila de PorcionesDietas es una RECETA PORCIONADA e indivisible.
 // La vista de Dieta jamás mezcla ingredientes de Dietas con gramos de otra receta.
 const ftNormKey = v => String(v??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'');
+// V9.7: separar la DISPONIBILIDAD de la pauta (claves + gramos) de la
+// integridad nutricional (kcal, macros, fibra). Nunca inventar gramos.
+const ftOptionalNumber=v=>{
+  if(v===null||v===undefined||String(v).trim()==='')return null;
+  const n=Number(String(v).trim().replace(',','.'));
+  return Number.isFinite(n)&&n>=0?n:null;
+};
 function ftPortionRecipe(row, foodDB){
   if(!row)return null;
-  const ids=String(row.Ingredientes??'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
-  const grams=String(row.Gramajes??'').split(',').map(x=>Number(String(x).trim().replace(',','.')));
-  if(ids.length<3||ids.length>8||ids.length!==grams.length||grams.some(g=>!Number.isFinite(g)||g<=0))return null;
-  const foods=ids.map(key=>foodDB[key]?{...foodDB[key],key}:null);
-  if(foods.some(x=>!x||!x.nutricionValida))return null;
-  const z={kcal:Number(row.Kcal),p:Number(row.P),c:Number(row.C),g:Number(row.G),fib:Number(row.Fibra)};
-  if(![z.kcal,z.p,z.c,z.g].every(Number.isFinite)||z.kcal<=0)return null;
-  return {foods,grams,totals:z,ids};
+  const ids=String(row.Ingredientes??'').split(',').map(x=>ftNormKey(x)).filter(Boolean);
+  const grams=String(row.Gramajes??'').split(',').map(x=>ftOptionalNumber(x));
+  // Una porción sin ingredientes o sin gramajes NO puede mostrarse como prescrita.
+  if(!ids.length||ids.length!==grams.length||grams.some(g=>g===null||g<=0))return null;
+  // Si falta la fila de Menus, mostrar la CLAVE literal sin inventar su composición.
+  // Permite leer una pauta completa aun si el catálogo nutricional está incompleto.
+  const foods=ids.map(key=>foodDB[key]?{...foodDB[key],key}:{key,n:key,cat:'',origen:'',nutricionValida:false,
+    porcionBase:0,vU:'',estadoRef:'',factorCoccion:0});
+  const z={kcal:ftOptionalNumber(row.Kcal),p:ftOptionalNumber(row.P),
+    c:ftOptionalNumber(row.C),g:ftOptionalNumber(row.G),fib:ftOptionalNumber(row.Fibra)};
+  const validMacros=[z.kcal,z.p,z.c,z.g].every(x=>x!==null)&&z.kcal>0;
+  return {foods,grams,totals:validMacros?z:null,ids,
+    missingKeys:foods.filter(f=>!foodDB[f.key]).map(f=>f.key),
+    nutritionComplete:validMacros&&foods.every(f=>f.nutricionValida)};
 }
 function ftPortionModeValid(recipe,mode,mealId){
   if(!recipe)return false;
@@ -2441,20 +2454,26 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
       const plannedIds=(planned?.items||[]).map(f=>f.key);
       const different=recipe&&plannedIds.length>0&&
         (plannedIds.length!==recipe.ids.length||plannedIds.some((x,j)=>x!==recipe.ids[j]));
-      const ready=!!recipe&&modeValid&&peso>0&&kcal>0;
+      // Ingredientes y cantidades son la pauta visible. Kcal, fibra, origen y
+      // macros faltantes solo afectan validaciones/cálculos; no ocultan gramos.
+      const ready=!!recipe;
       const reason=ready?'':(!Array.isArray(v9Portions)?'Cargando porciones desde Sheets…':
         portionError||(!row?'No hay fila de porciones para esta combinación de modalidad, comidas y opción.':
-        !recipe?'La fila de PorcionesDietas tiene claves, gramos o nutrientes inválidos.':
-        !modeValid?'La receta porcionada contradice las reglas de esta modalidad.':
-        !(peso>0&&kcal>0)?'Falta peso o objetivo energético confirmado en Dietas.':'Pauta pendiente de validar'));
+        !recipe?'Faltan ingredientes o gramajes válidos en PorcionesDietas.':
+        'Pauta pendiente de validar'));
+      const cautions=[];
+      if(different)cautions.push('Dietas difiere de la receta porcionada: revisar ambas hojas antes de modificar la pauta.');
+      if(recipe?.missingKeys?.length)cautions.push('Sin nombre nutricional en Menus: '+recipe.missingKeys.join(', ')+'. Se muestran las claves originales.');
+      if(recipe&&!modeValid)cautions.push('Revisar clasificación de ingredientes de esta modalidad; no afecta los gramajes cargados.');
       return {id:letter,ready,foods:recipe?.foods||planned?.items||[],grams:ready?recipe.grams:null,
         totals:ready?recipe.totals:null,reason,
+        nutritionComplete:!!recipe?.nutritionComplete,
         difference:!!different,
-        warning:different?'La receta de Dietas es distinta de la última receta con porciones verificadas. Se muestra la receta porcionada; sincronizar ambas hojas antes de cambiar la pauta.':''};
+        warning:cautions.join(' ')};
     });
     return {meal:m,options};
   });
-  const allFixedReady=fixedMenus.every(m=>m.options.every(o=>o.ready));
+  const allFixedReady=fixedMenus.every(m=>m.options.every(o=>o.ready&&o.totals));
   const combos=allFixedReady?Array.from({length:2**mealCount},(_,mask)=>{
     const totals={kcal:0,p:0,c:0,g:0};
     fixedMenus.forEach((m,i)=>{const z=m.options[(mask>>i)&1].totals;Object.keys(totals).forEach(k=>totals[k]+=z[k]);});
@@ -2483,7 +2502,7 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
   const eligibleCombo=chosen.every(Boolean)&&!(mode==='VEGETAL'&&['almuerzo','cena','comida2','comida3'].includes(targetMeal)&&chosen.some(f=>f.origen==='ANIMAL'));
   const refMenu=fixedMenus.find(m=>m.meal.id===targetMeal);
   const refOpt=refMenu?.options.find(o=>o.id===(mealChoice(targetMeal)||'A'))||refMenu?.options[0];
-  const refVal=refOpt?.totals;
+  const refVal=refOpt?.nutritionComplete?refOpt.totals:null;
   const actualMealTarget=refVal?{kcalCenter:refVal.kcal,pCenter:refVal.p,cCenter:refVal.c,gCenter:refVal.g}:null;
   const comboTarget={...mealTarget,kcalCenter:actualMealTarget?.kcalCenter||0,
     kcalMin:(actualMealTarget?.kcalCenter||0)*.95,kcalMax:(actualMealTarget?.kcalCenter||0)*1.05,
@@ -2499,7 +2518,7 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
   const day=comboSolved?.totals||{kcal:0,p:0,c:0,g:0,fib:0};
   const header=h('div',{style:{background:'#111',borderRadius:'12px',padding:'15px 16px',marginBottom:'12px'}},
     h('div',{style:{fontSize:'14px',fontWeight:'900',color:'#fff',lineHeight:'1.45'}},'Dos menús por comida. Elegí A o B; el combinador queda como alternativa.'),
-    h('div',{style:{fontSize:'12px',fontWeight:'600',color:'rgba(255,255,255,.72)',lineHeight:'1.5',marginTop:'5px'}},'Las opciones sólo se validan si el catálogo tiene ingredientes y nutrientes confiables.')
+    h('div',{style:{fontSize:'12px',fontWeight:'600',color:'rgba(255,255,255,.72)',lineHeight:'1.5',marginTop:'5px'}},'Los gramos se leen de tu pauta en Sheets. Los nutrientes faltantes no ocultan las cantidades.')
   );
   const modeSwitch=h('div',{style:{display:'flex',gap:'5px',marginBottom:'11px'}},
     [['VEGETAL','Vegetal'],['ANIMAL','Animal'],['EQUILIBRADA','Equilibrada']].map(([v,l])=>h('button',{
@@ -2514,7 +2533,7 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
       m.options.map(op=>h('div',{key:op.id,style:{fontSize:'11px',padding:'9px 7px',margin:'5px 0',borderRadius:'9px',background:op.ready?'#ECFDF5':'#FFF7ED',color:'#14202D',border:mealChoice(m.meal.id)===op.id?'2px solid #059669':'1px solid #e5e7eb'}},
         h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'center',marginBottom:'7px'}},
           h('strong',null,'Opción '+op.id),
-          h('span',{style:{fontWeight:'750',fontSize:'10px'}},op.ready?Math.round(op.totals.kcal)+' kcal':'Pendiente de validar')),
+          h('span',{style:{fontWeight:'750',fontSize:'10px'}},op.ready?(op.totals?Math.round(op.totals.kcal)+' kcal':'Porción disponible'):'Sin porciones')),
         op.ready?h('div',null,
           h('div',{style:{display:'flex',gap:'5px',overflowX:'auto',paddingBottom:'5px',scrollbarWidth:'thin'}},
             op.foods.map((f,j)=>{const w=displayFoodWeight(f,op.grams[j],pesoMode),approx=practicalAmount(f,op.grams[j]);return h('div',{key:f.key+'_'+j,style:{flex:'1 0 '+(op.foods.length<=4?'23%':'25%'),minWidth:'74px',maxWidth:'155px',border:'1px solid #64748B',borderRadius:'7px',background:'#FFFFFF',color:'#111827',padding:'7px 4px',textAlign:'center',display:'flex',flexDirection:'column',justifyContent:'space-between',gap:'7px'}},
@@ -2524,15 +2543,15 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
                 h('div',{style:{fontSize:'9px',fontWeight:'600',color:'#64748B',lineHeight:'1.3',marginTop:'2px'}},approx||'Medida casera no definida'),
                 w.state?h('div',{style:{fontSize:'9px',fontWeight:'700',color:'#64748B'}},w.state.toLowerCase()):null));})
           ),
-          h('div',{style:{fontSize:'10px',marginTop:'5px',fontWeight:'650'}},Math.round(op.totals.p)+' g proteína · '+Math.round(op.totals.c)+' g hidratos · '+Math.round(op.totals.g)+' g grasas'),
-          op.difference&&h('div',{style:{fontSize:'10px',marginTop:'6px',color:'#FCD34D',background:'#45311C',padding:'6px',borderRadius:'6px'}},op.warning)
+          h('div',{style:{fontSize:'10px',marginTop:'5px',fontWeight:'650'}},op.totals?Math.round(op.totals.p)+' g proteína · '+Math.round(op.totals.c)+' g hidratos · '+Math.round(op.totals.g)+' g grasas':'Macros de esta receta no disponibles; porciones visibles'),
+          op.warning&&h('div',{style:{fontSize:'10px',marginTop:'6px',color:'#FCD34D',background:'#45311C',padding:'6px',borderRadius:'6px'}},op.warning)
         ):h('div',null,(op.foods||[]).length?op.foods.map(f=>f.n).join(' · ')+' · '+op.reason:op.reason),
         op.ready&&h('button',{type:'button',onClick:()=>chooseMenu(m.meal.id,op.id),style:{fontSize:'10px',fontWeight:'800',padding:'5px 8px',border:'1px solid #047857',borderRadius:'6px',marginTop:'7px',background:mealChoice(m.meal.id)===op.id?'#047857':'#fff',color:mealChoice(m.meal.id)===op.id?'#fff':'#047857'}},mealChoice(m.meal.id)===op.id?'Elegida':'Elegir esta opción')
       ))
     )),
     h('div',{style:{fontSize:'11px',fontWeight:'700',color:allCombosValid?'#047857':'#92400E',marginTop:'6px'}},
       allCombosValid?'Validación de las '+combos.length+' combinaciones: dentro de rangos calculados.':
-      'Control individual de porciones disponible. La validación de todas las combinaciones calóricas es independiente.'),
+      'Porciones disponibles según las filas de Sheets; los cálculos nutricionales faltantes no ocultan gramajes.'),
     h('div',{style:{fontSize:'10px',color:'#6B7280',marginTop:'4px'}},'Medidas domésticas aproximadas. La cobertura de micronutrientes requiere datos auditados.')
   );
   const weightSwitch=h('div',{style:{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',margin:'-2px 2px 10px'}},
