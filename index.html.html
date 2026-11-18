@@ -2305,12 +2305,12 @@ function practicalAmount(food,grams){
 }
 function displayFoodWeight(food,grams,mode){
   const st=String(food&&food.estadoRef||'').toUpperCase(),fac=parseFloat(food&&food.factorCoccion)||0;
-  if(!(grams>0)||!fac||!['CRUDO','COCIDO'].includes(st))return{grams:Math.round(grams||0),state:'',converted:false};
+  if(!(grams>0)||!fac||!['CRUDO','COCIDO'].includes(st))return{grams:Math.round((grams||0)*10)/10,state:st||'',converted:false};
   let g=grams;
   if(mode==='CRUDO'&&st==='COCIDO')g=grams/fac;
   else if(mode==='COCIDO'&&st==='CRUDO')g=grams*fac;
   const state=(mode==='CRUDO'&&inferPortionGroup(food)==='legumbre')?'SECO':mode;
-  return{grams:Math.max(5,Math.round(g/5)*5),state,converted:mode!==st};
+  return{grams:Math.round(g*10)/10,state,converted:mode!==st};
 }
 function FoodWheel({items,index,onChange,pesoMode}){
   const ref=useRef(null),timer=useRef(null),H=44;
@@ -2322,6 +2322,27 @@ function FoodWheel({items,index,onChange,pesoMode}){
     h('div',{style:{pointerEvents:'none',position:'absolute',left:'2px',right:'2px',top:H+'px',height:H+'px',border:'2px solid rgba(244,81,22,.7)',borderRadius:'8px',zIndex:2}})
   );
 }
+
+// V9.6: una fila de PorcionesDietas es una RECETA PORCIONADA e indivisible.
+// La vista de Dieta jamás mezcla ingredientes de Dietas con gramos de otra receta.
+const ftNormKey = v => String(v??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,'');
+function ftPortionRecipe(row, foodDB){
+  if(!row)return null;
+  const ids=String(row.Ingredientes??'').split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
+  const grams=String(row.Gramajes??'').split(',').map(x=>Number(String(x).trim().replace(',','.')));
+  if(ids.length<3||ids.length>8||ids.length!==grams.length||grams.some(g=>!Number.isFinite(g)||g<=0))return null;
+  const foods=ids.map(key=>foodDB[key]?{...foodDB[key],key}:null);
+  if(foods.some(x=>!x||!x.nutricionValida))return null;
+  const z={kcal:Number(row.Kcal),p:Number(row.P),c:Number(row.C),g:Number(row.G),fib:Number(row.Fibra)};
+  if(![z.kcal,z.p,z.c,z.g].every(Number.isFinite)||z.kcal<=0)return null;
+  return {foods,grams,totals:z,ids};
+}
+function ftPortionModeValid(recipe,mode,mealId){
+  if(!recipe)return false;
+  if(mode==='VEGETAL')return recipe.foods.every(f=>f.origen==='VEGETAL'||(['desayuno','merienda'].includes(mealId)&&f.origen==='ANIMAL'&&/^(yogur|leche)/i.test(f.key)));
+  if(mode==='ANIMAL')return recipe.foods.some(f=>f.origen==='ANIMAL'&&f.cat==='P');
+  return true;
+}
 function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfirmado}){
   const foodDB=useMemo(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_foodDB`)||'{}')||{};}catch(e){return{};}},[user,menusVer]);
   // V9: la fuente de gramos son las filas individuales de PorcionesDietas, no el optimizador viejo.
@@ -2330,10 +2351,13 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
   // Leer por ID de Sheet cuando esté disponible; al actualizar Dietas, volver a consultar.
   useEffect(()=>{let alive=true;setV9Portions(null);setPortionError('');
     let src={};try{src=JSON.parse(localStorage.getItem(`ase_${user}_nutriSourceV8`)||'{}')||{};}catch(_e){}
-    const identifier=src.asesoradoId ? 'asesoradoId='+encodeURIComponent(src.asesoradoId) : 'asesorado='+encodeURIComponent(user);
-    fetch(SCRIPT_URL+'?action=porcionesdietas&'+identifier+'&_t='+Date.now(),{cache:'no-store'})
+    const request=identifier=>fetch(SCRIPT_URL+'?action=porcionesdietas&'+identifier+'&_t='+Date.now(),{cache:'no-store'})
       .then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();})
-      .then(rows=>{if(!alive)return;if(!Array.isArray(rows))throw Error('La respuesta no es un listado de porciones');setV9Portions(rows);if(!rows.length)setPortionError('Sheets no devolvió porciones para este asesorado. Revisar AsesoradoID y hoja PorcionesDietas.');})
+      .then(rows=>{if(!Array.isArray(rows))throw Error('La respuesta no es un listado de porciones');return rows;});
+    const id=String(src.asesoradoId||localStorage.getItem(`ase_${user}_asesoradoId`)||'').trim();
+    const byName='asesorado='+encodeURIComponent(user);
+    (id?request('asesoradoId='+encodeURIComponent(id)).then(rows=>rows.length?rows:request(byName)):request(byName))
+      .then(rows=>{if(!alive)return;setV9Portions(rows);if(!rows.length)setPortionError('PorcionesDietas no devolvió filas. Verificá el AsesoradoID y la implementación de Apps Script.');})
       .catch(e=>{if(alive){setV9Portions([]);setPortionError('No se pudieron leer las porciones de Sheets: '+String(e.message||e));}});
     return()=>{alive=false;};
   },[user,menusVer]);
@@ -2399,31 +2423,34 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
     // Algunas recetas contienen 5 alimentos; no imponer artificialmente 4 categorías.
     return op.items.every(f=>allowed(f,mealId));
   };
+  // Los gramajes pertenecen a la receta registrada en PorcionesDietas, NO a la receta
+  // editable de Dietas. Una discrepancia se advierte, nunca se mezclan ambas fuentes.
   const fixedMenus=meals.map((m,i)=>{
     const source=comidas.find(c=>c.id===sourceMeals[i]);
+    const comboName=sourceMeals.map(z=>z.charAt(0).toUpperCase()+z.slice(1)).join('+');
+    const mealName=sourceMeals[i];
     const options=['A','B'].map(letter=>{
-      const op=(source?.ops||[]).find(o=>o.id===letter);
-      const ingredientsOk=validRef(op,sourceMeals[i]);
-      const animalMainOk=mode!=='ANIMAL'||(op?.items||[]).some(f=>f.origen==='ANIMAL'&&f.cat==='P');
-      if(!ingredientsOk||!animalMainOk)return {id:letter,ready:false,foods:op?.items||[],reason:op?.error||(!animalMainOk?'En modalidad Animal debe haber una fuente proteica animal en la receta.':'Revisar ingredientes / valores nutricionales de Menus. El origen animal sólo está permitido en desayuno/merienda vegetal cuando es yogur o leche.')};
-      const target={...mealTarget,kcalMin:mealTarget.kcalCenter*.95,kcalMax:mealTarget.kcalCenter*1.05,
-        pMin:mealTarget.pCenter*.9,pMax:mealTarget.pCenter*1.1};
-      const comboName=sourceMeals.map(z=>z.charAt(0).toUpperCase()+z.slice(1)).join('+');
-      const findName=sourceMeals[i].charAt(0).toUpperCase()+sourceMeals[i].slice(1);
-      const row=(kcal>0&&peso>0)&&Array.isArray(v9Portions)?v9Portions.find(r=>
-        String(r.Modalidad||'').trim().toUpperCase()===mode&&
-        String(r.Comidas||'').replace(/\s+/g,'').toLowerCase()===comboName.toLowerCase()&&
-        String(r.Comida||'').trim().toLowerCase()===findName.toLowerCase()&&
-        String(r.Opcion||'').toUpperCase()===letter):null;
-      const grams=row?String(row.Gramajes||'').split(',').map(x=>Number(String(x).replace(',','.'))):[];
-      const ids=row?String(row.Ingredientes||'').split(',').map(x=>x.trim()):[];
-      const identical=row&&grams.length===op.items.length&&ids.length===op.items.length&&
-        grams.every(x=>Number.isFinite(x)&&x>0)&&ids.every((x,j)=>x.toLowerCase()===String(op.items[j].key||'').toLowerCase());
-      const z=identical?{kcal:Number(row.Kcal),p:Number(row.P),c:Number(row.C),g:Number(row.G),fib:Number(row.Fibra)}:null;
-      const solved=identical?{grams:grams,totals:z}:null;
-      const ok=!!z&&[z.kcal,z.p,z.c,z.g].every(Number.isFinite)&&z.kcal>0;
-      return {id:letter,ready:ok,foods:op.items,grams:solved?.grams,totals:z,
-        reason:ok?'':(!Array.isArray(v9Portions)?'Cargando gramajes desde Sheets…':portionError?portionError:!(kcal>0&&peso>0)?'Falta confirmar peso o kcal del asesorado en Dietas.':!row?'No se encontró esta combinación en PorcionesDietas (modalidad / 3–4 comidas / A–B).':!identical?'La receta y los gramajes de Sheets no coinciden. Corregir ambos antes de mostrar cantidades.':'Los valores nutricionales de esa fila no son válidos.')};
+      const planned=(source?.ops||[]).find(o=>o.id===letter);
+      const rows=Array.isArray(v9Portions)?v9Portions:[];
+      const row=rows.find(r=>ftNormKey(r.Modalidad)===ftNormKey(mode)&&
+        ftNormKey(r.Comidas)===ftNormKey(comboName)&&
+        ftNormKey(r.Comida)===ftNormKey(mealName)&&
+        ftNormKey(r.Opcion)===ftNormKey(letter));
+      const recipe=ftPortionRecipe(row,foodDB);
+      const modeValid=ftPortionModeValid(recipe,mode,mealName);
+      const plannedIds=(planned?.items||[]).map(f=>f.key);
+      const different=recipe&&plannedIds.length>0&&
+        (plannedIds.length!==recipe.ids.length||plannedIds.some((x,j)=>x!==recipe.ids[j]));
+      const ready=!!recipe&&modeValid&&peso>0&&kcal>0;
+      const reason=ready?'':(!Array.isArray(v9Portions)?'Cargando porciones desde Sheets…':
+        portionError||(!row?'No hay fila de porciones para esta combinación de modalidad, comidas y opción.':
+        !recipe?'La fila de PorcionesDietas tiene claves, gramos o nutrientes inválidos.':
+        !modeValid?'La receta porcionada contradice las reglas de esta modalidad.':
+        !(peso>0&&kcal>0)?'Falta peso o objetivo energético confirmado en Dietas.':'Pauta pendiente de validar'));
+      return {id:letter,ready,foods:recipe?.foods||planned?.items||[],grams:ready?recipe.grams:null,
+        totals:ready?recipe.totals:null,reason,
+        difference:!!different,
+        warning:different?'La receta de Dietas es distinta de la última receta con porciones verificadas. Se muestra la receta porcionada; sincronizar ambas hojas antes de cambiar la pauta.':''};
     });
     return {meal:m,options};
   });
@@ -2484,18 +2511,29 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
     h('div',{style:{fontWeight:'900',fontSize:'14px',marginBottom:'7px'}},'MENÚS A / B'),
     fixedMenus.map(m=>h('div',{key:m.meal.id,style:{borderTop:'1px solid #e5e7eb',padding:'10px 0'}},
       h('div',{style:{fontWeight:'800',fontSize:'12px',marginBottom:'6px'}},m.meal.n),
-      m.options.map(op=>h('div',{key:op.id,style:{fontSize:'11px',padding:'6px',margin:'4px 0',borderRadius:'7px',background:op.ready?'#ECFDF5':'#FFF7ED',color:'#14202D',border:mealChoice(m.meal.id)===op.id?'2px solid #059669':'1px solid #e5e7eb'}},
-        h('strong',null,'Opción '+op.id+' · '+(op.ready?Math.round(op.totals.kcal)+' kcal':'Pendiente de validar')),
-        op.ready?h('div',{style:{marginTop:'3px'}},op.foods.map((f,j)=>f.n+' · '+Math.round(op.grams[j])+' g').join(' / '),
-           h('div',{style:{marginTop:'3px'}},Math.round(op.totals.p)+' P · '+Math.round(op.totals.c)+' H · '+Math.round(op.totals.g)+' G')):
-        h('div',null,(op.foods||[]).length?(op.foods.map(f=>f.n).join(' · ')+' · Sin porciones verificadas. '+(op.reason||'')):(op.reason||'Sin receta válida')),
-        op.ready&&h('button',{type:'button',onClick:()=>chooseMenu(m.meal.id,op.id),style:{fontSize:'10px',fontWeight:'800',padding:'5px 8px',border:'1px solid #047857',borderRadius:'6px',marginTop:'6px',background:mealChoice(m.meal.id)===op.id?'#047857':'#fff',color:mealChoice(m.meal.id)===op.id?'#fff':'#047857'}},mealChoice(m.meal.id)===op.id?'Elegida':'Elegir esta opción')
+      m.options.map(op=>h('div',{key:op.id,style:{fontSize:'11px',padding:'9px 7px',margin:'5px 0',borderRadius:'9px',background:op.ready?'#ECFDF5':'#FFF7ED',color:'#14202D',border:mealChoice(m.meal.id)===op.id?'2px solid #059669':'1px solid #e5e7eb'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',alignItems:'center',marginBottom:'7px'}},
+          h('strong',null,'Opción '+op.id),
+          h('span',{style:{fontWeight:'750',fontSize:'10px'}},op.ready?Math.round(op.totals.kcal)+' kcal':'Pendiente de validar')),
+        op.ready?h('div',null,
+          h('div',{style:{display:'flex',gap:'5px',overflowX:'auto',paddingBottom:'5px',scrollbarWidth:'thin'}},
+            op.foods.map((f,j)=>{const w=displayFoodWeight(f,op.grams[j],pesoMode),approx=practicalAmount(f,op.grams[j]);return h('div',{key:f.key+'_'+j,style:{flex:'1 0 '+(op.foods.length<=4?'23%':'25%'),minWidth:'74px',maxWidth:'155px',border:'1px solid #64748B',borderRadius:'7px',background:'#FFFFFF',color:'#111827',padding:'7px 4px',textAlign:'center',display:'flex',flexDirection:'column',justifyContent:'space-between',gap:'7px'}},
+              h('div',{style:{fontSize:'11px',fontWeight:'800',minHeight:'29px',lineHeight:'1.25',wordBreak:'break-word'}},f.n),
+              h('div',null,
+                h('div',{style:{fontSize:'12px',fontWeight:'900',fontVariantNumeric:'tabular-nums'}},w.grams+' g'),
+                h('div',{style:{fontSize:'9px',fontWeight:'600',color:'#64748B',lineHeight:'1.3',marginTop:'2px'}},approx||'Medida casera no definida'),
+                w.state?h('div',{style:{fontSize:'9px',fontWeight:'700',color:'#64748B'}},w.state.toLowerCase()):null));})
+          ),
+          h('div',{style:{fontSize:'10px',marginTop:'5px',fontWeight:'650'}},Math.round(op.totals.p)+' g proteína · '+Math.round(op.totals.c)+' g hidratos · '+Math.round(op.totals.g)+' g grasas'),
+          op.difference&&h('div',{style:{fontSize:'10px',marginTop:'6px',color:'#FCD34D',background:'#45311C',padding:'6px',borderRadius:'6px'}},op.warning)
+        ):h('div',null,(op.foods||[]).length?op.foods.map(f=>f.n).join(' · ')+' · '+op.reason:op.reason),
+        op.ready&&h('button',{type:'button',onClick:()=>chooseMenu(m.meal.id,op.id),style:{fontSize:'10px',fontWeight:'800',padding:'5px 8px',border:'1px solid #047857',borderRadius:'6px',marginTop:'7px',background:mealChoice(m.meal.id)===op.id?'#047857':'#fff',color:mealChoice(m.meal.id)===op.id?'#fff':'#047857'}},mealChoice(m.meal.id)===op.id?'Elegida':'Elegir esta opción')
       ))
     )),
     h('div',{style:{fontSize:'11px',fontWeight:'700',color:allCombosValid?'#047857':'#92400E',marginTop:'6px'}},
       allCombosValid?'Validación de las '+combos.length+' combinaciones: dentro de rangos calculados.':
-      'Opciones aún no equivalentes. No se confirma cumplimiento ni cobertura nutricional.'),
-    h('div',{style:{fontSize:'10px',color:'#6B7280',marginTop:'4px'}},'La cobertura de micronutrientes requiere datos auditados; valores desconocidos no se asumen como cero.')
+      'Control individual de porciones disponible. La validación de todas las combinaciones calóricas es independiente.'),
+    h('div',{style:{fontSize:'10px',color:'#6B7280',marginTop:'4px'}},'Medidas domésticas aproximadas. La cobertura de micronutrientes requiere datos auditados.')
   );
   const weightSwitch=h('div',{style:{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',margin:'-2px 2px 10px'}},
     h('span',{style:{fontSize:'10px',fontWeight:'800',color:'#D1D5DB',letterSpacing:'.04em'}},'PESAR'),
