@@ -65,7 +65,9 @@ function ftDarkStyle(style){
   '#f8f8f8':'#2b2b30','#f7f7f7':'#2b2b30','#fdfdfd':'#2b2b30',
   '#fff7ed':'#33251d','#fef2f2':'#351f24','#fff1f2':'#351f24',
   '#f3e8ff':'#2d2439','#ebf4ff':'#202f41','#eaf7f2':'#1d322c',
-  '#dcfce7':'#1d382b','#e0e0e0':'#303035'
+  '#dcfce7':'#1d382b','#ecfdf5':'#1d382b','#ecfdf3':'#1d382b',
+  '#f8fffb':'#1d322c','#f2f2f2':'#2b2b30','#eff6ff':'#202f41',
+  '#e0e0e0':'#303035'
  };
  if(lightSurfaces[bg])v.background=lightSurfaces[bg];
  if(lightSurfaces[bc])v.backgroundColor=lightSurfaces[bc];
@@ -73,7 +75,7 @@ function ftDarkStyle(style){
  const textPalette={
   '#000':'#f5f5f5','#000000':'#f5f5f5','#111':'#f5f5f5','#111111':'#f5f5f5',
   '#0a0a0a':'#f5f5f5','#111827':'#f5f5f5','#1a1a1a':'#f5f5f5',
-  '#222':'#f5f5f5','#222222':'#f5f5f5','#333':'#f5f5f5',
+  '#14202d':'#f5f5f5','#222':'#f5f5f5','#222222':'#f5f5f5','#333':'#f5f5f5',
   '#333333':'#f5f5f5','#444':'#e5e5e8','#444444':'#e5e5e8',
   '#555':'#d1d1d7','#555555':'#d1d1d7','#374151':'#e5e7eb',
   '#334155':'#cbd5e1','#1f2937':'#e5e7eb',
@@ -81,7 +83,8 @@ function ftDarkStyle(style){
   '#777777':'#bfc0c8','#888':'#b5b6bf','#888888':'#b5b6bf',
   '#999':'#b9b9c2','#999999':'#b9b9c2','#6b7280':'#c1c6d0',
   '#64748b':'#c1c9d4','#667085':'#c1c9d4',
-  '#9a3412':'#ffb380','#7c2d12':'#ffb380','#b45309':'#fbbf72',
+  '#9a3412':'#ffb380','#7c2d12':'#ffb380','#b45309':'#fbbf72','#92400e':'#fbbf72',
+  '#047857':'#6ee7b7','#059669':'#6ee7b7','#15803d':'#86efac',
   '#991b1b':'#fca5a5','#b42318':'#fca5a5','#be123c':'#fda4af','#dc2626':'#fca5a5',
   '#6b21a8':'#d8b4fe','#7e22ce':'#d8b4fe','#166534':'#86efac',
   '#9ca3af':'#c6c9d0','#9ca3af':'#c6c9d0'
@@ -148,7 +151,7 @@ function FtMedTimeline({points,kind='p',dark=false}){
  );
 }
 
-const FT_BUILD='FuerzaT-Personalizada-V8.1-CACHE-SNAPSHOT-PILOTO-2026-11-17';
+const FT_BUILD='FuerzaT-Personalizada-V9.5-CONTRASTE-DIETA-REGISTRO-2026-11-18';
 // FUERZA T V6 — intérprete de reportes compatible con DailyV5 y datos históricos.
 // Nunca atribuye equivalencia comprobada ni incumplimiento a respuestas vacías.
 const FT_REPORT_CRITERION='FT-DECISIONES-1.0.0';
@@ -160,12 +163,12 @@ function ftV6ReadReport(row){
  const days=Array.from({length:7},(_,i)=>{const d=raw[i]||{};const a=Array.isArray(d.meals)?d.meals:[];const proof=Array.isArray(d.mealProof)?d.mealProof:[];const detail=Array.isArray(d.mealDetail)?d.mealDetail:[];return {...d,meals:a.map(ftV6Meal),mealProof:proof,mealDetail:detail};});
  const isLegacy=!((Array.isArray(v7)&&v7.length)||(Array.isArray(v6)&&v6.length));
  const count=Math.max(3,Math.min(4,Number(row&&row.MealCount)||4));
- const answers=days.flatMap(d=>d.meals.slice(0,ftMealDayCount(d,count)));const known=answers.filter(x=>x!=='unknown');const literal=known.filter(x=>x==='literal').length;
+ const answers=days.flatMap(d=>[...d.meals.slice(0,ftMealDayCount(d,count)),...((Array.isArray(d.skippedMealIds)?d.skippedMealIds:[]).map(()=>'skipped'))]);const known=answers.filter(x=>x!=='unknown');const literal=known.filter(x=>x==='literal').length;
  const declared=known.filter(x=>x==='equivalent_declared').length;const uncertain=known.filter(x=>x==='different_unverified'||x==='quantity_changed').length;const missed=known.filter(x=>x==='skipped').length;
  const verified=0; // declaración de cálculo no equivale a validación profesional
  const withData=days.filter(d=>(d.meals||[]).some(x=>x!=='unknown')||!!d.training||!!d.water||!!d.sleepHours||!!d.weight||!!d.waist);
  const complete=days.filter(d=>d.meals.slice(0,ftMealDayCount(d,count)).filter(x=>x!=='unknown').length===ftMealDayCount(d,count)&&!!d.training&&(Number(d.water)>0||['no_medi','no_registre'].includes(String(d.waterStatus||'')))&&(Number(d.sleepHours)>0||['no_medi','no_registre'].includes(String(d.sleepHoursStatus||'')))&&!!d.hunger&&!!d.energy&&(d.training!=='done'||!!d.performance));
- const total=days.reduce((n,d)=>n+ftMealDayCount(d,count),0);const coverage=known.length/total;const confirmed=literal+verified;
+ const total=days.reduce((n,d)=>n+ftMealDayCount(d,count)+(Array.isArray(d.skippedMealIds)?d.skippedMealIds.length:0),0);const coverage=known.length/total;const confirmed=literal+verified;
  const adherence=known.length?Math.round(100*confirmed/known.length):null;
  const lower=total?Math.round(100*confirmed/total):null;
  const reportedDays=withData.length;
@@ -2323,12 +2326,17 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
   const foodDB=useMemo(()=>{try{return JSON.parse(localStorage.getItem(`ase_${user}_foodDB`)||'{}')||{};}catch(e){return{};}},[user,menusVer]);
   // V9: la fuente de gramos son las filas individuales de PorcionesDietas, no el optimizador viejo.
   const [v9Portions,setV9Portions]=useState(null);
-  useEffect(()=>{let alive=true;setV9Portions(null);
-    fetch(SCRIPT_URL+'?action=porcionesdietas&asesorado='+encodeURIComponent(user)+'&_t='+Date.now(),{cache:'no-store'})
-      .then(r=>r.json()).then(rows=>{if(alive)setV9Portions(Array.isArray(rows)?rows:[]);})
-      .catch(()=>{if(alive)setV9Portions([]);});
+  const [portionError,setPortionError]=useState('');
+  // Leer por ID de Sheet cuando esté disponible; al actualizar Dietas, volver a consultar.
+  useEffect(()=>{let alive=true;setV9Portions(null);setPortionError('');
+    let src={};try{src=JSON.parse(localStorage.getItem(`ase_${user}_nutriSourceV8`)||'{}')||{};}catch(_e){}
+    const identifier=src.asesoradoId ? 'asesoradoId='+encodeURIComponent(src.asesoradoId) : 'asesorado='+encodeURIComponent(user);
+    fetch(SCRIPT_URL+'?action=porcionesdietas&'+identifier+'&_t='+Date.now(),{cache:'no-store'})
+      .then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json();})
+      .then(rows=>{if(!alive)return;if(!Array.isArray(rows))throw Error('La respuesta no es un listado de porciones');setV9Portions(rows);if(!rows.length)setPortionError('Sheets no devolvió porciones para este asesorado. Revisar AsesoradoID y hoja PorcionesDietas.');})
+      .catch(e=>{if(alive){setV9Portions([]);setPortionError('No se pudieron leer las porciones de Sheets: '+String(e.message||e));}});
     return()=>{alive=false;};
-  },[user]);
+  },[user,menusVer]);
 
   const modeKey=`ase_${user}_modalidadDietaV7`;
   const [mode,setMode]=useState(()=>localStorage.getItem(modeKey)||'EQUILIBRADA');
@@ -2339,26 +2347,22 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
     if(mode==='EQUILIBRADA')return true;
     if(mode==='VEGETAL')return f.origen==='VEGETAL'||(['desayuno','merienda','comida1'].includes(mealId)&&f.origen==='ANIMAL'&&/^(leche|yogur)/i.test(String(f.key||'')));
     // Predominio animal sólo se aplica al grupo proteína; vegetales siguen disponibles en H/G/FV.
-    return f.cat!=='P'||f.origen==='ANIMAL';
+    return true; // El predominio animal se valida a nivel de receta, no prohibiendo acompañamientos vegetales.
   };
   const byCat=cat=>foods.filter(f=>f.cat===cat&&allowed(f,targetMeal)&&!(mode==='VEGETAL'&&['almuerzo','cena','comida2','comida3'].includes(targetMeal)&&f.origen==='ANIMAL'));
-  // Una sola selección por fecha/semana; el Registro usa exactamente el mismo dailyV5.
+  // Dieta = vista de pauta. Registro es el único editor de comidas realizadas por fecha.
+  // Cambiar 3/4 aquí sólo cambia la vista, sin modificar registros ni semanas pasadas.
   const mealModeKey=`ase_${user}_comidasPorDia`;
-  const [dayIndex,setDayIndex]=useState(()=>Math.min(6,Math.max(0,(new Date().getDay()+6)%7)));
-  const days=Array.isArray(hab?.dailyV5)&&hab.dailyV5.length===7?hab.dailyV5:Array.from({length:7},()=>({}));
-  const currentDay=days[dayIndex]||{};
-  const defaultMealCount=localStorage.getItem(mealModeKey)==='3'?3:4;
-  const sourceMeals=ftV9MealIds(currentDay,defaultMealCount);
-  const mealCount=sourceMeals.length;
-  const changeMeals=ids=>{
-    const next=[...days];next[dayIndex]=ftV9ChangeMealIds(next[dayIndex]||{},ids);
-    setHab({...hab,dailyV5:next});setSaved(false);
-    localStorage.setItem(mealModeKey,String(ids.length));
-  };
-  const changeMealCount=n=>{
-    if(n===4)changeMeals([...FT_V9_MEAL_IDS]);
-    else if(n===3)changeMeals(sourceMeals.length===3?sourceMeals:['desayuno','almuerzo','cena']);
-  };
+  const [previewCount,setPreviewCount]=useState(()=>localStorage.getItem(mealModeKey)==='3'?3:4);
+  const mealCount=previewCount;
+  // El último día abierto en Registro determina qué combinación de 3 comidas se previsualiza.
+  // Si aún no se eligió, se muestra la combinación habitual, sin modificar Registro.
+  const lastDayKey=`ase_${user}_lastRegistroDia_${wk?.id||''}`;
+  const dayIndex=Math.min(6,Math.max(0,Number(localStorage.getItem(lastDayKey)??(new Date().getDay()+6)%7)||0));
+  const previewDay=Array.isArray(hab?.dailyV5)?hab.dailyV5[dayIndex]||{}:{};
+  const selected=ftV9MealIds(previewDay,mealCount);
+  const sourceMeals=selected.length===mealCount?selected:(mealCount===3?['desayuno','almuerzo','cena']:[...FT_V9_MEAL_IDS]);
+  const changeMealCount=n=>{setPreviewCount(n);localStorage.setItem(mealModeKey,String(n));};
   const meals=sourceMeals.map(id=>({id,n:FT_V9_MEAL_LABELS[id].toUpperCase()}));
   const cats=[{id:'P',l:'PROTEÍNA'},{id:'H',l:'HIDRATOS'},{id:'G',l:'GRASAS'},{id:'FV',l:'FRUTA/VERDURA'}];
   // Las elecciones del combinador son independientes por modalidad. No se reinterpretan índices antiguos.
@@ -2399,25 +2403,27 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
     const source=comidas.find(c=>c.id===sourceMeals[i]);
     const options=['A','B'].map(letter=>{
       const op=(source?.ops||[]).find(o=>o.id===letter);
-      if(!validRef(op,sourceMeals[i])||mode==='VEGETAL'&&['almuerzo','cena'].includes(sourceMeals[i])&&op?.items?.some(f=>f.origen==='ANIMAL'))return {id:letter,ready:false,foods:op?.items||[],reason:op?.error||'Revisar ingredientes, origen o valores nutricionales en Sheets'};
+      const ingredientsOk=validRef(op,sourceMeals[i]);
+      const animalMainOk=mode!=='ANIMAL'||(op?.items||[]).some(f=>f.origen==='ANIMAL'&&f.cat==='P');
+      if(!ingredientsOk||!animalMainOk)return {id:letter,ready:false,foods:op?.items||[],reason:op?.error||(!animalMainOk?'En modalidad Animal debe haber una fuente proteica animal en la receta.':'Revisar ingredientes / valores nutricionales de Menus. El origen animal sólo está permitido en desayuno/merienda vegetal cuando es yogur o leche.')};
       const target={...mealTarget,kcalMin:mealTarget.kcalCenter*.95,kcalMax:mealTarget.kcalCenter*1.05,
         pMin:mealTarget.pCenter*.9,pMax:mealTarget.pCenter*1.1};
       const comboName=sourceMeals.map(z=>z.charAt(0).toUpperCase()+z.slice(1)).join('+');
       const findName=sourceMeals[i].charAt(0).toUpperCase()+sourceMeals[i].slice(1);
-      const row=targetsReady&&Array.isArray(v9Portions)?v9Portions.find(r=>
-        String(r.Modalidad||'').toUpperCase()===mode&&
-        String(r.Comidas||'')===comboName&&
-        String(r.Comida||'')===findName&&
+      const row=(kcal>0&&peso>0)&&Array.isArray(v9Portions)?v9Portions.find(r=>
+        String(r.Modalidad||'').trim().toUpperCase()===mode&&
+        String(r.Comidas||'').replace(/\s+/g,'').toLowerCase()===comboName.toLowerCase()&&
+        String(r.Comida||'').trim().toLowerCase()===findName.toLowerCase()&&
         String(r.Opcion||'').toUpperCase()===letter):null;
       const grams=row?String(row.Gramajes||'').split(',').map(x=>Number(String(x).replace(',','.'))):[];
       const ids=row?String(row.Ingredientes||'').split(',').map(x=>x.trim()):[];
       const identical=row&&grams.length===op.items.length&&ids.length===op.items.length&&
-        grams.every(x=>Number.isFinite(x)&&x>0)&&ids.every((x,j)=>x===String(op.items[j].key||''));
+        grams.every(x=>Number.isFinite(x)&&x>0)&&ids.every((x,j)=>x.toLowerCase()===String(op.items[j].key||'').toLowerCase());
       const z=identical?{kcal:Number(row.Kcal),p:Number(row.P),c:Number(row.C),g:Number(row.G),fib:Number(row.Fibra)}:null;
       const solved=identical?{grams:grams,totals:z}:null;
       const ok=!!z&&[z.kcal,z.p,z.c,z.g].every(Number.isFinite)&&z.kcal>0;
       return {id:letter,ready:ok,foods:op.items,grams:solved?.grams,totals:z,
-        reason:ok?'':'No hay gramajes confirmados en PorcionesDietas para esta opción'};
+        reason:ok?'':(!Array.isArray(v9Portions)?'Cargando gramajes desde Sheets…':portionError?portionError:!(kcal>0&&peso>0)?'Falta confirmar peso o kcal del asesorado en Dietas.':!row?'No se encontró esta combinación en PorcionesDietas (modalidad / 3–4 comidas / A–B).':!identical?'La receta y los gramajes de Sheets no coinciden. Corregir ambos antes de mostrar cantidades.':'Los valores nutricionales de esa fila no son válidos.')};
     });
     return {meal:m,options};
   });
@@ -2474,11 +2480,11 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
       style:{flex:1,padding:'9px 3px',borderRadius:'9px',fontWeight:'800',fontSize:'11px',cursor:'pointer',
       background:mode===v?'#111827':'#F3F4F6',color:mode===v?'#fff':'#374151',border:'1px solid #D1D5DB'}
     },l)));
-  const fixedSection=h('div',{style:{...card,marginBottom:'12px',padding:'12px'}},
+  const fixedSection=h('div',{style:{...card,background:'#F8FAFC',color:'#111827',border:'1px solid #CBD5E1',marginBottom:'12px',padding:'12px'}},
     h('div',{style:{fontWeight:'900',fontSize:'14px',marginBottom:'7px'}},'MENÚS A / B'),
     fixedMenus.map(m=>h('div',{key:m.meal.id,style:{borderTop:'1px solid #e5e7eb',padding:'10px 0'}},
       h('div',{style:{fontWeight:'800',fontSize:'12px',marginBottom:'6px'}},m.meal.n),
-      m.options.map(op=>h('div',{key:op.id,style:{fontSize:'11px',padding:'6px',margin:'4px 0',borderRadius:'7px',background:op.ready?'#ECFDF5':'#FFF7ED',border:mealChoice(m.meal.id)===op.id?'2px solid #059669':'1px solid #e5e7eb'}},
+      m.options.map(op=>h('div',{key:op.id,style:{fontSize:'11px',padding:'6px',margin:'4px 0',borderRadius:'7px',background:op.ready?'#ECFDF5':'#FFF7ED',color:'#14202D',border:mealChoice(m.meal.id)===op.id?'2px solid #059669':'1px solid #e5e7eb'}},
         h('strong',null,'Opción '+op.id+' · '+(op.ready?Math.round(op.totals.kcal)+' kcal':'Pendiente de validar')),
         op.ready?h('div',{style:{marginTop:'3px'}},op.foods.map((f,j)=>f.n+' · '+Math.round(op.grams[j])+' g').join(' / '),
            h('div',{style:{marginTop:'3px'}},Math.round(op.totals.p)+' P · '+Math.round(op.totals.c)+' H · '+Math.round(op.totals.g)+' G')):
@@ -2492,12 +2498,12 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
     h('div',{style:{fontSize:'10px',color:'#6B7280',marginTop:'4px'}},'La cobertura de micronutrientes requiere datos auditados; valores desconocidos no se asumen como cero.')
   );
   const weightSwitch=h('div',{style:{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',margin:'-2px 2px 10px'}},
-    h('span',{style:{fontSize:'9px',fontWeight:'800',color:'#9CA3AF',letterSpacing:'.04em'}},'PESAR'),
-    ['CRUDO','COCIDO'].map(m=>h('button',{key:m,onClick:()=>changePesoMode(m),style:{border:'1px solid '+(pesoMode===m?'#111827':'#D1D5DB'),background:pesoMode===m?'#111827':'#fff',color:pesoMode===m?'#fff':'#6B7280',borderRadius:'14px',padding:'5px 9px',fontSize:'9px',fontWeight:'900',cursor:'pointer'}},m))
+    h('span',{style:{fontSize:'10px',fontWeight:'800',color:'#D1D5DB',letterSpacing:'.04em'}},'PESAR'),
+    ['CRUDO','COCIDO'].map(m=>h('button',{key:m,onClick:()=>changePesoMode(m),style:{border:'1px solid '+(pesoMode===m?'#111827':'#D1D5DB'),background:pesoMode===m?'#111827':'#fff',color:pesoMode===m?'#fff':'#111827',borderRadius:'14px',padding:'5px 9px',fontSize:'9px',fontWeight:'900',cursor:'pointer'}},m))
   );
   const mealSwitch=h('div',{style:{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:'6px',margin:'-2px 2px 10px'}},
-    h('span',{style:{fontSize:'9px',fontWeight:'800',color:'#9CA3AF',letterSpacing:'.04em'}},'COMIDAS'),
-    [3,4].map(n=>h('button',{key:n,onClick:()=>changeMealCount(n),style:{border:'1px solid '+(mealCount===n?'#111827':'#D1D5DB'),background:mealCount===n?'#111827':'#fff',color:mealCount===n?'#fff':'#6B7280',borderRadius:'14px',padding:'5px 10px',fontSize:'10px',fontWeight:'900',cursor:'pointer'}},String(n)))
+    h('span',{style:{fontSize:'10px',fontWeight:'800',color:'#D1D5DB',letterSpacing:'.04em'}},'COMIDAS'),
+    [3,4].map(n=>h('button',{key:n,onClick:()=>changeMealCount(n),style:{border:'1px solid '+(mealCount===n?'#111827':'#D1D5DB'),background:mealCount===n?'#111827':'#fff',color:mealCount===n?'#fff':'#111827',borderRadius:'14px',padding:'5px 10px',fontSize:'10px',fontWeight:'900',cursor:'pointer'}},String(n)))
   );
   const totalLine=comboValid&&h('div',{style:{fontSize:'10px',color:'#047857',fontWeight:'800',marginBottom:'8px'}},
     'Combinador válido para '+(plans[0]?.meal?.n||'la comida')+': '+Math.round(day.kcal)+' kcal · '+Math.round(day.p)+' P · '+Math.round(day.c)+' H · '+Math.round(day.g)+' G');
@@ -2507,28 +2513,17 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
     h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'22px'}},'🧂'),h('div',{style:{fontSize:'17px',fontWeight:'800',color:'#6B7280'}},metaSal+' g'),h('div',{style:{fontSize:'10px',color:'#999'}},'sal / día')));
   return h('div',null,
     header,
-    h('div',{style:{...card,marginBottom:'10px',padding:'10px'}},
-      h('div',{style:{fontWeight:'900',fontSize:'12px',marginBottom:'6px'}},'Elegí el día de esta semana · '+(wk?.label||'')),
-      h('div',{style:{display:'flex',gap:'4px',flexWrap:'wrap'}},['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map((d,i)=>
-        h('button',{key:d,type:'button',onClick:()=>setDayIndex(i),style:{flex:'1 1 12%',border:'1px solid #ddd',borderRadius:'7px',padding:'7px 2px',background:dayIndex===i?'#111827':'#fff',color:dayIndex===i?'white':'#333',fontWeight:'800',fontSize:'10px'}},d))),
-      h('div',{style:{fontSize:'11px',marginTop:'8px',fontWeight:'800'}},'Comidas de este día ('+mealCount+')'),
-      h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap',marginTop:'5px'}},FT_V9_MEAL_IDS.map(id=>
-        h('button',{key:id,type:'button',onClick:()=>{
-          let ids=sourceMeals.includes(id)?sourceMeals.filter(x=>x!==id):[...sourceMeals,id];
-          // No dejar configuraciones incompletas ni alterar una pauta sin datos.
-          if(ids.length===3||ids.length===4)changeMeals(ids);
-          else if(sourceMeals.length===3&&!sourceMeals.includes(id))changeMeals([...FT_V9_MEAL_IDS]);
-        },style:{padding:'6px 8px',borderRadius:'8px',border:'1px solid '+(sourceMeals.includes(id)?'#047857':'#ddd'),background:sourceMeals.includes(id)?'#ECFDF5':'#fff',color:'#222',fontSize:'10px',fontWeight:'800'}},(sourceMeals.includes(id)?'✓ ':'')+FT_V9_MEAL_LABELS[id]))),
-      h('div',{style:{fontSize:'10px',color:'#667085',marginTop:'5px'}},'Para cambiar 3 comidas, seleccioná 4 y luego quitá una. Registro hereda esta selección por fecha.')
-    ),
+    h('div',{style:{background:'#18202E',color:'#F8FAFC',border:'1px solid #334155',padding:'10px 12px',borderRadius:'10px',fontSize:'11px',marginBottom:'10px'}},
+      'Dieta muestra 3 o 4 comidas. La combinación de tres refleja el último día abierto en Registro cuando coincide con el selector. La elección diaria se hace solamente en Registro.'),
     modeSwitch,
     h('div',{style:{display:'flex',justifyContent:'flex-end',gap:'12px',flexWrap:'wrap'}},mealSwitch,weightSwitch),
     fixedSection,
     h('div',{style:{fontWeight:'900',fontSize:'13px',margin:'14px 0 7px'}},'COMBINADOR ÚNICO · elegí qué comida reemplazar'),
     h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',marginBottom:'9px'}},meals.map(m=>h('button',{key:m.id,type:'button',onClick:()=>setComboMeal(m.id),style:{flex:'1 1 22%',padding:'8px 4px',borderRadius:'8px',fontSize:'10px',fontWeight:'800',background:targetMeal===m.id?'#111827':'#F3F4F6',color:targetMeal===m.id?'#fff':'#374151',border:'1px solid #D1D5DB'}},m.n))),
     !targetsReady&&h('div',{style:{...card,background:'#FFF7ED',border:'1px solid #FED7AA',fontSize:'11px',color:'#9A3412',fontWeight:'700'}},'Pauta nutricional en preparación: faltan PesoInicial o KcalObjetivo en Sheet. La app no va a inventar cantidades.'),
+    !refVal&&h('div',{style:{padding:'9px',background:'#FFF7ED',color:'#7C2D12',border:'1px solid #FDBA74',borderRadius:'8px',marginBottom:'8px',fontSize:'11px'}},'Combinador: seleccioná primero un menú A/B con gramajes validados. Sin esa referencia no podemos calcular cantidades equivalentes.'),
     totalLine,
-    plans.map(({meal,chosen,solved})=>h('div',{key:meal.id,style:{...card,marginBottom:'10px',padding:'12px 8px'}},
+    plans.map(({meal,chosen,solved})=>h('div',{key:meal.id,style:{...card,background:'#F8FAFC',color:'#111827',border:'1px solid #CBD5E1',marginBottom:'10px',padding:'12px 8px'}},
       h('div',{style:{display:'flex',alignItems:'baseline',gap:'7px',flexWrap:'wrap',marginBottom:'9px',paddingLeft:'4px'}},
         h('div',{style:{fontSize:'13px',fontWeight:'900'}},meal.n),
         solved&&h('div',{style:{fontSize:'9px',fontWeight:'700',color:'#9CA3AF'}},Math.round(solved.totals.kcal)+' kcal · '+Math.round(solved.totals.p)+' P · '+Math.round(solved.totals.c)+' H · '+Math.round(solved.totals.g)+' G · '+Math.round(solved.totals.fib)+' F')
@@ -2541,7 +2536,7 @@ function Diet({hab,setHab,setSaved,wk,user,menusVer,metaAgua,metaSal,nutriConfir
           f&&h('div',{style:{marginTop:'6px',minHeight:'36px'}},grams?(()=>{const dw=displayFoodWeight(f,grams,pesoMode);const convertible=!!(f.estadoRef&&f.factorCoccion);return h('div',null,
             !convertible&&h('div',{style:{fontSize:'10px',fontWeight:'900',color:B}},practicalAmount(f,grams)||'—'),
             h('div',{style:{fontSize:convertible?'10px':'9px',fontWeight:convertible?'900':'500',color:convertible?B:'#777',marginTop:convertible?'0':'2px'}},(convertible?'':'o ')+dw.grams+' g'+(dw.state?' '+dw.state.toLowerCase():''))
-          );})():h('div',{style:{fontSize:'9px',color:'#B45309',fontWeight:'700'}},'Cantidad pendiente'))
+          );})():h('div',{style:{fontSize:'9px',color:'#B45309',fontWeight:'700'}},!targetsReady?'Sin objetivos válidos':!refVal?'Falta menú A/B validado':'Sin combinación válida'))
         );})
       ),
     )),
@@ -2652,7 +2647,11 @@ function ftV9ChangeMealIds(day, selected){
  const ids=FT_V9_MEAL_IDS.filter(x=>selected.includes(x));
  if(ids.length!==3&&ids.length!==4)return day;
  const prior=ftV9MealIds(day,Number(day&&day.mealCount)===3?3:4);
- const patch={...day,mealIds:ids,mealCount:ids.length,closed:false};
+ // Si el día estaba pautado para 4 y se hicieron 3, preservar la omitida.
+ // Pauta de 3 desde el inicio no debe generar una omisión ficticia.
+ const hadSkip=Array.isArray(day&&day.skippedMealIds)&&day.skippedMealIds.length>0;
+ const skip=ids.length===4?[]:prior.length===4||hadSkip?FT_V9_MEAL_IDS.filter(id=>!ids.includes(id)):[];
+ const patch={...day,mealIds:ids,mealCount:ids.length,skippedMealIds:skip,closed:false};
  for(const key of ['meals','mealDetail','mealProof','mealKcal','mealProtein']){
    const before=Array.isArray(day&&day[key])?day[key]:[];
    patch[key]=ids.map(id=>{const oldIndex=prior.indexOf(id);return oldIndex<0?'':before[oldIndex]||'';});
@@ -2677,7 +2676,7 @@ function ftV7ReportMissing(hab,cfg,mealCount,user,wk,exes,sessionReps){
  for(let i=0;i<7;i++){
   const d=days[i]||{},dayCount=ftMealDayCount(d,mealCount),m=(d.meals||[]).slice(0,dayCount),p='Día '+(i+1)+': ';
   if(m.length!==dayCount||m.some(x=>!x))missing.push(p+'comidas ('+dayCount+')');
-  m.forEach((x,j)=>{if(['other','qty','equiv'].includes(x)&&!String((d.mealDetail||[])[j]||'').trim())missing.push(p+'detalle de comida '+(j+1));});
+  m.forEach((x,j)=>{if(['other','qty','equiv'].includes(x)&&!String((d.mealDetail||[])[j]||'').trim())missing.push(p+'detalle de comida '+(j+1));if(x==='ok'&&!['A','B'].includes((d.mealProof||[])[j])&&!d.closed)missing.push(p+'opción A o B de la comida '+(j+1));});
   for(const [key,label] of [['water','agua'],['sleepHours','sueño'],['steps','pasos'],['weight','peso'],['waist','cintura']]){
    if(!num(d[key])&&!['no_medi','no_registre','no_camine'].includes(String(d[key+'Status']||'')))missing.push(p+label);
   }
@@ -2719,6 +2718,7 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
   };
   const goTraining=sess=>{onGoTraining(sess);};
   const [open,setOpen]=useState(()=>{const x={};x[Math.min(6,Math.max(0,(new Date().getDay()+6)%7))]=true;return x;});
+  const recordDayViewed=i=>{localStorage.setItem(`ase_${user}_lastRegistroDia_${wk?.id||''}`,String(i));setOpen(old=>({...old,[i]:!old[i]}));};
   const [dayErrors,setDayErrors]=useState({});
   const setH=(patch)=>{setHab(Object.assign({},hab,patch));setSaved(false);};
   const setDay=(i,patch)=>{const a=daily.map((d,j)=>j===i?Object.assign({},d,patch):d);setH({dailyV5:a});};
@@ -2735,7 +2735,7 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
   const weekMissing=()=>ftV7ReportMissing(hab,cfg,mealCount,user,wk,exes,sessionReps);
   const avg=(key)=>{const v=daily.map(d=>normNum(d[key])).filter(x=>isFinite(x)&&x>0);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const weights=daily.map(d=>normNum(d.weight)).filter(x=>isFinite(x)&&x>0),waists=daily.map(d=>normNum(d.waist)).filter(x=>isFinite(x)&&x>0);
-  const mealDenom=daily.reduce((n,d)=>n+ftMealDayCount(d,mealCount),0);
+  const mealDenom=daily.reduce((n,d)=>n+ftMealDayCount(d,mealCount)+(Array.isArray(d.skippedMealIds)?d.skippedMealIds.length:0),0);
   const mealAnswered=daily.reduce((n,d)=>n+(d.meals||[]).slice(0,ftMealDayCount(d,mealCount)).filter(Boolean).length,0),mealOk=daily.reduce((n,d)=>n+(d.meals||[]).slice(0,ftMealDayCount(d,mealCount)).filter(x=>x==='ok'||x==='equiv_validada').length,0);
   const nutPct=mealDenom?Math.round(mealOk/mealDenom*100):null;
   const coveredDays=daily.filter(d=>(d.meals||[]).some(Boolean)||!!d.training||!!d.water||!!d.sleepHours||!!d.weight||!!d.waist).length;
@@ -2747,7 +2747,7 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
   const requiredMissing=d=>{const miss=[];
     const dc=ftMealDayCount(d,mealCount),meals=(d.meals||[]).slice(0,dc);
     if(meals.filter(Boolean).length<dc)miss.push('todas las comidas ('+dc+')');
-    meals.forEach((m,j)=>{if(['other','qty','equiv'].includes(m)&&!String((d.mealDetail||[])[j]||'').trim())miss.push(FT_V9_MEAL_LABELS[ftV9MealIds(d,dc)[j]]+': explicar qué comiste');});
+    meals.forEach((m,j)=>{if(['other','qty','equiv'].includes(m)&&!String((d.mealDetail||[])[j]||'').trim())miss.push(FT_V9_MEAL_LABELS[ftV9MealIds(d,dc)[j]]+': explicar qué comiste');if(m==='ok'&&!['A','B'].includes((d.mealProof||[])[j])&&!d.closed)miss.push(FT_V9_MEAL_LABELS[ftV9MealIds(d,dc)[j]]+': marcar menú A o B');});
     if(!filled(d,'water'))miss.push('agua: litros o no registrado');
     if(!filled(d,'sleepHours'))miss.push('sueño: horas o no registrado');
     if(!filled(d,'steps')&&d.stepsStatus!=='no_camine')miss.push('actividad: km/minutos o no caminé');
@@ -2757,9 +2757,9 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
   const closeDay=i=>{const d=daily[i]||emptyDay();const miss=requiredMissing(d);if(miss.length){setDayErrors(Object.assign({},dayErrors,{[i]:'Falta registrar: '+miss.join(', ')}));setOpen(Object.assign({},open,{[i]:true}));return;}const ne=Object.assign({},dayErrors);delete ne[i];setDayErrors(ne);setDay(i,{closed:true});setOpen(Object.assign({},open,{[i]:false}));};
   const reopenDay=i=>{setDay(i,{closed:false});setOpen(Object.assign({},open,{[i]:true}));};
   return h('div',null,
-    h('div',{style:{...card,background:'#F8FAFC'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Registro diario'),h('div',{style:{fontSize:'11px',color:'#667085',marginTop:'4px',lineHeight:'1.5'}},'Para enviar, respondé los siete días. Una pauta no cumplida también se registra: elegí No, No me medí o No lo registré. Ninguna respuesta debe quedar vacía.')),
-    DAYS.map((name,i)=>{const d=daily[i]||emptyDay();const dc=ftMealDayCount(d,mealCount);const dayMealIds=ftV9MealIds(d,dc);const dayMeals=dayMealIds.map(id=>FT_V9_MEAL_LABELS[id]);const answered=(d.meals||[]).filter(Boolean).length+(d.water?1:0)+(d.sleepHours?1:0)+(d.hunger?1:0)+(d.energy?1:0);return h('div',{key:name,style:{...card,padding:'0',overflow:'hidden'}},
-      h('button',{type:'button',onClick:()=>setOpen(Object.assign({},open,{[i]:!open[i]})),style:{width:'100%',padding:'14px',border:'none',background:'#fff',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}},h('div',{style:{textAlign:'left'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},name),h('div',{style:{fontSize:'10px',color:d.closed?G:(answered?'#D97706':'#999'),marginTop:'2px'}},d.closed?'✓ Día registrado':(answered?'En progreso':'Pendiente'))),h('div',{style:{fontSize:'18px',color:'#999'}},open[i]?'⌃':'⌄')),
+    h('div',{style:{...card,background:'#F8FAFC',color:'#111827'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},'Registro diario'),h('div',{style:{fontSize:'11px',color:'#667085',marginTop:'4px',lineHeight:'1.5'}},'Para enviar, respondé los siete días. Una pauta no cumplida también se registra: elegí No, No me medí o No lo registré. Ninguna respuesta debe quedar vacía.')),
+    DAYS.map((name,i)=>{const d=daily[i]||emptyDay();const dc=ftMealDayCount(d,mealCount);const dayMealIds=ftV9MealIds(d,dc);const dayMeals=dayMealIds.map(id=>FT_V9_MEAL_LABELS[id]);const answered=(d.meals||[]).filter(Boolean).length+(d.water?1:0)+(d.sleepHours?1:0)+(d.hunger?1:0)+(d.energy?1:0);return h('div',{key:name,style:{...card,background:'#F8FAFC',color:'#111827',padding:'0',overflow:'hidden'}},
+      h('button',{type:'button',onClick:()=>recordDayViewed(i),style:{width:'100%',padding:'14px',border:'none',background:'#fff',color:'#111827',display:'flex',justifyContent:'space-between',alignItems:'center',cursor:'pointer'}},h('div',{style:{textAlign:'left'}},h('div',{style:{fontSize:'14px',fontWeight:'900'}},name),h('div',{style:{fontSize:'10px',color:d.closed?G:(answered?'#D97706':'#999'),marginTop:'2px'}},d.closed?'✓ Día registrado':(answered?'En progreso':'Pendiente'))),h('div',{style:{fontSize:'18px',color:'#999'}},open[i]?'⌃':'⌄')),
       open[i]&&h('div',{style:{padding:'0 14px 14px',borderTop:'1px solid #eee'}},
         d.closed&&h('div',{style:{fontSize:'10px',color:G,fontWeight:'800',marginTop:'10px'}},'Día cerrado. Podés corregirlo y volver a cerrarlo.'),
         h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'12px'}},'🌅 En ayunas · mediciones'),
@@ -2767,20 +2767,31 @@ function MiSemana({nut,setNut,hab,setHab,setSaved,pp,pc,cfg,nutriConfirmado,onEn
           measure(d,i,'⚖️ Peso (kg)','weight','kg','no_medi','kg'),
           measure(d,i,'📏 Cintura (cm)','waist','cm','no_medi','cm')
         ),
-        h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'12px'}},'🍽️ ¿Cuántas comidas realizaste este día?'),
+        h('div',{style:{fontSize:'12px',fontWeight:'900',marginTop:'12px'}},'🍽️ ¿Cuántas comidas hiciste este día?'),
         chips([[3,'3 comidas'],[4,'4 comidas']],dc,n=>{if(n===3||n===4){const ids=n===4?[...FT_V9_MEAL_IDS]:dayMealIds.length===3?dayMealIds:['desayuno','almuerzo','cena'];setDay(i,ftV9ChangeMealIds(d,ids));}}),
         h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',marginTop:'6px'}},FT_V9_MEAL_IDS.map(id=>
            h('button',{key:id,type:'button',onClick:()=>{if(dc===4&&dayMealIds.includes(id)){setDay(i,ftV9ChangeMealIds(d,dayMealIds.filter(x=>x!==id)));}else if(dc===3&&!dayMealIds.includes(id)){const oldId=dayMealIds[dayMealIds.length-1];setDay(i,ftV9ChangeMealIds(d,dayMealIds.filter(x=>x!==oldId).concat(id)));}},style:{fontSize:'10px',border:'1px solid #DDD',borderRadius:'7px',padding:'6px',background:dayMealIds.includes(id)?'#ECFDF5':'#fff'}},(dayMealIds.includes(id)?'✓ ':'')+FT_V9_MEAL_LABELS[id]))),
-        h('div',{style:{fontSize:'10px',color:'#A8A8AE',marginTop:'6px'}},'Se guarda por fecha. Cambiar el selector de otro día no modifica este registro.'),
-        dayMeals.map((m,mi)=>h('div',{key:m,style:{padding:'9px 0',borderBottom:'1px solid #f2f2f2'}},h('div',{style:{fontSize:'11px',fontWeight:'800'}},m),chips([['ok','Cumplí el menú pautado'],['equiv','Combiné alimentos (sin equivalencia aún verificada)'],['other','Comí otra cosa'],['qty','Cambié cantidades'],['skip','No comí']],(d.meals||[])[mi]||'',v=>{const ms=[...(d.meals||['','','',''])];ms[mi]=v;setDay(i,{meals:ms,closed:false});}),(['qty','other','equiv'].includes((d.meals||[])[mi]))&&h('input',{type:'text',defaultValue:(d.mealDetail||[])[mi]||'',placeholder:'Qué y cuánto consumiste',onBlur:e=>{const md=[...(d.mealDetail||['','','',''])];md[mi]=e.target.value;setDay(i,{mealDetail:md,closed:false});},style:{...inp,marginTop:'7px'}}),
-          ['qty','other','equiv'].includes((d.meals||[])[mi])&&h('div',{style:{marginTop:'6px'}},
-            h('div',{style:{fontSize:'10px',color:'#A8A8AE'}},'¿Cómo estimaste cantidades/equivalencia? (opcional)'),
-            chips([['app','Aplicación externa'],['calculo','Cálculo propio'],['estimacion','Estimación']],(d.mealProof||[])[mi]||'',v=>{const a=[...(d.mealProof||['','','',''])];a[mi]=v;setDay(i,{mealProof:a,closed:false});}),
-            h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px'}},
-              h('input',{type:'number',inputMode:'decimal',placeholder:'kcal (opcional)',defaultValue:(d.mealKcal||[])[mi]||'',onBlur:e=>{const a=[...(d.mealKcal||['','','',''])];a[mi]=e.target.value;setDay(i,{mealKcal:a,closed:false});},style:{...inp,marginTop:'6px'}}),
-              h('input',{type:'number',inputMode:'decimal',placeholder:'Proteína g (opcional)',defaultValue:(d.mealProtein||[])[mi]||'',onBlur:e=>{const a=[...(d.mealProtein||['','','',''])];a[mi]=e.target.value;setDay(i,{mealProtein:a,closed:false});},style:{...inp,marginTop:'6px'}})
-            )
-          ))),
+        h('div',{style:{fontSize:'10px',color:'#A8A8AE',marginTop:'6px'}},'Marcá cuáles hiciste. Si estaban pautadas 4 y realizaste 3, la omitida contará como no realizada. Se guarda por fecha.'),
+        dayMeals.map((m,mi)=>h('div',{key:m,style:{padding:'10px 0',borderBottom:'1px solid #D5DDE5',color:'#111827'}},
+          h('div',{style:{fontSize:'12px',fontWeight:'800'}},m),
+          chips([['ok','Comí A/B'],['equiv','Usé el combinador'],['other','Otra comida / distintas cantidades']],
+            (d.meals||[])[mi]==='qty'?'other':(d.meals||[])[mi]||'',v=>{
+              const ms=[...(d.meals||['','','',''])];ms[mi]=v;
+              const pr=[...(d.mealProof||['','','',''])];if(v!=='ok')pr[mi]='';
+              setDay(i,{meals:ms,mealProof:pr,closed:false});
+            }),
+          (d.meals||[])[mi]==='ok'&&h('div',{style:{marginTop:'7px'}},
+            h('div',{style:{fontSize:'11px',fontWeight:'700',color:'#334155'}},'¿Qué opción seguiste?'),
+            chips([['A','Menú A'],['B','Menú B']],['A','B'].includes((d.mealProof||[])[mi])?(d.mealProof||[])[mi]:'',v=>{
+              const arr=[...(d.mealProof||['','','',''])];arr[mi]=v;setDay(i,{mealProof:arr,closed:false});
+            })
+          ),
+          ['other','qty','equiv'].includes((d.meals||[])[mi])&&h('input',{type:'text',
+            defaultValue:(d.mealDetail||[])[mi]||'',key:'meal-detail-'+i+'-'+mi,
+            placeholder:(d.meals||[])[mi]==='equiv'?'Qué alimentos combinaste (si lo recordás)':'Qué y cuánto consumiste',
+            onBlur:e=>{const md=[...(d.mealDetail||['','','',''])];md[mi]=e.target.value;setDay(i,{mealDetail:md,closed:false});},
+            style:{...inp,marginTop:'7px'}})
+        )),
         h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'13px'}},
           measure(d,i,'💧 Agua (L)','water','L','no_registre','ej. 2,5'),
           h('div',null,h('div',{style:{fontSize:'11px',fontWeight:'800'}},'🚶 Caminata / actividad'),
@@ -3990,7 +4001,7 @@ function App(){
           aguaPromL:(()=>{const a=(hab.dailyV5||[]).map(d=>parseFloat(d.water)).filter(x=>isFinite(x)&&x>0);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length*100)/100:'';})(),
           suenoPromH:(()=>{const a=(hab.dailyV5||[]).map(d=>parseFloat(d.sleepHours)).filter(x=>isFinite(x)&&x>0);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length*100)/100:'';})(),
           pasosProm:(()=>{const a=(hab.dailyV5||[]).filter(d=>!d.stepsUnit||d.stepsUnit==='pasos').map(d=>parseFloat(d.steps)).filter(x=>isFinite(x)&&x>0);return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):'';})(),
-          nutriCompliance:(()=>{const d=hab.dailyV5||[];const f=localStorage.getItem(`ase_${user}_comidasPorDia`)==='3'?3:4;const a=d.flatMap(x=>(x.meals||[]).slice(0,ftMealDayCount(x,f)));return a.length?Math.round(a.filter(x=>x==='ok'||x==='equiv_validada').length/a.length*100):'';})(),
+          nutriCompliance:(()=>{const d=hab.dailyV5||[];const f=localStorage.getItem(`ase_${user}_comidasPorDia`)==='3'?3:4;const a=d.flatMap(x=>(x.meals||[]).slice(0,ftMealDayCount(x,f)));const skipped=d.reduce((n,x)=>n+(Array.isArray(x.skippedMealIds)?x.skippedMealIds.length:0),0);return a.length+skipped?Math.round(a.filter(x=>x==='ok'||x==='equiv_validada').length/(a.length+skipped)*100):'';})(),
           entrenoRealizadas:ftSessionAudit(user,wk,cfg,exes,curSR).filter(a=>a.state==='completa').length,
           entrenoOmitidas:ftSessionAudit(user,wk,cfg,exes,curSR).filter(a=>a.state==='no_realizada').length,
           sesionesRegistro:ftSessionAudit(user,wk,cfg,exes,curSR).map(a=>({sesion:a.sess,estado:a.state,pendientes:a.pending})),
