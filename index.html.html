@@ -1607,10 +1607,16 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
   };
   // Aproximaciones. No existe sugerencia automática intrasesión de bajar kg:
   // cada bloque define su progresión entre exposiciones.
+  // Las aproximaciones se redondean HACIA ABAJO en pasos de 0,5 kg.
+  // No reutilizar rKg: ese helper REDONDEA HACIA ARRIBA de a 2,5 kg
+  // para progresiones y puede superar la carga de trabajo (7 kg -> 7,5 kg).
+  // El redondeo de calentamiento es informativo; ajustar a implementos disponibles.
   const aproxUtil=(base,pct)=>{
-    const kg=parseFloat(base)||0;
-    if(kg<=0)return null;
-    return rKg(kg*(pct||0.5));
+    const kg=Number(base);
+    const fraccion=Number(pct);
+    if(!Number.isFinite(kg)||kg<=0||!Number.isFinite(fraccion)||fraccion<=0||fraccion>=1)return null;
+    const sugerido=Math.floor((kg*fraccion+1e-9)*2)/2;
+    return sugerido>0&&sugerido<kg?sugerido:null;
   };
   const doSaveKg=(ex,val)=>{
     const kg=parseFloat(val);if(isNaN(kg)||kg<=0)return setEditKg(null);
@@ -2014,8 +2020,8 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                 const mainKg=kgPrincipal(ex);
                 return h('div',null,
                   ref>0&&h('div',{style:{marginBottom:'8px',fontSize:'11px',color:'#64748B',background:'#F8FAFC',borderRadius:'7px',padding:'7px 9px'}},
-                    h('div',{style:{padding:'3px 0',borderBottom:'1px solid #E2E8F0'}},'Aproximación 1 · 12 reps · 50% · '+aproxUtil(mainKg,0.5)+' kg'),
-                    h('div',{style:{padding:'3px 0'}},'Aproximación 2 · 6 reps · 75% · '+aproxUtil(mainKg,0.75)+' kg')
+                    aproxUtil(mainKg,0.5)!=null&&h('div',{style:{padding:'3px 0',borderBottom:'1px solid #E2E8F0'}},'Aproximación 1 · 12 reps · 50% · '+aproxUtil(mainKg,0.5)+' kg'),
+                    aproxUtil(mainKg,0.75)!=null&&h('div',{style:{padding:'3px 0'}},'Aproximación 2 · 6 reps · 75% · '+aproxUtil(mainKg,0.75)+' kg')
                   ),
                   h('div',{style:{marginBottom:'8px',background:'#F3E8FF',border:'1px solid #D8B4FE',borderRadius:'8px',padding:'10px'}},
                     h('div',{style:{fontSize:'12px',fontWeight:'800',color:'#7E22CE'}},'TRABAJO PRINCIPAL · Semana '+semEnBloque),
@@ -2045,13 +2051,13 @@ function Training({exes,setExes,setSaved,saved,user,cfg,setCfg,sessionReps,setSe
                 h('div',{style:{fontSize:'11px',color:'#64748B',lineHeight:'1.5',marginTop:'4px'}},'Probá cargas de forma progresiva hasta encontrar una que te permita hacer aproximadamente '+Math.round((ex.low+ex.hi)/2)+' repeticiones con buena técnica y esfuerzo moderado: desafiante, pero sin llegar al límite. Después guardá esos kg.')
               ),
               // Aproximaciones: no cuentan como series efectivas. Se muestran para cualquier carga de trabajo > 0.
-              !((bloque==='fuerza'&&rolFuerza(ex)==='principal')||(bloque==='base'&&!getKg(ex)))&&aproxUtil(getKg(ex),0.5)&&
+              !((bloque==='fuerza'&&rolFuerza(ex)==='principal')||(bloque==='base'&&!getKg(ex)))&&(aproxUtil(getKg(ex),0.5)!=null||aproxUtil(getKg(ex),0.75)!=null)&&
                 h('div',{style:{marginBottom:'8px',fontSize:'11px',color:'#64748B',background:'#F8FAFC',borderRadius:'7px',padding:'7px 9px'}},
                   bloque==='base'||bloque==='rehab'
-                    ?h('div',{style:{padding:'3px 0'}},'Aproximación · 12 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
+                    ?aproxUtil(getKg(ex),0.75)!=null&&h('div',{style:{padding:'3px 0'}},'Aproximación · 12 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
                     :h('div',null,
-                        h('div',{style:{padding:'3px 0',borderBottom:'1px solid #E2E8F0'}},'Aproximación 1 · 12 reps · 50% · '+aproxUtil(getKg(ex),0.5)+' kg'),
-                        h('div',{style:{padding:'3px 0'}},'Aproximación 2 · 6 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
+                        aproxUtil(getKg(ex),0.5)!=null&&h('div',{style:{padding:'3px 0',borderBottom:'1px solid #E2E8F0'}},'Aproximación 1 · 12 reps · 50% · '+aproxUtil(getKg(ex),0.5)+' kg'),
+                        aproxUtil(getKg(ex),0.75)!=null&&h('div',{style:{padding:'3px 0'}},'Aproximación 2 · 6 reps · 75% · '+aproxUtil(getKg(ex),0.75)+' kg')
                       )
                 ),
               // Fuerza principal no usa celdas redundantes. Base/Rehab muestran una pauta textual:
