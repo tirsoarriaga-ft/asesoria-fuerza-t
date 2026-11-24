@@ -1603,7 +1603,6 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,medic
 
       // TAB: SENSACIONES
       tab==='habitos'&&h(FTV9HabitosPanel,{name,asesoradoId:aseIdDiag}),
-      tab==='dieta'&&String(name).trim().toLowerCase()==='yo'&&h(FT20NutricionWeb,{coach:true}),
       tab==='dieta'&&h(FTV9DietaPanel,{name,asesoradoId:aseIdDiag}),
       tab==='diag'&&h(DiagnosticoPanel,{rutina:{...rutina,CinturaInicial:diagnostico?.CinturaInicial},weeks,medicionesHistoricas}),
       tab==='fase'&&h(FtPhasePanel,{name,rutina:{...rutina,CinturaInicial:diagnostico?.CinturaInicial},weeks,medicionesHistoricas,phaseRows,onRefresh}),
@@ -3547,6 +3546,7 @@ function App(){
   }
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
+      appTab==='lista'&&h(FT20AltaCoach,null),
       appTab==='lista'&&h(ClientList,{data,rutinas,maestra,decisiones,videosPend,phaseRows,onSelect:setSelected,onRefresh:loadData}),
       appTab==='semv2'&&h(FTV9AnalisisSemanal,{data:data,rutinas:rutinas,devoluciones:devoluciones,videos:videos,onRefresh:loadData}),
       appTab==='mensualv2'&&h(MensualV2,{maestra:maestra,data:data,rutinas:rutinas,decisiones:decisiones,videos:videos}),
@@ -3562,86 +3562,63 @@ function App(){
   );
 }
 
-function FT20NutricionWeb({coach=false}){
-  const [url,setUrl]=useState(()=>localStorage.getItem('ft20_web_url')||'');
-  const [acceso,setAcceso]=useState(()=>sessionStorage.getItem(coach?'ft20_coach_acceso':'ft20_piloto_acceso')||'');
-  const [pauta,setPauta]=useState(null), [mensaje,setMensaje]=useState('');
-  const [ocupado,setOcupado]=useState(false), [distribucion,setDistribucion]=useState(4);
-  const [comida,setComida]=useState(''), [opcion,setOpcion]=useState('A'), [respuesta,setRespuesta]=useState('');
-  const respuestas={
-    MENU_PORCIONES:'Comí el menú pautado y respeté porciones',
-    MENU_CANTIDAD_INCIERTA:'Comí el menú pero no sé si respeté cantidades',
-    OTROS_ALIMENTOS:'Comí otros alimentos',NO_COMIO:'No comí'
-  };
-  const opciones=(pauta?.opciones||[]).filter(x=>Number(x.distribucion)===distribucion);
-  const comidas=[...new Set(opciones.map(x=>x.comida))];
-  const elegida=comida||comidas[0]||'';
-  const guardado=pauta?.registros?.find(x=>Number(x.distribucion)===distribucion&&x.comida===elegida);
-  const menu=opciones.filter(x=>x.comida===elegida&&x.opcion===opcion).sort((a,b)=>a.orden-b.orden);
+const FT20_API_ALTA='https://script.google.com/macros/s/AKfycby25wQXimGVxe0KhykAOhSzbGSNv5isGodl9VvEace80OLfMyDLqaBqGlY35K6XzdJH/exec';
+
+async function ft20AltaLlamar(accion,datos={}){
+  const r=await fetch(FT20_API_ALTA,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},
+    body:JSON.stringify({accion,...datos})});
+  if(!r.ok)throw Error('No se pudo conectar con la API Web Piloto.');
+  const j=await r.json();
+  if(!j.ok)throw Error(j.error);
+  return j;
+}
+const ft20Panel={background:'#fff',color:'#14251c',border:'1px solid #a4b9ae',padding:16,borderRadius:12,margin:12,colorScheme:'light'};
+const ft20Campo={display:'block',width:'100%',boxSizing:'border-box',padding:8,margin:'4px 0 12px',background:'#fff',color:'#14251c',border:'1px solid #708479',borderRadius:4};
+const ft20Boton={padding:'8px 12px',margin:'4px 6px 4px 0',background:'#126342',color:'#fff',border:0,borderRadius:6};
+function ft20FechaVista(fecha){return fecha.split('-').reverse().join('/');}
+function FT20AltaCoach(){
+  const [abierto,setAbierto]=useState(false), [acceso,setAcceso]=useState(()=>sessionStorage.getItem('ft20_coach_acceso')||'');
+  const [catalogo,setCatalogo]=useState(null),[mensaje,setMensaje]=useState(''),[ocupado,setOcupado]=useState(false);
+  const [nombre,setNombre]=useState('Piloto Prueba Luna'),[plan,setPlan]=useState('PRESENCIAL');
+  const [ejercicio,setEjercicio]=useState(''),[series,setSeries]=useState('3'),[reps,setReps]=useState('9');
+  const [alta,setAlta]=useState(null);
   async function ejecutar(accion){
-    setOcupado(true);
-    setMensaje('');
+    setOcupado(true);setMensaje('');
     try{
-      const endpoint=url.trim(), token=acceso.trim();
-      if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(endpoint))
-        throw Error('Pegá la URL /exec de la implementación web 2.0.');
-      if(!/^[a-f0-9]{64}$/.test(token))throw Error('Pegá el acceso correspondiente a esta app.');
-      async function pedir(tarea,datos={}){
-        const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},
-          body:JSON.stringify({accion:tarea,acceso:token,...datos})});
-        if(!r.ok)throw Error('No se pudo conectar con Apps Script. Revisá la implementación web.');
-        const j=await r.json();
-        if(!j.ok)throw Error(j.error);
-        return j;
-      }
-      if(accion==='registrar'){
-        const r=await pedir(accion,{distribucion,comida:elegida,opcion,respuesta});
-        setMensaje(r.actualizado?'Fila actualizada':'Fila creada');
-        setPauta(await pedir('leer'));
+      const r=await ft20AltaLlamar(accion,{acceso:acceso.trim(),nombre:accion==='altaBaja'?alta.nombre:nombre,plan,ejercicio,series,reps});
+      sessionStorage.setItem('ft20_coach_acceso',acceso.trim());
+      if(accion==='altaCatalogo'){
+        setCatalogo(r.ejercicios);
+        setEjercicio(String(r.ejercicios[0]?.id||''));
+      }else if(accion==='altaCrear'){
+        setAlta(r);
+        setMensaje((r.existente?'La ficha ya existe: ':'Ficha creada: ')+r.nombre+' · Semana 1: '+ft20FechaVista(r.semana));
       }else{
-        setPauta(await pedir(accion));
-        if(accion==='compartir')setMensaje('Pauta sincronizada con Piloto.');
+        setAlta(null);setMensaje('Ficha ficticia desvinculada.');
       }
-      localStorage.setItem('ft20_web_url',endpoint);
-      sessionStorage.setItem(coach?'ft20_coach_acceso':'ft20_piloto_acceso',token);
-    }catch(e){
-      setMensaje(e instanceof SyntaxError?'La URL no devolvió datos de la API web. Revisá el acceso de la implementación.':e.message);
-    }finally{setOcupado(false);}
+    }catch(e){setMensaje(e.message);}
+    finally{setOcupado(false);}
   }
-  const estados={PENDIENTE_PUBLICACION_Y_CONFIRMACION:'Lista para compartir',
-    COMPARTIDA_PILOTO:'Pendiente de confirmación',VIGENTE_PILOTO:'Pauta confirmada'};
-  const campo={display:'block',width:'100%',padding:8,margin:'6px 0',boxSizing:'border-box',font:'inherit'};
-  const boton={padding:'8px 12px',margin:'4px 4px 4px 0',cursor:'pointer'};
-  return h('section',{style:{background:'#fff',color:'#172720',padding:14,margin:'12px 0',borderRadius:12,border:'1px solid #ddd'}},
-    h('h3',null,'Nutrición 2.0 · prueba privada'),
-    h('label',null,'URL de la implementación web',h('input',{style:campo,type:'url',value:url,disabled:ocupado,
-      onChange:e=>{setUrl(e.target.value);setPauta(null);}})),
-    h('label',null,coach?'Acceso Coach':'Acceso Piloto',h('input',{style:campo,type:'password',autoComplete:'off',value:acceso,
-      disabled:ocupado,onChange:e=>{setAcceso(e.target.value);setPauta(null);}})),
-    h('button',{style:boton,disabled:ocupado,onClick:()=>ejecutar(coach?'estadoCoach':'leer')},pauta?'Actualizar':'Conectar'),
-    pauta&&h('p',null,estados[pauta.estado]||pauta.estado,pauta.hoy?' · '+pauta.hoy:''),
-    coach&&pauta?.estado==='PENDIENTE_PUBLICACION_Y_CONFIRMACION'&&
-      h('button',{style:boton,disabled:ocupado,onClick:()=>ejecutar('compartir')},'Compartir pauta'),
-    !coach&&pauta?.estado==='COMPARTIDA_PILOTO'&&
-      h('button',{style:boton,disabled:ocupado,onClick:()=>ejecutar('confirmar')},'Confirmar pauta'),
-    !coach&&comidas.length>0&&h('div',null,
-      h('label',null,'Distribución',h('select',{style:campo,value:distribucion,disabled:ocupado,
-        onChange:e=>{setDistribucion(Number(e.target.value));setComida('');setOpcion('A');setRespuesta('');}},
-        [4,3].map(n=>h('option',{key:n,value:n},n+' comidas')))),
-      h('label',null,'Comida',h('select',{style:campo,value:elegida,disabled:ocupado,
-        onChange:e=>{setComida(e.target.value);setOpcion('A');setRespuesta('');}},
-        comidas.map(x=>h('option',{key:x},x)))),
-      h('label',null,'Opción',h('select',{style:campo,value:opcion,disabled:ocupado,onChange:e=>setOpcion(e.target.value)},
-        ['A','B'].map(x=>h('option',{key:x},x)))),
-      h('ul',null,menu.map((x,i)=>h('li',{key:i},[x.nombre,x.cantidad,x.unidad,x.estado].filter(Boolean).join(' ')))),
-      guardado&&h('p',null,'Guardado hoy · opción '+guardado.opcion+' · '+respuestas[guardado.respuesta]),
-      pauta.estado==='VIGENTE_PILOTO'&&h('div',null,
-        h('label',null,'Respuesta',h('select',{style:campo,value:respuesta,disabled:ocupado,onChange:e=>setRespuesta(e.target.value)},
-          h('option',{value:''},'Elegí una respuesta'),
-          Object.entries(respuestas).map(([key,label])=>h('option',{key,value:key},label)))),
-        h('button',{style:boton,disabled:ocupado||!respuesta||!menu.length,onClick:()=>ejecutar('registrar')},'Guardar comida'))),
-    h('p',{role:'status'},ocupado?'Procesando…':mensaje)
-  );
+  if(!abierto)return h('button',{style:{...ft20Boton,margin:12},onClick:()=>setAbierto(true)},'Alta de prueba 2.0');
+  const entrada=(label,value,change,extra={})=>h('label',null,label,h('input',{style:ft20Campo,value,disabled:ocupado,
+    onChange:e=>change(e.target.value),...extra}));
+  return h('section',{style:ft20Panel},h('h3',null,'Alta de prueba 2.0'),
+    h('p',null,'Los cambios se guardan en Prueba Tirso.'),
+    !catalogo&&entrada('Acceso Coach',acceso,setAcceso,{type:'password',autoComplete:'off'}),
+    !catalogo&&h('button',{style:ft20Boton,disabled:ocupado||!acceso.trim(),onClick:()=>ejecutar('altaCatalogo')},'Abrir alta'),
+    catalogo&&h(React.Fragment,null,
+      entrada('Nombre ficticio',nombre,setNombre,{maxLength:50}),
+      h('label',null,'Modalidad',h('select',{style:ft20Campo,value:plan,disabled:ocupado,onChange:e=>setPlan(e.target.value)},
+        h('option',{value:'PRESENCIAL'},'Presencial'),h('option',{value:'ONLINE'},'Online'))),
+      h('label',null,'Ejercicio de sesión A',h('select',{style:ft20Campo,value:ejercicio,disabled:ocupado,onChange:e=>setEjercicio(e.target.value)},
+        catalogo.map(e=>h('option',{key:e.id,value:e.id},e.nombre)))),
+      entrada('Series',series,setSeries,{type:'number',min:1,max:8}),
+      entrada('Repeticiones',reps,setReps,{type:'number',min:1,max:40}),
+      h('p',null,'Dieta asignada: menú de ejemplo con opciones de 3 y 4 comidas.'),
+      h('button',{style:ft20Boton,disabled:ocupado||!ejercicio,onClick:()=>ejecutar('altaCrear')},'Crear ficha y asignar pautas'),
+      alta&&h('button',{style:ft20Boton,disabled:ocupado,onClick:()=>ejecutar('altaBaja')},'Desvincular a '+alta.nombre)),
+    h('p',{role:'status'},ocupado?'Procesando…':mensaje),
+    h('button',{disabled:ocupado,onClick:()=>setAbierto(false)},'Cerrar'));
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(h(App,null));
