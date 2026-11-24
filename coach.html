@@ -1603,6 +1603,7 @@ function ClientDetail({name,weeks,rutina,ejercicios,diagnostico,decisiones,medic
 
       // TAB: SENSACIONES
       tab==='habitos'&&h(FTV9HabitosPanel,{name,asesoradoId:aseIdDiag}),
+      tab==='dieta'&&String(name).trim().toLowerCase()==='yo'&&h(FT20NutricionWeb,{coach:true}),
       tab==='dieta'&&h(FTV9DietaPanel,{name,asesoradoId:aseIdDiag}),
       tab==='diag'&&h(DiagnosticoPanel,{rutina:{...rutina,CinturaInicial:diagnostico?.CinturaInicial},weeks,medicionesHistoricas}),
       tab==='fase'&&h(FtPhasePanel,{name,rutina:{...rutina,CinturaInicial:diagnostico?.CinturaInicial},weeks,medicionesHistoricas,phaseRows,onRefresh}),
@@ -3558,6 +3559,88 @@ function App(){
         h('button',{key:t.v,onClick:()=>setAppTab(t.v),style:{flex:1,padding:'10px 2px 14px',fontSize:'10px',background:'none',border:'none',borderTop:appTab===t.v?'2px solid #111':'2px solid transparent',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:'2px',color:appTab===t.v?'#111':'#999',fontWeight:appTab===t.v?'700':'400'}},h('span',{style:{fontSize:'18px'}},t.ic),t.l)
       )
     )
+  );
+}
+
+function FT20NutricionWeb({coach=false}){
+  const [url,setUrl]=useState(()=>localStorage.getItem('ft20_web_url')||'');
+  const [acceso,setAcceso]=useState(()=>sessionStorage.getItem(coach?'ft20_coach_acceso':'ft20_piloto_acceso')||'');
+  const [pauta,setPauta]=useState(null), [mensaje,setMensaje]=useState('');
+  const [ocupado,setOcupado]=useState(false), [distribucion,setDistribucion]=useState(4);
+  const [comida,setComida]=useState(''), [opcion,setOpcion]=useState('A'), [respuesta,setRespuesta]=useState('');
+  const respuestas={
+    MENU_PORCIONES:'Comí el menú pautado y respeté porciones',
+    MENU_CANTIDAD_INCIERTA:'Comí el menú pero no sé si respeté cantidades',
+    OTROS_ALIMENTOS:'Comí otros alimentos',NO_COMIO:'No comí'
+  };
+  const opciones=(pauta?.opciones||[]).filter(x=>Number(x.distribucion)===distribucion);
+  const comidas=[...new Set(opciones.map(x=>x.comida))];
+  const elegida=comida||comidas[0]||'';
+  const guardado=pauta?.registros?.find(x=>Number(x.distribucion)===distribucion&&x.comida===elegida);
+  const menu=opciones.filter(x=>x.comida===elegida&&x.opcion===opcion).sort((a,b)=>a.orden-b.orden);
+  async function ejecutar(accion){
+    setOcupado(true);
+    setMensaje('');
+    try{
+      const endpoint=url.trim(), token=acceso.trim();
+      if(!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(endpoint))
+        throw Error('Pegá la URL /exec de la implementación web 2.0.');
+      if(!/^[a-f0-9]{64}$/.test(token))throw Error('Pegá el acceso correspondiente a esta app.');
+      async function pedir(tarea,datos={}){
+        const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},
+          body:JSON.stringify({accion:tarea,acceso:token,...datos})});
+        if(!r.ok)throw Error('No se pudo conectar con Apps Script. Revisá la implementación web.');
+        const j=await r.json();
+        if(!j.ok)throw Error(j.error);
+        return j;
+      }
+      if(accion==='registrar'){
+        const r=await pedir(accion,{distribucion,comida:elegida,opcion,respuesta});
+        setMensaje(r.actualizado?'Fila actualizada':'Fila creada');
+        setPauta(await pedir('leer'));
+      }else{
+        setPauta(await pedir(accion));
+        if(accion==='compartir')setMensaje('Pauta sincronizada con Piloto.');
+      }
+      localStorage.setItem('ft20_web_url',endpoint);
+      sessionStorage.setItem(coach?'ft20_coach_acceso':'ft20_piloto_acceso',token);
+    }catch(e){
+      setMensaje(e instanceof SyntaxError?'La URL no devolvió datos de la API web. Revisá el acceso de la implementación.':e.message);
+    }finally{setOcupado(false);}
+  }
+  const estados={PENDIENTE_PUBLICACION_Y_CONFIRMACION:'Lista para compartir',
+    COMPARTIDA_PILOTO:'Pendiente de confirmación',VIGENTE_PILOTO:'Pauta confirmada'};
+  const campo={display:'block',width:'100%',padding:8,margin:'6px 0',boxSizing:'border-box',font:'inherit'};
+  const boton={padding:'8px 12px',margin:'4px 4px 4px 0',cursor:'pointer'};
+  return h('section',{style:{background:'#fff',color:'#172720',padding:14,margin:'12px 0',borderRadius:12,border:'1px solid #ddd'}},
+    h('h3',null,'Nutrición 2.0 · prueba privada'),
+    h('label',null,'URL de la implementación web',h('input',{style:campo,type:'url',value:url,disabled:ocupado,
+      onChange:e=>{setUrl(e.target.value);setPauta(null);}})),
+    h('label',null,coach?'Acceso Coach':'Acceso Piloto',h('input',{style:campo,type:'password',autoComplete:'off',value:acceso,
+      disabled:ocupado,onChange:e=>{setAcceso(e.target.value);setPauta(null);}})),
+    h('button',{style:boton,disabled:ocupado,onClick:()=>ejecutar(coach?'estadoCoach':'leer')},pauta?'Actualizar':'Conectar'),
+    pauta&&h('p',null,estados[pauta.estado]||pauta.estado,pauta.hoy?' · '+pauta.hoy:''),
+    coach&&pauta?.estado==='PENDIENTE_PUBLICACION_Y_CONFIRMACION'&&
+      h('button',{style:boton,disabled:ocupado,onClick:()=>ejecutar('compartir')},'Compartir pauta'),
+    !coach&&pauta?.estado==='COMPARTIDA_PILOTO'&&
+      h('button',{style:boton,disabled:ocupado,onClick:()=>ejecutar('confirmar')},'Confirmar pauta'),
+    !coach&&comidas.length>0&&h('div',null,
+      h('label',null,'Distribución',h('select',{style:campo,value:distribucion,disabled:ocupado,
+        onChange:e=>{setDistribucion(Number(e.target.value));setComida('');setOpcion('A');setRespuesta('');}},
+        [4,3].map(n=>h('option',{key:n,value:n},n+' comidas')))),
+      h('label',null,'Comida',h('select',{style:campo,value:elegida,disabled:ocupado,
+        onChange:e=>{setComida(e.target.value);setOpcion('A');setRespuesta('');}},
+        comidas.map(x=>h('option',{key:x},x)))),
+      h('label',null,'Opción',h('select',{style:campo,value:opcion,disabled:ocupado,onChange:e=>setOpcion(e.target.value)},
+        ['A','B'].map(x=>h('option',{key:x},x)))),
+      h('ul',null,menu.map((x,i)=>h('li',{key:i},[x.nombre,x.cantidad,x.unidad,x.estado].filter(Boolean).join(' ')))),
+      guardado&&h('p',null,'Guardado hoy · opción '+guardado.opcion+' · '+respuestas[guardado.respuesta]),
+      pauta.estado==='VIGENTE_PILOTO'&&h('div',null,
+        h('label',null,'Respuesta',h('select',{style:campo,value:respuesta,disabled:ocupado,onChange:e=>setRespuesta(e.target.value)},
+          h('option',{value:''},'Elegí una respuesta'),
+          Object.entries(respuestas).map(([key,label])=>h('option',{key,value:key},label)))),
+        h('button',{style:boton,disabled:ocupado||!respuesta||!menu.length,onClick:()=>ejecutar('registrar')},'Guardar comida'))),
+    h('p',{role:'status'},ocupado?'Procesando…':mensaje)
   );
 }
 
