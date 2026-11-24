@@ -3547,6 +3547,7 @@ function App(){
   return h('div',null,
     h('div',{style:{paddingBottom:'60px'}},
       appTab==='lista'&&h(FT20AltaCoach,null),
+      appTab==='lista'&&h(FT20Revision,{coach:true}),
       appTab==='lista'&&h(ClientList,{data,rutinas,maestra,decisiones,videosPend,phaseRows,onSelect:setSelected,onRefresh:loadData}),
       appTab==='semv2'&&h(FTV9AnalisisSemanal,{data:data,rutinas:rutinas,devoluciones:devoluciones,videos:videos,onRefresh:loadData}),
       appTab==='mensualv2'&&h(MensualV2,{maestra:maestra,data:data,rutinas:rutinas,decisiones:decisiones,videos:videos}),
@@ -3619,6 +3620,50 @@ function FT20AltaCoach(){
       alta&&h('button',{style:ft20Boton,disabled:ocupado,onClick:()=>ejecutar('altaBaja')},'Desvincular a '+alta.nombre)),
     h('p',{role:'status'},ocupado?'Procesando…':mensaje),
     h('button',{disabled:ocupado,onClick:()=>setAbierto(false)},'Cerrar'));
+}
+
+function FT20Revision({coach=false}){
+  const [acceso,setAcceso]=useState(()=>sessionStorage.getItem('ft20_coach_acceso')||'');
+  const [nombre,setNombre]=useState(''),[resultado,setResultado]=useState(null);
+  const [error,setError]=useState(''),[ocupado,setOcupado]=useState(false);
+  const [vista,setVista]=useState('entreno');
+  async function revisar(e){
+    e.preventDefault();setOcupado(true);setResultado(null);setError('');
+    try{
+      const r=await ft20AltaLlamar(coach?'revisionTanda':'revisionFicha',{acceso:acceso.trim(),nombre:nombre.trim()});
+      sessionStorage.setItem('ft20_coach_acceso',acceso.trim());setResultado(r);
+    }catch(err){setError(err.message);}
+    finally{setOcupado(false);}
+  }
+  const panel={background:'#171a20',color:'#f4f6fa',colorScheme:'dark',border:'1px solid #717989',
+    borderRadius:12,padding:16,margin:'16px auto',maxWidth:560};
+  const campo={...ft20Campo,background:'#242935',color:'#f4f6fa',borderColor:'#929bad'};
+  return h('section',{style:panel},h('h2',null,coach?'Revisar tanda 2.0':'Vista previa de Piloto 2.0'),
+    h('p',{style:{color:'#cbd5e1'}},'Revisión de solo lectura del Sheet vigente.'),
+    h('form',{onSubmit:revisar},
+      h('label',null,'Acceso Coach',h('input',{type:'password',autoComplete:'off',style:campo,value:acceso,
+        disabled:ocupado,onChange:e=>{setAcceso(e.target.value);setResultado(null);}})),
+      !coach&&h('label',null,'Nombre en el Sheet',h('input',{style:campo,value:nombre,disabled:ocupado,
+        onChange:e=>{setNombre(e.target.value);setResultado(null);}})),
+      h('button',{style:ft20Boton,disabled:ocupado||!acceso.trim()||(!coach&&!nombre.trim())},ocupado?'Consultando…':'Revisar')),
+    error&&h('p',{role:'alert',style:{background:'#491f2a',color:'#ffe2e8',padding:10,borderRadius:6}},error),
+    coach&&resultado?.filas.map(r=>h('article',{key:r.nombre,style:{borderTop:'1px solid #717989',padding:'10px 0'}},
+      h('strong',null,r.nombre+' · '+r.estado),
+      h('div',null,[r.plan,r.semana!=null?'Semana '+r.semana:'',r.rutina,r.dieta].filter(Boolean).join(' · ')),
+      Boolean(r.seriesFaltantes)&&h('div',{style:{color:'#ffe0a3'}},r.seriesFaltantes+' ejercicios sin series estructuradas'))),
+    !coach&&resultado&&h(React.Fragment,null,
+      h('h3',null,resultado.nombre),h('p',null,resultado.semana?'Semana '+resultado.semana:'Semana pendiente de verificar'),
+      h('button',{style:ft20Boton,'aria-pressed':vista==='entreno',onClick:()=>setVista('entreno')},'Entreno'),
+      h('button',{style:ft20Boton,'aria-pressed':vista==='dieta',onClick:()=>setVista('dieta')},'Dieta'),
+      vista==='entreno'&&h(React.Fragment,null,h('p',null,resultado.rutina),
+        h('ul',null,resultado.entreno.map((x,i)=>h('li',{key:i},[
+          'Sesión '+x.sesion,x.ejercicio,x.series?x.series+' series':'Series pendientes',
+          x.min&&x.max?x.min+' a '+x.max+' repeticiones':''
+        ].filter(Boolean).join(' · '))))),
+      vista==='dieta'&&h(React.Fragment,null,h('p',null,resultado.dieta),
+        h('ul',null,resultado.opciones.map((x,i)=>h('li',{key:i},[
+          x.distribucion+' comidas',x.comida+' '+x.opcion,x.nombre,[x.cantidad,x.unidad,x.estado].filter(Boolean).join(' ')
+        ].join(' · ')))))));
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(h(App,null));
