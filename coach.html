@@ -3578,7 +3578,7 @@ function FT20Revision({coach=false}){
         ].join(' · ')))))));
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(h(App,null));
+ReactDOM.createRoot(document.getElementById('root')).render(h(FT20CoachOficial,null));
 function FT20DatosFichaCoach({asesoradoId,nombre,modo}){
   const [datos,setDatos]=useState(null),[error,setError]=useState('');
   useEffect(()=>{
@@ -3860,6 +3860,260 @@ function FT20AnalisisCoach(){
     ),
     h('p',{role:'status'},ocupado?'Conectando con Sheet 2.0…':mensaje)
   );
+}
+
+function FT20CoachOficial(){
+  const [tab,setTab]=useState('personas');
+  const [acceso,setAcceso]=useState(()=>sessionStorage.getItem('ft20_coach_acceso')||'');
+  const [padron,setPadron]=useState(null),[persona,setPersona]=useState(null);
+  const [estado,setEstado]=useState(''),[ocupado,setOcupado]=useState(false);
+  const [alta,setAlta]=useState(false),[bienvenida,setBienvenida]=useState('');
+  const [datos,setDatos]=useState(null),[espejo,setEspejo]=useState(null),[videos,setVideos]=useState(null);
+  const [buscar,setBuscar]=useState('');
+  const [sub,setSub]=useState('rutina');
+  const publicaciones=useRef({});
+  const enlace=useRef(null);
+  const tipos=['BASICA','ONLINE','PRESENCIAL'];
+  const musculos=['Pecho','Espalda','Hombro','Bíceps','Tríceps','Cuádriceps','Femorales','Glúteos','Gemelos','Abdominales'];
+  const modos=['base','fuerza','intensidad','volumen','hibrido'];
+  const formData=e=>{e.preventDefault();return Object.fromEntries(new FormData(e.currentTarget));};
+  const campo=(name,label,extra={})=>h('label',null,label,h('input',{name,style:ft20Campo,...extra}));
+  const select=(label,name,arr,value)=>h('label',null,label,h('select',{name,defaultValue:value,style:ft20Campo},
+    arr.map(a=>h('option',{key:a,value:a},a))));
+  const btn=(label,onClick,disabled=ocupado)=>h('button',{type:'button',onClick,disabled,style:ft20Boton},label);
+  const submit=label=>h('button',{type:'submit',disabled:ocupado,style:ft20Boton},label);
+  const llamar=(accion,extra={})=>ft20AltaLlamar(accion,{acceso:acceso.trim(),...extra});
+  async function hacer(fn) {
+    setOcupado(true);setEstado('');
+    try {await fn();} catch(e){setEstado(e.message);} finally {setOcupado(false);}
+  }
+  async function clientes(){
+    const r=await llamar('oficialPadron20');setPadron(r.personas);
+    sessionStorage.setItem('ft20_coach_acceso',acceso.trim());
+  }
+  useEffect(()=>{if(acceso.trim())hacer(clientes);},[]);
+  function abrirTab(destino) {
+    setTab(destino);setEstado('');
+    if(destino==='espejo')hacer(async()=>setEspejo(await llamar('oficialEspejo20')));
+    if(destino==='video')hacer(async()=>setVideos(await llamar('oficialVideos20')));
+  }
+  async function abrirPersona(p){
+    setPersona(p);setDatos(null);setSub('rutina');setBienvenida('');
+    if(p.plan==='BASICA')return;
+    const r=await llamar('oficialCatalogo20',{asesoradoId:p.id});
+    setDatos(r);
+  }
+  async function crear(e){
+    const f=formData(e);
+    await hacer(async()=>{
+      const p=await llamar('oficialAlta20',f);
+      const basica=p.plan==='BASICA';
+      let app='https://entreno-basico.vercel.app/';
+      if(!basica){
+        const r=await invitar(p);
+        app=r;
+      }
+      setBienvenida(basica?'Hola '+p.nombre+'. Ya está disponible tu app Básica: '+app:
+        'Hola '+p.nombre+'. Ya está lista tu ficha de asesoría: '+app+
+        '. Abrí el enlace una vez y entrá con tu nombre. Para completar lo que falte en la semana 1, pasame por WhatsApp tu edad, altura y el promedio de peso y cintura que hayas registrado.');
+      await clientes();
+    });
+  }
+  async function invitar(p) {
+    const r=await llamar('comparativaInvitar20',{asesoradoId:p.id,nombre:p.nombre});
+    const url=new URL('https://fuerza-t-piloto.vercel.app/');
+    url.hash=new URLSearchParams({comparativa:r.token,persona:r.id,nombre:r.nombre}).toString();
+    return url.toString();
+  }
+  function identificador(tipo,payload) {
+    const clave=JSON.stringify(payload);
+    if (publicaciones.current[tipo]?.clave!==clave) publicaciones.current[tipo]={clave,id:crypto.randomUUID()};
+    return publicaciones.current[tipo].id;
+  }
+  function bienvenidaUI(){
+    return bienvenida&&h('div',null,h('pre',{style:{whiteSpace:'pre-wrap',fontFamily:'inherit'}},bienvenida),
+      btn('Copiar mensaje',()=>navigator.clipboard.writeText(bienvenida).then(()=>setEstado('Copiado.')).catch(()=>setEstado('Seleccioná y copiá el mensaje.'))));
+  }
+  function altaUI(){
+    return h('form',{style:ft20Panel,onSubmit:crear},
+      h('h2',null,'Alta oficial'),
+      campo('nombre','Nombre',{required:true,maxLength:100}),
+      select('Modalidad','plan',tipos,'ONLINE'),
+      campo('fechaPago','Fecha de pago',{type:'date'}),
+      campo('cuota','Cuota si está acordada',{type:'number',min:0,step:'.01'}),
+      campo('whatsapp','WhatsApp con código de país',{type:'tel'}),
+      select('Sexo para RFM, si se conoce','sexo',['','FEMENINO','MASCULINO'],''),
+      campo('objetivo','Objetivo'),
+      submit('Crear ficha'),bienvenidaUI(),btn('Volver',()=>{setAlta(false);setBienvenida('');}));
+  }
+  function verPersona(){
+    const p=persona;
+    return h('div',{style:ft20Panel},
+      btn('Volver al padrón',()=>{setPersona(null);setBienvenida('');}),h('h2',null,p.nombre),
+      h('p',null,p.plan+' · '+p.estado+' · Semana 1: '+(p.semana1||'—')),
+      p.ultimo&&h('p',null,'Último reporte · '+p.ultimo.fecha+' · '+(p.ultimo.peso??'—')+' kg · '+(p.ultimo.cintura??'—')+' cm'),
+      p.plan!=='BASICA'&&p.estado==='ACTIVO'&&btn('Preparar enlace individual',()=>hacer(async()=>{
+        if(!window.confirm('¿Generar un enlace individual nuevo? Si había uno anterior, se reemplazará.'))return;
+        enlace.current=await invitar(p);setBienvenida('Hola '+p.nombre+'. Abrí una vez tu enlace individual y entrá con tu nombre: '+enlace.current);
+      })),
+      bienvenidaUI(),
+      datos&&h('div',null,
+        [['resumen','Resumen'],['rutina','Rutina'],['dieta','Dieta'],['datos','Datos iniciales'],['fotos','Comparativa']].map(([k,l])=>h('button',{
+          key:k,type:'button',style:{...ft20Boton,background:sub===k?'#126342':'#41524b'},onClick:()=>setSub(k)},l)),
+        sub==='resumen'&&h(FT20DatosFichaCoach,{key:p.id+'-resumen',asesoradoId:p.id,nombre:p.nombre,modo:'med'}),
+        sub==='rutina'&&h(FT20DatosFichaCoach,{key:p.id+'-marcas',asesoradoId:p.id,nombre:p.nombre,modo:'ent'}),
+        sub==='rutina'&&h(FT20EditorRutina,{key:p.id,datos,persona:p,llamar,identificador,musculos,modos}),
+        sub==='dieta'&&h(FT20EditorDieta,{key:p.id,datos,persona:p,llamar,identificador}),
+        sub==='datos'&&h('form',{onSubmit:e=>{
+          const f=formData(e);hacer(async()=>{await llamar('oficialDatos20',{asesoradoId:p.id,...f});
+            setDatos(await llamar('oficialCatalogo20',{asesoradoId:p.id}));
+            setEstado('Datos guardados.');});
+        }},
+        campo('edad','Edad',{type:'number',min:1,max:120}),
+        campo('altura','Altura (cm)',{type:'number',min:50,max:250}),
+        campo('peso','Peso (kg)',{type:'number',step:'.1'}),
+        campo('cintura','Cintura (cm)',{type:'number',step:'.1'}),
+        campo('fecha','Fecha de medición',{type:'date'}),campo('whatsapp','WhatsApp',{type:'tel'}),submit('Guardar datos')),
+        sub==='fotos'&&h(FT20ComparativaFotos,{coach:true,inicio:p.id,
+          llamar:(accion,extra)=>llamar(accion,{asesoradoId:p.id,nombre:p.nombre,...extra})})
+      ));
+  }
+  function verEspejo(){
+    return h('section',{style:ft20Panel},h('h2',null,'En curso'),
+      btn('Actualizar',()=>abrirTab('espejo')),
+      espejo&&h('p',null,'Semana del '+espejo.lunes+' · Registros recibidos sin esperar el reporte.'),
+      espejo?.filas.map(f=>h('div',{key:f.id,style:{borderTop:'1px solid #ccd5cf',padding:8}},
+        h('strong',null,f.nombre),f.error?h('p',null,f.error):h('div',null,
+          h('div',null,'Comidas registradas al corte: '+f.respondidas+'/'+f.esperadas+' · Cumplidas: '+f.comidasCumplidas),
+          h('div',null,'Series: '+f.seriesHechas+'/'+f.series+' · Sueño registrado: '+f.sueno+' día(s)'),
+          h('div',null,'Peso: '+(f.peso??'—')+' kg · Cintura: '+(f.cintura??'—')+' cm'),
+          h('small',null,f.ultima?'Último dato recibido: '+new Date(f.ultima).toLocaleString('es-AR',{timeZone:'America/Argentina/Buenos_Aires'}):'Sin sincronización de esta semana')
+        ))));
+  }
+  function verVideos(){
+    async function video(accion,extra){
+      await llamar(accion,extra);setVideos(await llamar('oficialVideos20'));setEstado('Guardado.');
+    }
+    return h('section',{style:ft20Panel},h('h2',null,'Videos y correcciones'),btn('Actualizar',()=>abrirTab('video')),
+      videos?.filas.map(v=>h('article',{key:v.id,style:{borderTop:'1px solid #ccd5cf',padding:'10px 0'}},
+        h('strong',null,(v.nombre||'—')+' · '+v.ejercicio),
+        h('div',null,v.fecha+' · '+(v.canal||'—')+' · '+(v.estado||'—')),
+        /^https:\/\//.test(v.referencia||'')&&h('a',{href:v.referencia,target:'_blank',rel:'noopener noreferrer'},'Abrir video'),
+        v.canal==='WHATSAPP'&&!v.confirmada&&btn('Confirmar recepción',()=>hacer(()=>video('oficialVideoRecibir20',{videoId:v.id}))),
+        h('form',{onSubmit:e=>{const f=formData(e);hacer(()=>video('oficialVideoCorregir20',{videoId:v.id,texto:f.texto}));}},
+          h('textarea',{name:'texto',key:v.publicada||'nuevo',defaultValue:v.texto,maxLength:1500,required:true,style:ft20Campo,'aria-label':'Corrección'}),
+          submit('Publicar corrección')))));
+  }
+  return h('main',{style:{maxWidth:620,margin:'0 auto',paddingBottom:30}},
+    h('header',{style:{...ft20Panel,marginBottom:0}},h('h1',null,'Fuerza T · Coach'),
+      padron&&[['personas','Asesorados'],['espejo','En curso'],['analisis','Análisis'],['video','Videos']].map(([k,l])=>
+        h('button',{key:k,type:'button',onClick:()=>abrirTab(k),disabled:ocupado,style:{...ft20Boton,background:tab===k?'#126342':'#41524b'}},l))),
+    estado&&h('div',{style:ft20Panel,role:'status'},estado),
+    !padron?h('form',{style:ft20Panel,onSubmit:e=>{e.preventDefault();hacer(clientes);}},
+      h('label',null,'Acceso Coach',h('input',{type:'password',style:ft20Campo,value:acceso,onChange:e=>setAcceso(e.target.value),required:true})),
+      submit('Entrar')):tab==='espejo'?verEspejo():tab==='analisis'?h(FT20AnalisisCoach,null):tab==='video'?verVideos():
+      alta?altaUI():persona?verPersona():h('section',{style:ft20Panel},
+        btn('Nueva alta',()=>{setAlta(true);setBienvenida('');}),btn('Actualizar',()=>hacer(clientes)),
+        h('input',{style:ft20Campo,value:buscar,onChange:e=>setBuscar(e.target.value),placeholder:'Buscar por nombre'}),
+        padron.filter(p=>String(p.nombre).toLowerCase().includes(buscar.trim().toLowerCase())).map(p=>
+          h('div',{key:p.id},
+            p.plan!=='BASICA'&&h('span',{title:p.semaforo,style:{color:({VERDE:'#126342',NARANJA:'#a65a13',ROJO:'#a72422'})[p.semaforo]||'#666',fontWeight:900}},'● '),
+            btn(p.nombre+' · '+p.plan+' · '+p.estado,()=>hacer(()=>abrirPersona(p)))))));
+}
+function FT20EditorRutina({datos,persona,llamar,identificador,musculos,modos}){
+  const inicial=datos.rutina?.detalle||[];
+  const [filas,setFilas]=useState(()=>inicial.map(d=>({...d,series:d.seriesIniciales||d.series||1,min:d.min||1,max:d.max||d.min||1,
+    anterior:d.id,prioridad:['PRIORITARIO','NORMAL','MANTENIMIENTO'].includes(d.prioridad)?d.prioridad:'NORMAL',
+    musculo:musculos.includes(d.musculo)?d.musculo:'',tipo:d.tipo||'SOLO',grupo:d.grupo||''})));
+  const [bloque,setBloque]=useState(()=>datos.rutina?.cfg.Bloque||'base');
+  const [desde,setDesde]=useState('');
+  const [inicio,setInicio]=useState(()=>datos.rutina?.cfg.BloqueInicio||1);
+  const [estado,setEstado]=useState(''),[ocupado,setOcupado]=useState(false);
+  const cambiar=(i,c)=>setFilas(prev=>prev.map((r,j)=>i===j?{...r,...c}:r));
+  const op=(value,label=value)=>h('option',{key:value,value},label);
+  const control=(valor,onChange,opciones,label)=>h('select',{value:valor,onChange:e=>onChange(e.target.value),style:ft20Campo,'aria-label':label},opciones);
+  const num=(valor,onChange,label)=>h('input',{value:valor,onChange:e=>onChange(e.target.value),type:'number',min:1,style:{...ft20Campo,width:'32%',display:'inline-block'},'aria-label':label,placeholder:label});
+  async function publicar(){
+    setOcupado(true);setEstado('');
+    try{
+      const d={asesoradoId:persona.id,bloque,desde,inicio,detalle:filas};
+      await llamar('oficialRutina20',{...d,operacionId:identificador('rutina',d)});
+      setEstado('Rutina publicada para la fecha elegida.');
+    }catch(e){setEstado(e.message);}finally{setOcupado(false);}
+  }
+  return h('section',null,h('h3',null,'Editor de rutina'),
+    control(bloque,setBloque,modos.map(a=>op(a)),'Bloque'),
+    h('label',null,'Fecha de vigencia',h('input',{type:'date',style:ft20Campo,value:desde,onChange:e=>setDesde(e.target.value)})),
+    h('label',null,'Semana de inicio del bloque ',num(inicio,setInicio,'Semana')),
+    filas.map((d,i)=>h('fieldset',{key:i,style:{border:'1px solid #b4c0b8',margin:'8px 0'}},
+      h('legend',null,'Ejercicio '+(i+1)),
+      control(d.sesion,v=>cambiar(i,{sesion:v}),'ABCDE'.split('').map(a=>op(a)),'Sesión'),
+      control(d.ejercicio,v=>{const e=datos.ejercicios.find(x=>x.id===v);cambiar(i,{ejercicio:v,min:e?.min||d.min,max:e?.max||d.max,musculo:musculos.includes(e?.musculo)?e.musculo:d.musculo});},
+        [op('','Elegí un ejercicio'),...datos.ejercicios.map(x=>op(x.id,x.nombre))],'Ejercicio'),
+      control(d.musculo,v=>cambiar(i,{musculo:v}),[op('','Elegí músculo'),...musculos.map(a=>op(a))],'Músculo'),
+      control(d.prioridad,v=>cambiar(i,{prioridad:v}),['PRIORITARIO','NORMAL','MANTENIMIENTO'].map(a=>op(a)),'Prioridad'),
+      bloque==='hibrido'&&control(d.modo,v=>cambiar(i,{modo:v}),modos.slice(0,-1).map(a=>op(a)),'Protocolo'),
+      control(d.tipo,v=>cambiar(i,{tipo:v}),['SOLO','BISERIE','TRISERIE','COMPLEX'].map(a=>op(a)),'Tipo de grupo'),
+      d.tipo!=='SOLO'&&h('input',{style:ft20Campo,value:d.grupo,onChange:e=>cambiar(i,{grupo:e.target.value}),placeholder:'Nombre común del grupo'}),
+      num(d.series,v=>cambiar(i,{series:v}),'Series'),num(d.min,v=>cambiar(i,{min:v}),'Reps mín.'),num(d.max,v=>cambiar(i,{max:v}),'Reps máx.'),
+      h('button',{type:'button',onClick:()=>setFilas(prev=>prev.filter((_,j)=>j!==i))},'Quitar'))),
+    h('button',{type:'button',style:ft20Boton,onClick:()=>setFilas(prev=>[...prev,{
+      sesion:'A',ejercicio:'',musculo:'',prioridad:'NORMAL',modo:'base',tipo:'SOLO',grupo:'',series:3,min:6,max:10}])},'Agregar ejercicio'),
+    h('button',{type:'button',style:ft20Boton,onClick:publicar,disabled:ocupado||!filas.length||!desde},'Publicar rutina'),
+    h('p',{role:'status'},estado));
+}
+function FT20EditorDieta({datos,persona,llamar,identificador}){
+  const dist=[3,4];
+  const [habilitadas,setHabilitadas]=useState(()=>dist.filter(n=>datos.opciones.some(x=>Number(x.Distribucion)===n)).length?
+    dist.filter(n=>datos.opciones.some(x=>Number(x.Distribucion)===n)):[3,4]);
+  const claves=dist.flatMap(n=>(n===4?['Desayuno','Almuerzo','Merienda','Cena']:['Desayuno','Almuerzo','Cena'])
+    .flatMap(comida=>['A','B'].map(opcion=>({n,comida,opcion,key:n+comida+opcion}))));
+  const [menus,setMenus]=useState(()=>Object.fromEntries(claves.map(c=>[c.key,datos.opciones.filter(o=>
+    Number(o.Distribucion)===c.n&&o.Comida===c.comida&&o.Opcion===c.opcion).map(o=>String(o.AlimentoID))])));
+  const cfg=(()=>{try{return JSON.parse(datos.dieta?.ConfiguracionJSON||'{}');}catch(e){return {};}})();
+  const [objetivo,setObjetivo]=useState(()=>cfg.objetivos?.length===4?cfg.objetivos:['','','','']);
+  const [fase,setFase]=useState(()=>cfg.fase||'');
+  const [vista,setVista]=useState(null),[estado,setEstado]=useState(''),[ocupado,setOcupado]=useState(false);
+  const [pendiente,setPendiente]=useState(()=>datos.versiones.find(v=>v.area==='NUTRICION'&&v.estado==='PENDIENTE_PUBLICACION_Y_CONFIRMACION')?.id||'');
+  async function retirar(){
+    if(!window.confirm('¿Retirar la propuesta pendiente? La pauta vigente seguirá disponible.'))return;
+    setOcupado(true);setEstado('');
+    try {await llamar('oficialDietaRetirar20',{asesoradoId:persona.id,version:pendiente});setPendiente('');setEstado('Propuesta retirada.');}
+    catch(e){setEstado(e.message);}finally{setOcupado(false);}
+  }
+  const payload={asesoradoId:persona.id,objetivo,fase,menus:claves.filter(c=>habilitadas.includes(c.n)).map(({key,...c})=>({...c,alimentos:menus[key]||[]}))};
+  async function procesar(publicar){
+    setOcupado(true);setEstado('');
+    try{
+      const r=await llamar('oficialDieta20',{...payload,publicar,...(publicar?{operacionId:identificador('dieta',payload)}:{})});
+      setVista(r);if(publicar)setPendiente(r.id);setEstado(publicar?'Propuesta publicada. Falta que el asesorado la confirme.':'Combinaciones válidas: '+r.control.filter(x=>x.ok).length+'/'+r.control.length+'.');
+    }catch(e){setEstado(e.message);}finally{setOcupado(false);}
+  }
+  return h('section',null,h('h3',null,'Editor de dieta'),
+    h('p',null,'Objetivo: '+(datos.estimacion?.objetivo||'—')+' · RFM: '+(datos.estimacion?.rfmPct==null?'falta dato':datos.estimacion.rfmPct+'%')),
+    h('label',null,'Fase',h('select',{value:fase,onChange:e=>{setFase(e.target.value);setVista(null);},style:ft20Campo},
+      ['','DEFICIT','RECOMPOSICION','MANTENIMIENTO','SUPERAVIT'].map(k=>h('option',{key:k,value:k},k||'Elegí fase')))),
+    ['Kcal','Proteínas (g)','Carbohidratos (g)','Grasas (g)'].map((l,i)=>h('label',{key:l},l,
+      h('input',{type:'number',min:1,step:'.1',style:ft20Campo,value:objetivo[i],onChange:e=>{const v=e.target.value;setObjetivo(o=>o.map((x,j)=>j===i?v:x));setVista(null);}}))),
+    dist.map(n=>h('label',{key:n,style:{display:'block'}},h('input',{type:'checkbox',checked:habilitadas.includes(n),
+      onChange:()=>{setHabilitadas(prev=>prev.includes(n)?prev.filter(x=>x!==n):[...prev,n]);setVista(null);}}),n+' comidas')),
+    claves.filter(c=>habilitadas.includes(c.n)).map(c=>h('fieldset',{key:c.key,style:{border:'1px solid #b4c0b8'}},
+      h('legend',null,c.n+' comidas · '+c.comida+' '+c.opcion),
+      (menus[c.key]||[]).map(id=>h('button',{type:'button',key:id,onClick:()=>{
+        setMenus(prev=>({...prev,[c.key]:prev[c.key].filter(k=>k!==id)}));setVista(null);
+      }},(datos.alimentos.find(a=>a.id===id)?.nombre||id)+' ×')),
+      h('select',{value:'',style:ft20Campo,'aria-label':'Agregar alimento',onChange:e=>{const id=e.target.value;
+        if(id){setMenus(prev=>({...prev,[c.key]:[...new Set([...(prev[c.key]||[]),id])]}));setVista(null);}
+      }},h('option',{value:''},'Agregar alimento'),datos.alimentos.map(a=>h('option',{key:a.id,value:a.id},a.nombre))),
+      vista&&h('ul',null,vista.filas.filter(f=>f.Distribucion===c.n&&f.Comida===c.comida&&f.Opcion===c.opcion)
+        .map(f=>h('li',{key:f.IngredienteID},f.nombre+' · '+f.Cantidad+' g '+(f.EstadoAlimento||'')))),
+    )),
+    h('button',{type:'button',style:ft20Boton,disabled:ocupado,onClick:()=>procesar(false)},'Calcular y validar'),
+    h('button',{type:'button',style:ft20Boton,disabled:ocupado||!vista?.valido||!!pendiente,onClick:()=>procesar(true)},'Publicar propuesta'),
+    pendiente&&h('button',{type:'button',style:ft20Boton,disabled:ocupado,onClick:retirar},'Retirar propuesta pendiente'),
+    h('p',{role:'status'},estado),
+    vista&&h('details',null,h('summary',null,'Validación de combinaciones'),
+      vista.control.map(c=>h('div',{key:c.n+c.ab},c.n+' comidas · '+c.ab+' · '+c.total.join(' / ')+' · '+(c.ok?'OK':'Revisar')))));
 }
 
 </script>
